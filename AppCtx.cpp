@@ -8,6 +8,16 @@
 const uint32_t WINDOW_WIDTH = 1920;
 const uint32_t WINDOW_HEIGHT = 1080;
 
+const std::vector<const char*> validationLayers = {
+    "VK_LAYER_KHRONOS_validation"
+};
+
+#ifdef NDEBUG
+const bool enableValidationLayers = false;
+#else
+const bool enableValidationLayers = true;
+#endif
+
 
 AppCtx::AppCtx()
 {
@@ -105,4 +115,56 @@ void AppCtx::CreateInstance()
     {
         std::cout << '\t' << extension.extensionName << '\n';
     }
+}
+
+bool AppCtx::CheckValidationLayerSupprt()
+{
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    return false;
+}
+
+void AppCtx::PickPhysicalDevice()
+{
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(_vkInstance, &deviceCount, nullptr);
+    if (deviceCount == 0)
+    {
+        throw std::runtime_error("Failed to find GPUs with Vulkan support");
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(_vkInstance, &deviceCount, devices.data());
+
+    for (const auto& device : devices)
+    {
+        if (IsDeviceSuitable(device))
+        {
+            physicalDevice = device;
+            break;
+        }
+    }
+
+    if (physicalDevice == VK_NULL_HANDLE)
+    {
+        throw std::runtime_error("Failed to find a suitable GPU!");
+    }
+}
+
+bool AppCtx::IsDeviceSuitable(VkPhysicalDevice device)
+{
+    VkPhysicalDeviceProperties deviceProperties;
+    VkPhysicalDeviceFeatures deviceFeatures;
+
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+        && deviceFeatures.geometryShader;
 }

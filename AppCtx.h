@@ -13,6 +13,7 @@ public:
 	void Run();
 
 private:
+	//App Specific Functions
 	void InitWindow();
 
 	void InitVulkan();
@@ -21,10 +22,16 @@ private:
 
 	void CleanUp();
 
-
+	//Vulkan Specific Functions
 	void CreateInstance();
 
+	bool CheckValidationLayerSupprt();
 
+	void PickPhysicalDevice();
+
+	bool IsDeviceSuitable(VkPhysicalDevice device);
+
+	//Variables
 	GLFWwindow* _pWindow;
 
 	VkInstance _vkInstance;
