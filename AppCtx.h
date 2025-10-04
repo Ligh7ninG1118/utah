@@ -3,6 +3,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vector>
+#include <optional>
 
 
 class AppCtx
@@ -28,10 +29,6 @@ private:
 
 	bool CheckValidationLayerSupprt();
 
-	void PickPhysicalDevice();
-
-	bool IsDeviceSuitable(VkPhysicalDevice device);
-
 	std::vector<const char*> GetRequiredExtensions();
 
 	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
@@ -48,6 +45,23 @@ private:
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void* pUserData);
+
+
+	void PickPhysicalDevice();
+
+	bool IsDeviceSuitable(VkPhysicalDevice device);
+
+	struct QueueFamilyIndices
+	{
+		std::optional<uint32_t> graphicsFamily;
+
+		bool IsComplete()
+		{
+			return graphicsFamily.has_value();
+		}
+	};
+
+	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 
 	//Variables
 	GLFWwindow* _pWindow;
