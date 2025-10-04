@@ -1,6 +1,5 @@
 #include "AppCtx.h"
 #include <iostream>
-#include <vector>
 #include <stdexcept>
 #include <cstdlib>
 
@@ -50,6 +49,7 @@ void AppCtx::InitWindow()
 void AppCtx::InitVulkan()
 {
     CreateInstance();
+    SetupDebugMessenger();
 }
 
 void AppCtx::MainLoop()
@@ -62,6 +62,11 @@ void AppCtx::MainLoop()
 
 void AppCtx::CleanUp()
 {
+    if (enableValidationLayers)
+    {
+        DestroyDebugUtilsMessengerEXT(_vkInstance, _debugMessenger, nullptr);
+    }
+
     vkDestroyInstance(_vkInstance, nullptr);
 
     glfwDestroyWindow(_pWindow);
@@ -71,6 +76,11 @@ void AppCtx::CleanUp()
 
 void AppCtx::CreateInstance()
 {
+    if (enableValidationLayers && !CheckValidationLayerSupprt())
+    {
+        throw std::runtime_error("Validation layers requested, but not available!");
+    }
+
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Hello Triangle";
@@ -83,17 +93,30 @@ void AppCtx::CreateInstance()
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    if (enableValidationLayers)
+    {
+        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+
+        PopulateDebugMessengerCreateInfo(debugCreateInfo);
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+    }
+    else
+    {
+        createInfo.enabledLayerCount = 0;
+        createInfo.pNext = nullptr;
+    }
+
     // Desired global extensions
     uint32_t glfwExtensionCount = 0;
-    const char** glfwExtension;
 
-    glfwExtension = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    auto glfwExtensions = GetRequiredExtensions();
 
-    createInfo.enabledExtensionCount = glfwExtensionCount;
-    createInfo.ppEnabledExtensionNames = glfwExtension;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(glfwExtensions.size());
+    createInfo.ppEnabledExtensionNames = glfwExtensions.data();
 
     // Global validation layers to enable
-    createInfo.enabledLayerCount = 0;
 
 
     if (vkCreateInstance(&createInfo, nullptr, &_vkInstance) != VK_SUCCESS)
@@ -125,7 +148,26 @@ bool AppCtx::CheckValidationLayerSupprt()
     std::vector<VkLayerProperties> availableLayers(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-    return false;
+    for (const char* layerName : validationLayers)
+    {
+        bool layerFound = false;
+
+        for (const auto& layerProperties : availableLayers)
+        {
+            if (strcmp(layerName, layerProperties.layerName) == 0)
+            {
+                layerFound = true;
+                break;
+            }
+        }
+
+        if (!layerFound)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void AppCtx::PickPhysicalDevice()
@@ -167,4 +209,76 @@ bool AppCtx::IsDeviceSuitable(VkPhysicalDevice device)
 
     return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
         && deviceFeatures.geometryShader;
+}
+
+std::vector<const char*> AppCtx::GetRequiredExtensions()
+{
+    uint32_t glfwExtensionCount = 0;
+    const char** glfwExtensions;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+    if (enableValidationLayers)
+    {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    return extensions;
+}
+
+void AppCtx::PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+{
+    createInfo = {};
+
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback = DebugCallback;
+}
+
+void AppCtx::SetupDebugMessenger()
+{
+    if (!enableValidationLayers)
+        return;
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo;
+
+    PopulateDebugMessengerCreateInfo(createInfo);
+
+    if (CreateDebugUtilsMessengerEXT(_vkInstance, &createInfo, nullptr, &_debugMessenger) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to setup debug messenger!");
+    }
+}
+
+VkResult AppCtx::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+{
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    if (func != nullptr)
+    {
+        func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    }
+    else
+    {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
+void AppCtx::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
+{
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (func != nullptr)
+    {
+        func(instance, debugMessenger, pAllocator);
+    }
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL AppCtx::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+{
+    std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
+
+    return VK_FALSE;
 }
