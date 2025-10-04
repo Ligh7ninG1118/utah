@@ -1,5 +1,6 @@
 #include "AppCtx.h"
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <cstdlib>
 
@@ -50,6 +51,7 @@ void AppCtx::InitVulkan()
 {
     CreateInstance();
     SetupDebugMessenger();
+    CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
 }
@@ -64,14 +66,16 @@ void AppCtx::MainLoop()
 
 void AppCtx::CleanUp()
 {
-    vkDestroyDevice(_vkDevice, nullptr);
+    vkDestroyDevice(_device, nullptr);
 
     if (enableValidationLayers)
     {
-        DestroyDebugUtilsMessengerEXT(_vkInstance, _debugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(_instance, _debugMessenger, nullptr);
     }
 
-    vkDestroyInstance(_vkInstance, nullptr);
+    vkDestroySurfaceKHR(_instance, _surface, nullptr);
+
+    vkDestroyInstance(_instance, nullptr);
 
     glfwDestroyWindow(_pWindow);
 
@@ -123,7 +127,7 @@ void AppCtx::CreateInstance()
     // Global validation layers to enable
 
 
-    if (vkCreateInstance(&createInfo, nullptr, &_vkInstance) != VK_SUCCESS)
+    if (vkCreateInstance(&createInfo, nullptr, &_instance) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create VK instance");
     }
@@ -212,7 +216,7 @@ void AppCtx::SetupDebugMessenger()
 
     PopulateDebugMessengerCreateInfo(createInfo);
 
-    if (CreateDebugUtilsMessengerEXT(_vkInstance, &createInfo, nullptr, &_debugMessenger) != VK_SUCCESS)
+    if (CreateDebugUtilsMessengerEXT(_instance, &createInfo, nullptr, &_debugMessenger) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to setup debug messenger!");
     }
@@ -250,14 +254,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL AppCtx::DebugCallback(VkDebugUtilsMessageSeverity
 void AppCtx::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(_vkInstance, &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(_instance, &deviceCount, nullptr);
     if (deviceCount == 0)
     {
         throw std::runtime_error("Failed to find GPUs with Vulkan support");
     }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(_vkInstance, &deviceCount, devices.data());
+    vkEnumeratePhysicalDevices(_instance, &deviceCount, devices.data());
 
     //TODO: For multi GPU device, could also rate devices and choose the highest
 
@@ -265,12 +269,12 @@ void AppCtx::PickPhysicalDevice()
     {
         if (IsDeviceSuitable(device))
         {
-            _vkPhysicalDevice = device;
+            _physicalDevice = device;
             break;
         }
     }
 
-    if (_vkPhysicalDevice == VK_NULL_HANDLE)
+    if (_physicalDevice == VK_NULL_HANDLE)
     {
         throw std::runtime_error("Failed to find a suitable GPU!");
     }
@@ -309,6 +313,11 @@ AppCtx::QueueFamilyIndices AppCtx::FindQueueFamilies(VkPhysicalDevice device)
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             indices.graphicsFamily = index;
 
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, index, _surface, &presentSupport);
+        if (presentSupport)
+            indices.presentFamily = index;
+
         if (indices.IsComplete())
             break;
 
@@ -320,20 +329,28 @@ AppCtx::QueueFamilyIndices AppCtx::FindQueueFamilies(VkPhysicalDevice device)
 
 void AppCtx::CreateLogicalDevice()
 {
-    QueueFamilyIndices indices = FindQueueFamilies(_vkPhysicalDevice);
+    QueueFamilyIndices indices = FindQueueFamilies(_physicalDevice);
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value()};
+
     float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    for (uint32_t queueFamily : uniqueQueueFamilies)
+    {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = queueFamily;
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.queueCreateInfoCount = 1;
 
     createInfo.pEnabledFeatures = &deviceFeatures;
@@ -350,10 +367,20 @@ void AppCtx::CreateLogicalDevice()
         createInfo.enabledLayerCount = 0;
     }
 
-    if (vkCreateDevice(_vkPhysicalDevice, &createInfo, nullptr, &_vkDevice) != VK_SUCCESS)
+    if (vkCreateDevice(_physicalDevice, &createInfo, nullptr, &_device) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create logical device!");
     }
 
-    vkGetDeviceQueue(_vkDevice, indices.graphicsFamily.value(), 0, &_vkGraphicsQueue);
+    vkGetDeviceQueue(_device, indices.graphicsFamily.value(), 0, &_graphicsQueue);
+
+    vkGetDeviceQueue(_device, indices.presentFamily.value(), 0, &_presentQueue);
+}
+
+void AppCtx::CreateSurface()
+{
+    if (glfwCreateWindowSurface(_instance, _pWindow, nullptr, &_surface) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create window surface!");
+    }
 }
