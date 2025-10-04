@@ -27,6 +27,7 @@ private:
 	//Vulkan Specific Functions
 	void CreateInstance();
 
+	// Validation Layer & Debugging
 	bool CheckValidationLayerSupprt();
 
 	std::vector<const char*> GetRequiredExtensions();
@@ -46,7 +47,7 @@ private:
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void* pUserData);
 
-
+	// Physical Device
 	void PickPhysicalDevice();
 
 	bool IsDeviceSuitable(VkPhysicalDevice device);
@@ -63,11 +64,22 @@ private:
 
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 
+	// Logical Device
+	void CreateLogicalDevice();
+
+
+
 	//Variables
 	GLFWwindow* _pWindow;
 
 	VkInstance _vkInstance;
 
 	VkDebugUtilsMessengerEXT _debugMessenger;
+
+	VkPhysicalDevice _vkPhysicalDevice = VK_NULL_HANDLE;
+
+	VkDevice _vkDevice;
+
+	VkQueue _vkGraphicsQueue;
 };
 
