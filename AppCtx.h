@@ -52,6 +52,8 @@ private:
 
 	bool IsDeviceSuitable(VkPhysicalDevice device);
 
+	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
+
 	struct QueueFamilyIndices
 	{
 		std::optional<uint32_t> graphicsFamily;
@@ -70,6 +72,22 @@ private:
 
 	// Surface Creation
 	void CreateSurface();
+
+	// Swap Chain
+	struct SwapChainSupportDetails
+	{
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector<VkSurfaceFormatKHR> formats;
+		std::vector<VkPresentModeKHR> presentModes;
+	};
+
+	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
+
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+
+	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+
+	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
 	//Variables
 	GLFWwindow* _pWindow;
