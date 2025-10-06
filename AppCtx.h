@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <vector>
 #include <optional>
+#include <string>
 
 
 class AppCtx
@@ -93,6 +94,14 @@ private:
 
 	// Image Views
 	void CreateImageViews();
+
+	// Graphics Pipeline
+	void CreateGraphicsPipeline();
+
+	// Shader Loading
+	std::vector<char> ReadFile(const std::string& filename);
+
+	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 
 	//Variables
 	GLFWwindow* _pWindow;
