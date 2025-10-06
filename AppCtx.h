@@ -91,6 +91,9 @@ private:
 
 	void CreateSwapChain();
 
+	// Image Views
+	void CreateImageViews();
+
 	//Variables
 	GLFWwindow* _pWindow;
 
@@ -115,5 +118,7 @@ private:
 	VkFormat _swapChainImageFormat;
 
 	VkExtent2D _swapChainExtent;
+
+	std::vector<VkImageView> _swapChainImageViews;
 };
 
