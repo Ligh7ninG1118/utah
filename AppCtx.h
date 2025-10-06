@@ -89,6 +89,8 @@ private:
 
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
+	void CreateSwapChain();
+
 	//Variables
 	GLFWwindow* _pWindow;
 
@@ -105,5 +107,13 @@ private:
 	VkSurfaceKHR _surface;
 
 	VkQueue _presentQueue;
+
+	VkSwapchainKHR _swapChain;
+
+	std::vector<VkImage> _swapChainImages;
+
+	VkFormat _swapChainImageFormat;
+
+	VkExtent2D _swapChainExtent;
 };
 
