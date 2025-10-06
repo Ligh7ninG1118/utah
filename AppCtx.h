@@ -98,6 +98,9 @@ private:
 	// Graphics Pipeline
 	void CreateGraphicsPipeline();
 
+	// Render Pass
+	void CreateRenderPass();
+
 	// Shader Loading
 	std::vector<char> ReadFile(const std::string& filename);
 
@@ -130,6 +133,10 @@ private:
 
 	std::vector<VkImageView> _swapChainImageViews;
 
+	VkRenderPass _renderPass;
+
 	VkPipelineLayout _pipelineLayout;
+
+	VkPipeline _graphicsPipeline;
 };
 
