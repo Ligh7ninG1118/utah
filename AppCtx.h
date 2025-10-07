@@ -104,6 +104,13 @@ private:
 	// Framebuffers
 	void CreateFramebuffers();
 
+	// Command Pool & Buffers
+	void CreateCommandPool();
+
+	void CreateCommandBuffer();
+
+	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
 	// Shader Loading
 	std::vector<char> ReadFile(const std::string& filename);
 
@@ -143,5 +150,9 @@ private:
 	VkPipeline _graphicsPipeline;
 
 	std::vector<VkFramebuffer> _swapChainFramebuffers;
+
+	VkCommandPool _commandPool;
+
+	VkCommandBuffer _commandBuffer;
 };
 
