@@ -23,6 +23,8 @@ private:
 
 	void MainLoop();
 
+	void DrawFrame();
+
 	void CleanUp();
 
 	//Vulkan Specific Functions
@@ -111,6 +113,9 @@ private:
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
+	// Synchronization
+	void CreateSyncObjects();
+
 	// Shader Loading
 	std::vector<char> ReadFile(const std::string& filename);
 
@@ -154,5 +159,11 @@ private:
 	VkCommandPool _commandPool;
 
 	VkCommandBuffer _commandBuffer;
+
+	VkSemaphore _imageAvailableSemaphore;
+
+	VkSemaphore _renderFinishedSemaphore;
+
+	VkFence _inFlightFence;
 };
 
