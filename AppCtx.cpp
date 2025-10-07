@@ -70,6 +70,8 @@ void AppCtx::InitVulkan()
 
     CreateRenderPass();
     CreateGraphicsPipeline();
+
+    CreateFramebuffers();
 }
 
 void AppCtx::MainLoop()
@@ -82,6 +84,9 @@ void AppCtx::MainLoop()
 
 void AppCtx::CleanUp()
 {
+    for (auto framebuffer : _swapChainFramebuffers)
+        vkDestroyFramebuffer(_device, framebuffer, nullptr);
+
     vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
 
     vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
@@ -766,6 +771,28 @@ void AppCtx::CreateRenderPass()
 
     if (vkCreateRenderPass(_device, &renderPassInfo, nullptr, &_renderPass) != VK_SUCCESS)
         throw std::runtime_error("Failed to create render pass");
+}
+
+void AppCtx::CreateFramebuffers()
+{
+    _swapChainFramebuffers.resize(_swapChainImageViews.size());
+
+    for (size_t i = 0; i < _swapChainImageViews.size(); i++)
+    {
+        VkImageView attachments[] = { _swapChainImageViews[i] };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = _renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = _swapChainExtent.width;
+        framebufferInfo.height = _swapChainExtent.height;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(_device, &framebufferInfo, nullptr, &_swapChainFramebuffers[i]) != VK_SUCCESS)
+            throw std::runtime_error("failed to create framebuffer");
+    }
 }
 
 std::vector<char> AppCtx::ReadFile(const std::string& filename)

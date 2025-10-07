@@ -101,6 +101,9 @@ private:
 	// Render Pass
 	void CreateRenderPass();
 
+	// Framebuffers
+	void CreateFramebuffers();
+
 	// Shader Loading
 	std::vector<char> ReadFile(const std::string& filename);
 
@@ -138,5 +141,7 @@ private:
 	VkPipelineLayout _pipelineLayout;
 
 	VkPipeline _graphicsPipeline;
+
+	std::vector<VkFramebuffer> _swapChainFramebuffers;
 };
 
