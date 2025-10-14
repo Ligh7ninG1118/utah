@@ -109,7 +109,7 @@ private:
 	// Command Pool & Buffers
 	void CreateCommandPool();
 
-	void CreateCommandBuffer();
+	void CreateCommandBuffers();
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
@@ -158,12 +158,14 @@ private:
 
 	VkCommandPool _commandPool;
 
-	VkCommandBuffer _commandBuffer;
+	std::vector<VkCommandBuffer> _commandBuffers;
 
-	VkSemaphore _imageAvailableSemaphore;
+	std::vector<VkSemaphore> _imageAvailableSemaphores;
 
-	VkSemaphore _renderFinishedSemaphore;
+	std::vector<VkSemaphore> _renderFinishedSemaphores;
 
-	VkFence _inFlightFence;
+	std::vector<VkFence> _inFlightFences;
+
+	uint32_t _currentFrame = 0;
 };
 
