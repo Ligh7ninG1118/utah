@@ -54,9 +54,16 @@ void AppCtx::InitWindow()
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     _pWindow = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "utah", nullptr, nullptr);
+    glfwSetWindowUserPointer(_pWindow, this);
+    glfwSetFramebufferSizeCallback(_pWindow, FramebufferResizeCallback);
+}
+
+void AppCtx::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
+{
+    auto pAppCtx = reinterpret_cast<AppCtx*>(glfwGetWindowUserPointer(window));
+    pAppCtx->_framebufferResized = true;
 }
 
 void AppCtx::InitVulkan()
@@ -94,10 +101,21 @@ void AppCtx::MainLoop()
 void AppCtx::DrawFrame()
 {
     vkWaitForFences(_device, 1, &_inFlightFences[_currentFrame], VK_TRUE, UINT64_MAX);
-    vkResetFences(_device, 1, &_inFlightFences[_currentFrame]);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(_device, _swapChain, UINT64_MAX, _imageAvailableSemaphores[_currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(_device, _swapChain, UINT64_MAX, _imageAvailableSemaphores[_currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        RecreateSwapChain();
+        return;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("Failed to acquire swapchain image");
+    }
+
+    vkResetFences(_device, 1, &_inFlightFences[_currentFrame]);
 
     vkResetCommandBuffer(_commandBuffers[_currentFrame], 0);
     RecordCommandBuffer(_commandBuffers[_currentFrame], imageIndex);
@@ -132,13 +150,29 @@ void AppCtx::DrawFrame()
     presentInfo.pImageIndices = &imageIndex;
     presentInfo.pResults = nullptr;
 
-    vkQueuePresentKHR(_presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(_presentQueue, &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || _framebufferResized)
+    {
+        _framebufferResized = false;
+        RecreateSwapChain();
+    }
+    else if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to present swap chain image!");
 
     _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void AppCtx::CleanUp()
 {
+    CleanupSwapChain();
+
+    vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
+
+    vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
+
+    vkDestroyRenderPass(_device, _renderPass, nullptr);
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
         vkDestroySemaphore(_device, _imageAvailableSemaphores[i], nullptr);
@@ -151,20 +185,7 @@ void AppCtx::CleanUp()
     }
 
     vkDestroyCommandPool(_device, _commandPool, nullptr);
-
-    for (auto framebuffer : _swapChainFramebuffers)
-        vkDestroyFramebuffer(_device, framebuffer, nullptr);
-
-    vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
-
-    vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
-
-    vkDestroyRenderPass(_device, _renderPass, nullptr);
-
-    for (auto imageView : _swapChainImageViews)
-        vkDestroyImageView(_device, imageView, nullptr);
-
-    vkDestroySwapchainKHR(_device, _swapChain, nullptr);
+    
 
     vkDestroyDevice(_device, nullptr);
 
@@ -180,6 +201,17 @@ void AppCtx::CleanUp()
     glfwDestroyWindow(_pWindow);
 
     glfwTerminate();
+}
+
+void AppCtx::CleanupSwapChain()
+{
+    for (auto framebuffer : _swapChainFramebuffers)
+        vkDestroyFramebuffer(_device, framebuffer, nullptr);
+
+    for (auto imageView : _swapChainImageViews)
+        vkDestroyImageView(_device, imageView, nullptr);
+
+    vkDestroySwapchainKHR(_device, _swapChain, nullptr);
 }
 
 void AppCtx::CreateInstance()
@@ -972,6 +1004,27 @@ void AppCtx::CreateSyncObjects()
         if (vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]) != VK_SUCCESS)
             throw std::runtime_error("Failed to create render finished semaphores");
     }
+}
+
+void AppCtx::RecreateSwapChain()
+{
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(_pWindow, &width, &height);
+    
+    while (width == 0 || height == 0)
+    {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(_pWindow, &width, &height);
+    }
+
+
+    vkDeviceWaitIdle(_device);
+
+    CleanupSwapChain();
+
+    CreateSwapChain();
+    CreateImageViews();
+    CreateFramebuffers();
 }
 
 std::vector<char> AppCtx::ReadFile(const std::string& filename)

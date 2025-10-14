@@ -84,6 +84,9 @@ private:
 		std::vector<VkPresentModeKHR> presentModes;
 	};
 
+	// Resize Callback
+	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
+
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
 
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -115,6 +118,11 @@ private:
 
 	// Synchronization
 	void CreateSyncObjects();
+
+	// Swap Chain Recreation
+	void CleanupSwapChain();
+
+	void RecreateSwapChain();
 
 	// Shader Loading
 	std::vector<char> ReadFile(const std::string& filename);
@@ -167,5 +175,7 @@ private:
 	std::vector<VkFence> _inFlightFences;
 
 	uint32_t _currentFrame = 0;
+
+	bool _framebufferResized = false;
 };
 
