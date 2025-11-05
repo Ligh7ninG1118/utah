@@ -59,6 +59,7 @@ private:
 
 	struct QueueFamilyIndices
 	{
+		// use optional wrapper: no value if not assigned anything
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
 

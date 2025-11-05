@@ -100,8 +100,10 @@ void AppCtx::MainLoop()
 
 void AppCtx::DrawFrame()
 {
+    // Wait previous frame to finish (block execution)
     vkWaitForFences(_device, 1, &_inFlightFences[_currentFrame], VK_TRUE, UINT64_MAX);
 
+    // Acquire image from the swap chain
     uint32_t imageIndex;
     VkResult result = vkAcquireNextImageKHR(_device, _swapChain, UINT64_MAX, _imageAvailableSemaphores[_currentFrame], VK_NULL_HANDLE, &imageIndex);
 
@@ -123,7 +125,10 @@ void AppCtx::DrawFrame()
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
+    // Wait on which semaphores before begin execution
     VkSemaphore waitSemaphores[] = { _imageAvailableSemaphores[_currentFrame] };
+    // Which stage to wait
+    // Previous pipeline stages (vertex shader etc) can already begin while waiting
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -131,6 +136,7 @@ void AppCtx::DrawFrame()
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &_commandBuffers[_currentFrame];
 
+    // Which semaphores to signal after command buffer submit for execution
     VkSemaphore signalSemaphores[] = { _renderFinishedSemaphores[imageIndex] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
@@ -165,6 +171,8 @@ void AppCtx::DrawFrame()
 
 void AppCtx::CleanUp()
 {
+    //TODO: can be extended with RAII later (acquire obj in constructor, release in destructor; or custom deleter to unique/shared ptr)
+
     CleanupSwapChain();
 
     vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
@@ -228,6 +236,7 @@ void AppCtx::CreateInstance()
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_0;
+    // Can use appInfo.pNext to point to extension information
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -248,7 +257,7 @@ void AppCtx::CreateInstance()
         createInfo.pNext = nullptr;
     }
 
-    // Desired global extensions
+    // Desired global extensions (for vulkan to work with glfw/windows)
     uint32_t glfwExtensionCount = 0;
 
     auto glfwExtensions = GetRequiredExtensions();
@@ -256,15 +265,13 @@ void AppCtx::CreateInstance()
     createInfo.enabledExtensionCount = static_cast<uint32_t>(glfwExtensions.size());
     createInfo.ppEnabledExtensionNames = glfwExtensions.data();
 
-    // Global validation layers to enable
-
 
     if (vkCreateInstance(&createInfo, nullptr, &_instance) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create VK instance");
     }
 
-
+    // Checking for extension support
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
 
@@ -310,7 +317,7 @@ bool AppCtx::CheckValidationLayerSupprt()
     return true;
 }
 
-
+// Grab extensions for GLFW/Windows
 std::vector<const char*> AppCtx::GetRequiredExtensions()
 {
     uint32_t glfwExtensionCount = 0;
@@ -378,6 +385,10 @@ void AppCtx::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMess
 
 VKAPI_ATTR VkBool32 VKAPI_CALL AppCtx::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
+    // Potential severity tiers: Verbose, Info, Warning, Error (Can use comparision operation)
+    // Potential message typers: General, Validation, Performance
+    // Edit PopulateDebugMessengerCreateInfo() to change showing what types of message
+
     std::cerr << "Validation Layer: " << pCallbackData->pMessage << std::endl;
 
     return VK_FALSE;
@@ -395,7 +406,7 @@ void AppCtx::PickPhysicalDevice()
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(_instance, &deviceCount, devices.data());
 
-    //TODO: For multi GPU device, could also rate devices and choose the highest
+    //TODO: For multi GPU device, could also rate devices and choose the one with the highest score
 
     for (const auto& device : devices)
     {
@@ -415,6 +426,9 @@ void AppCtx::PickPhysicalDevice()
 
 bool AppCtx::IsDeviceSuitable(VkPhysicalDevice device)
 {
+    // VkPhysicalDeviceProperties -> basic properties, like name, type, supported vulkan version
+    // VkPhysicalDeviceFeatures -> optional features, like texture compression, 64 bits float, multi viewport rendering
+
     /*VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
 
@@ -458,6 +472,9 @@ bool AppCtx::CheckDeviceExtensionSupport(VkPhysicalDevice device)
 
 AppCtx::QueueFamilyIndices AppCtx::FindQueueFamilies(VkPhysicalDevice device)
 {
+    // All Vulkan operations (drawing, uploading textures etc.) requires commands to be submitted to a queue
+    // Different types of queues originate from different queue families, each allows only a subset of commands
+
     QueueFamilyIndices indices;
 
     uint32_t queueFamilyCount = 0;
@@ -470,6 +487,7 @@ AppCtx::QueueFamilyIndices AppCtx::FindQueueFamilies(VkPhysicalDevice device)
 
     for (const auto& queueFamily : queueFamilies)
     {
+        // Only check for queue that supports graphcis commands (for now)
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             indices.graphicsFamily = index;
 
@@ -602,6 +620,8 @@ VkExtent2D AppCtx::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities
     }
     else
     {
+        // For high DPI display, screen coords != pixels
+        // Query the resolution of the window in pixel to get the actual resolution
         int width, height;
         glfwGetFramebufferSize(_pWindow, &width, &height);
 
@@ -622,8 +642,12 @@ void AppCtx::CreateSwapChain()
 {
     SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(_physicalDevice);
 
+    // Format: Color channels and types
+    // Color space: SRGB, etc.
     VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+    // Present Mode: Conditions for showing images (Immediate, FIFO, FIFO Relaxed, Mailbox)
     VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
+    // Swap Extent: Resolution
     VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
     uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -638,7 +662,7 @@ void AppCtx::CreateSwapChain()
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Render directly to, used as color attachment; If need post processing, use TRANSFER_DST 
 
     QueueFamilyIndices indices = FindQueueFamilies(_physicalDevice);
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
@@ -692,6 +716,7 @@ void AppCtx::CreateImageViews()
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
+        // Images used as color targets without any mipmapping/multiple layers
         createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         createInfo.subresourceRange.baseMipLevel = 0;
         createInfo.subresourceRange.levelCount = 1;
@@ -716,6 +741,8 @@ void AppCtx::CreateGraphicsPipeline()
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     vertShaderStageInfo.module = vertShaderModule;
     vertShaderStageInfo.pName = "main";
+
+    // Use pSpecializationInfo to specify shader constants
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
     fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -767,6 +794,7 @@ void AppCtx::CreateGraphicsPipeline()
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    // Depth clamp can be enabled for specical cases like shadow maps (requires GPU feature)
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
@@ -787,6 +815,7 @@ void AppCtx::CreateGraphicsPipeline()
     multisampling.alphaToCoverageEnable = VK_FALSE;
     multisampling.alphaToOneEnable = VK_FALSE;
 
+    // How new color from fragment shader combined and blended with those existed in the framebuffer
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
@@ -925,6 +954,7 @@ void AppCtx::CreateCommandBuffers()
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = _commandPool;
+    // Secondary can reuse common operations from primary cb
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = static_cast<uint32_t>(_commandBuffers.size());
 
@@ -981,6 +1011,9 @@ void AppCtx::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
 
 void AppCtx::CreateSyncObjects()
 {
+    // Semaphores for swapchain operations on GPU (acquire image, submit command buffer etc.)
+    // Fence for waiting the previous frame to finish on CPU (block execution)
+
     _imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     _renderFinishedSemaphores.resize(_swapChainImages.size());
     _inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
