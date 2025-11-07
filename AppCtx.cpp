@@ -82,6 +82,7 @@ void AppCtx::InitVulkan()
 
     CreateFramebuffers();
     CreateCommandPool();
+    CreateVertexBuffer();
     CreateCommandBuffers();
 
     CreateSyncObjects();
@@ -174,6 +175,9 @@ void AppCtx::CleanUp()
     //TODO: can be extended with RAII later (acquire obj in constructor, release in destructor; or custom deleter to unique/shared ptr)
 
     CleanupSwapChain();
+
+    vkDestroyBuffer(_device, _vertexBuffer, nullptr);
+    vkFreeMemory(_device, _vertexBufferMemory, nullptr);
 
     vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
 
@@ -990,6 +994,10 @@ void AppCtx::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _graphicsPipeline);
 
+    VkBuffer vertexBuffers[] = { _vertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -1010,6 +1018,57 @@ void AppCtx::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
         throw std::runtime_error("Failed to record command buffer");
+}
+
+void AppCtx::CreateVertexBuffer()
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+    // Can have multiple usage ORed together
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    // Shared between multiple queue families?
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(_device, &bufferInfo, nullptr, &_vertexBuffer) != VK_SUCCESS)
+        throw std::runtime_error("failed to create vertex buffer!");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(_device, _vertexBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(_device, &allocInfo, nullptr, &_vertexBufferMemory) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate vertex buffer memory");
+
+    // Offset required to be divisible by memReq.alignment
+    vkBindBufferMemory(_device, _vertexBuffer, _vertexBufferMemory, 0);
+
+    void* data;
+    vkMapMemory(_device, _vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+    memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+    vkUnmapMemory(_device, _vertexBufferMemory);
+    // May not immediately copy data into buffer memory. Using HOST_COHERENT to solve; Or could try flushing
+}
+
+uint32_t AppCtx::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+    {
+        // Check if corresponding bit set to 1 AND
+        // support for property
+        if ((typeFilter & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+
+    throw std::runtime_error("Failed to find suitable memory type!");
 }
 
 void AppCtx::CreateSyncObjects()

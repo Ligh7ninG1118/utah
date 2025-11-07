@@ -158,6 +158,11 @@ private:
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
+	// Buffer Creation
+	void CreateVertexBuffer();
+
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
 	// Synchronization
 	void CreateSyncObjects();
 
@@ -219,5 +224,8 @@ private:
 	uint32_t _currentFrame = 0;
 
 	bool _framebufferResized = false;
+
+	VkBuffer _vertexBuffer;
+	VkDeviceMemory _vertexBufferMemory;
 };
 
