@@ -45,9 +45,9 @@ struct Vertex
 
 struct UniformBufferObject
 {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
+	alignas(16) glm::mat4 model;
+	alignas(16) glm::mat4 view;
+	alignas(16) glm::mat4 proj;
 };
 
 const std::vector<Vertex> vertices = {
@@ -147,6 +147,7 @@ private:
 	// Descriptor Creation
 	void CreateDescriptorSetLayout();
 	void CreateDescriptorPool();
+	void CreateDescriptorSets();
 
 	// Graphics Pipeline
 	void CreateGraphicsPipeline();
@@ -207,6 +208,8 @@ private:
 	VkRenderPass _renderPass;
 
 	VkDescriptorSetLayout _descriptorSetLayout;
+	VkDescriptorPool _descriptorPool;
+	std::vector<VkDescriptorSet> _descriptorSets;
 
 	VkPipelineLayout _pipelineLayout;
 	VkPipeline _graphicsPipeline;
