@@ -6,6 +6,8 @@
 #include <optional>
 #include <string>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <chrono>
 #include <array>
 
 
@@ -41,6 +43,13 @@ struct Vertex
 	}
 };
 
+struct UniformBufferObject
+{
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
 const std::vector<Vertex> vertices = {
 	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -64,14 +73,13 @@ public:
 private:
 	//App Specific Functions
 	void InitWindow();
-
 	void InitVulkan();
-
 	void MainLoop();
-
 	void DrawFrame();
-
 	void CleanUp();
+
+	// Runtime Update
+	void UpdateUniformBuffer(uint32_t currentImage);
 
 	//Vulkan Specific Functions
 	void CreateInstance();
@@ -82,14 +90,10 @@ private:
 	std::vector<const char*> GetRequiredExtensions();
 
 	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-	
 	void SetupDebugMessenger();
-
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator,
 		VkDebugUtilsMessengerEXT* pDebugMessenger);
-
 	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
-
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -98,9 +102,7 @@ private:
 
 	// Physical Device
 	void PickPhysicalDevice();
-
 	bool IsDeviceSuitable(VkPhysicalDevice device);
-
 	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
 
 	struct QueueFamilyIndices
@@ -133,19 +135,18 @@ private:
 
 	// Resize Callback
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
-
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
-
 	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
 	void CreateSwapChain();
 
 	// Image Views
 	void CreateImageViews();
+
+	// Descriptor Creation
+	void CreateDescriptorSetLayout();
+	void CreateDescriptorPool();
 
 	// Graphics Pipeline
 	void CreateGraphicsPipeline();
@@ -158,20 +159,15 @@ private:
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
-
 	void CreateCommandBuffers();
-
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
 	// Buffer Creation and Data Transfer
 	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-
 	void CreateVertexBuffer();
-
 	void CreateIndexBuffer();
-
+	void CreateUniformBuffers();
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-
 	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	// Synchronization
@@ -179,7 +175,6 @@ private:
 
 	// Swap Chain Recreation
 	void CleanupSwapChain();
-
 	void RecreateSwapChain();
 
 	// Shader Loading
@@ -195,41 +190,32 @@ private:
 	VkDebugUtilsMessengerEXT _debugMessenger;
 
 	VkPhysicalDevice _physicalDevice = VK_NULL_HANDLE;
-
 	VkDevice _device;
 
 	VkQueue _graphicsQueue;
+	VkQueue _presentQueue;
 
 	VkSurfaceKHR _surface;
 
-	VkQueue _presentQueue;
-
 	VkSwapchainKHR _swapChain;
-
 	std::vector<VkImage> _swapChainImages;
-
 	VkFormat _swapChainImageFormat;
-
 	VkExtent2D _swapChainExtent;
-
 	std::vector<VkImageView> _swapChainImageViews;
+	std::vector<VkFramebuffer> _swapChainFramebuffers;
 
 	VkRenderPass _renderPass;
 
-	VkPipelineLayout _pipelineLayout;
+	VkDescriptorSetLayout _descriptorSetLayout;
 
+	VkPipelineLayout _pipelineLayout;
 	VkPipeline _graphicsPipeline;
 
-	std::vector<VkFramebuffer> _swapChainFramebuffers;
-
 	VkCommandPool _commandPool;
-
 	std::vector<VkCommandBuffer> _commandBuffers;
 
 	std::vector<VkSemaphore> _imageAvailableSemaphores;
-
 	std::vector<VkSemaphore> _renderFinishedSemaphores;
-
 	std::vector<VkFence> _inFlightFences;
 
 	uint32_t _currentFrame = 0;
@@ -240,6 +226,9 @@ private:
 	VkDeviceMemory _vertexBufferMemory;
 	VkBuffer _indexBuffer;
 	VkDeviceMemory _indexBufferMemory;
-	
+	std::vector<VkBuffer> _uniformBuffers;
+	std::vector<VkDeviceMemory> _uniformBuffersMemory;
+	std::vector<void*> _uniformBuffersMapped;
+
 };
 

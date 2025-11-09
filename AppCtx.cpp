@@ -78,12 +78,15 @@ void AppCtx::InitVulkan()
     CreateImageViews();
 
     CreateRenderPass();
+    CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
 
     CreateFramebuffers();
     CreateCommandPool();
     CreateVertexBuffer();
     CreateIndexBuffer();
+    CreateUniformBuffers();
+    CreateDescriptorPool();
     CreateCommandBuffers();
 
     CreateSyncObjects();
@@ -123,6 +126,8 @@ void AppCtx::DrawFrame()
 
     vkResetCommandBuffer(_commandBuffers[_currentFrame], 0);
     RecordCommandBuffer(_commandBuffers[_currentFrame], imageIndex);
+
+    UpdateUniformBuffer(_currentFrame);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -183,8 +188,13 @@ void AppCtx::CleanUp()
     vkDestroyBuffer(_device, _vertexBuffer, nullptr);
     vkFreeMemory(_device, _vertexBufferMemory, nullptr);
 
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        vkDestroyBuffer(_device, _uniformBuffers[i], nullptr);
+        vkFreeMemory(_device, _uniformBuffersMemory[i], nullptr);
+    }
+    vkDestroyDescriptorSetLayout(_device, _descriptorSetLayout, nullptr);
     vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
-
     vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
 
     vkDestroyRenderPass(_device, _renderPass, nullptr);
@@ -202,7 +212,6 @@ void AppCtx::CleanUp()
 
     vkDestroyCommandPool(_device, _commandPool, nullptr);
     
-
     vkDestroyDevice(_device, nullptr);
 
     if (enableValidationLayers)
@@ -217,6 +226,22 @@ void AppCtx::CleanUp()
     glfwDestroyWindow(_pWindow);
 
     glfwTerminate();
+}
+
+void AppCtx::UpdateUniformBuffer(uint32_t currentImage)
+{
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.0f), _swapChainExtent.width / (float)_swapChainExtent.height, 0.1f, 10.0f);
+    ubo.proj[1][1] *= -1;
+
+    memcpy(_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
 void AppCtx::CleanupSwapChain()
@@ -738,6 +763,29 @@ void AppCtx::CreateImageViews()
     }
 }
 
+void AppCtx::CreateDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    // Stage flags can be ORed, or simply be STAGE_ALL_GRAPHICS
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create descriptor set layout");
+}
+
+void AppCtx::CreateDescriptorPool()
+{
+}
+
 void AppCtx::CreateGraphicsPipeline()
 {
     auto vertShaderCode = ReadFile("shaders/HelloTri-vert.spv");
@@ -852,6 +900,8 @@ void AppCtx::CreateGraphicsPipeline()
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &_descriptorSetLayout;
     
     if (vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &_pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("Failed to create pipeline layout");
@@ -1104,6 +1154,23 @@ void AppCtx::CreateIndexBuffer()
 
     vkDestroyBuffer(_device, stagingBuffer, nullptr);
     vkFreeMemory(_device, stagingBufferMemory, nullptr);
+}
+
+void AppCtx::CreateUniformBuffers()
+{
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    _uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    _uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    _uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            _uniformBuffers[i], _uniformBuffersMemory[i]);
+        // Persistent mapping, buffer stays mapped to this pointer for whole lifetime
+        vkMapMemory(_device, _uniformBuffersMemory[i], 0, bufferSize, 0, &_uniformBuffersMapped[i]);
+    }
 }
 
 uint32_t AppCtx::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
