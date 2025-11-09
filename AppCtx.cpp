@@ -83,6 +83,7 @@ void AppCtx::InitVulkan()
     CreateFramebuffers();
     CreateCommandPool();
     CreateVertexBuffer();
+    CreateIndexBuffer();
     CreateCommandBuffers();
 
     CreateSyncObjects();
@@ -175,6 +176,9 @@ void AppCtx::CleanUp()
     //TODO: can be extended with RAII later (acquire obj in constructor, release in destructor; or custom deleter to unique/shared ptr)
 
     CleanupSwapChain();
+
+    vkDestroyBuffer(_device, _indexBuffer, nullptr);
+    vkFreeMemory(_device, _indexBufferMemory, nullptr);
 
     vkDestroyBuffer(_device, _vertexBuffer, nullptr);
     vkFreeMemory(_device, _vertexBufferMemory, nullptr);
@@ -1000,6 +1004,8 @@ void AppCtx::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
+    vkCmdBindIndexBuffer(commandBuffer, _indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -1014,7 +1020,8 @@ void AppCtx::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIn
     scissor.extent = _swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1070,6 +1077,30 @@ void AppCtx::CreateVertexBuffer()
         _vertexBuffer, _vertexBufferMemory);
 
     CopyBuffer(stagingBuffer, _vertexBuffer, bufferSize);
+
+    vkDestroyBuffer(_device, stagingBuffer, nullptr);
+    vkFreeMemory(_device, stagingBufferMemory, nullptr);
+}
+
+void AppCtx::CreateIndexBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+
+    CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, indices.data(), (size_t)bufferSize);
+    vkUnmapMemory(_device, stagingBufferMemory);
+
+    CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        _indexBuffer, _indexBufferMemory);
+
+    CopyBuffer(stagingBuffer, _indexBuffer, bufferSize);
 
     vkDestroyBuffer(_device, stagingBuffer, nullptr);
     vkFreeMemory(_device, stagingBufferMemory, nullptr);
