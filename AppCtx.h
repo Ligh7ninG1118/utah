@@ -158,10 +158,14 @@ private:
 
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
-	// Buffer Creation
+	// Buffer Creation and Data Transfer
+	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+
 	void CreateVertexBuffer();
 
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	// Synchronization
 	void CreateSyncObjects();
@@ -227,5 +231,7 @@ private:
 
 	VkBuffer _vertexBuffer;
 	VkDeviceMemory _vertexBufferMemory;
+
+	
 };
 
