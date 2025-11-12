@@ -187,6 +187,8 @@ void AppCtx::CleanUp()
 
     CleanupSwapChain();
 
+    vkDestroySampler(_device, _textureSampler, nullptr);
+    vkDestroyImageView(_device, _textureImageView, nullptr);
     vkDestroyImage(_device, _textureImage, nullptr);
     vkFreeMemory(_device, _textureImageMemory, nullptr);
 
@@ -469,18 +471,6 @@ void AppCtx::PickPhysicalDevice()
 
 bool AppCtx::IsDeviceSuitable(VkPhysicalDevice device)
 {
-    // VkPhysicalDeviceProperties -> basic properties, like name, type, supported vulkan version
-    // VkPhysicalDeviceFeatures -> optional features, like texture compression, 64 bits float, multi viewport rendering
-
-    /*VkPhysicalDeviceProperties deviceProperties;
-    VkPhysicalDeviceFeatures deviceFeatures;
-
-    vkGetPhysicalDeviceProperties(device, &deviceProperties);
-    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-    return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
-        && deviceFeatures.geometryShader;*/
-
     QueueFamilyIndices indices = FindQueueFamilies(device);
 
     bool extensionsSupported = CheckDeviceExtensionSupport(device);
@@ -491,8 +481,10 @@ bool AppCtx::IsDeviceSuitable(VkPhysicalDevice device)
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
-    return indices.IsComplete() && extensionsSupported && swapChainAdequate;
+    return indices.IsComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
 }
 
 bool AppCtx::CheckDeviceExtensionSupport(VkPhysicalDevice device)
@@ -570,6 +562,7 @@ void AppCtx::CreateLogicalDevice()
     }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -745,31 +738,33 @@ void AppCtx::CreateSwapChain()
     _swapChainExtent = extent;
 }
 
+VkImageView AppCtx::CreateImageView(VkImage image, VkFormat format)
+{
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView imageView;
+    if (vkCreateImageView(_device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create image view");
+
+    return imageView;
+}
+
 void AppCtx::CreateImageViews()
 {
     _swapChainImageViews.resize(_swapChainImages.size());
 
     for (size_t i = 0; i < _swapChainImages.size(); i++)
     {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = _swapChainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = _swapChainImageFormat;
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-        // Images used as color targets without any mipmapping/multiple layers
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(_device, &createInfo, nullptr, &_swapChainImageViews[i]) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create image views");
+        _swapChainImageViews[i] = CreateImageView(_swapChainImages[i], _swapChainImageFormat);
     }
 }
 
@@ -1206,6 +1201,40 @@ void AppCtx::CreateTextureImage()
 
     vkDestroyBuffer(_device, stagingBuffer, nullptr);
     vkFreeMemory(_device, stagingBufferMemory, nullptr);
+}
+
+void AppCtx::CreateTextureImageView()
+{
+    _textureImageView = CreateImageView(_textureImage, VK_FORMAT_R8G8B8A8_SRGB);
+
+}
+
+void AppCtx::CreateTextureSampler()
+{
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(_physicalDevice, &properties);
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+    
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(_device, &samplerInfo, nullptr, &_textureSampler) != VK_SUCCESS)
+        throw std::runtime_error("failed to create texture sampler");
 }
 
 void AppCtx::CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, 
