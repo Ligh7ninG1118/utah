@@ -186,7 +186,8 @@ private:
 	void CreateTextureImage();
 	void CreateTextureImageView();
 	void CreateTextureSampler();
-	void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
+	void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, 
+		VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
 		VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 	void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
 	void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
@@ -220,6 +221,10 @@ private:
 	std::vector<char> ReadFile(const std::string& filename);
 
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
+
+	// Multiple Sampling
+	VkSampleCountFlagBits GetMaxUsableSampleCount();
+	void CreateColorResources();
 
 	//Variables
 	GLFWwindow* _pWindow;
@@ -283,5 +288,10 @@ private:
 
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
+
+	VkSampleCountFlagBits _msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkImage _colorImage;
+	VkDeviceMemory _colorImageMemory;
+	VkImageView _colorImageView;
 };
 
