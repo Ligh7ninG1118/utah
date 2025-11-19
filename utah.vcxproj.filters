@@ -15,27 +15,22 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="utah.cpp">
+    <ClCompile Include="src\utah.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="AppCtx.cpp">
+    <ClCompile Include="src\AppCtx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AppCtx.h">
+    <ClInclude Include="src\AppCtx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="HelloTri.vert">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="HelloTri.frag">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="HelloTri.slang">
-      <Filter>Resource Files</Filter>
+    <None Include="shaders\HelloTri.slang" />
+    <None Include="shaders\slangCompile.bat">
+      <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
 </Project>

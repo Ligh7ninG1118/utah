@@ -112,7 +112,7 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)slangCompile.bat"</Command>
+      <Command>call "$(ProjectDir)shaders\slangCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -133,20 +133,19 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)slangCompile.bat"</Command>
+      <Command>call "$(ProjectDir)shaders\slangCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="AppCtx.cpp" />
-    <ClCompile Include="utah.cpp" />
+    <ClCompile Include="src\AppCtx.cpp" />
+    <ClCompile Include="src\utah.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AppCtx.h" />
+    <ClInclude Include="src\AppCtx.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="HelloTri.frag" />
-    <None Include="HelloTri.slang" />
-    <None Include="HelloTri.vert" />
+    <None Include="shaders\HelloTri.slang" />
+    <None Include="shaders\slangCompile.bat" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

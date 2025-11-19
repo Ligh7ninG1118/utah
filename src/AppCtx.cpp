@@ -548,7 +548,7 @@ void AppCtx::CreateDescriptorSets()
 
 void AppCtx::CreateGraphicsPipeline()
 {
-    vk::raii::ShaderModule            shaderModule = CreateShaderModule(ReadFile("slang.spv"));
+    vk::raii::ShaderModule            shaderModule = CreateShaderModule(ReadFile("shaderBin/HelloTri.spv"));
 
     vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
         .stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain"};
