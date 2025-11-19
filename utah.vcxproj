@@ -112,7 +112,7 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)ShaderCompile.bat"</Command>
+      <Command>call "$(ProjectDir)slangCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -133,7 +133,7 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)ShaderCompile.bat"</Command>
+      <Command>call "$(ProjectDir)slangCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -145,6 +145,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="HelloTri.frag" />
+    <None Include="HelloTri.slang" />
     <None Include="HelloTri.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
