@@ -61,11 +61,15 @@ struct std::hash<Vertex>
 	}
 };
 
-struct UniformBufferObject
+struct CameraUBO
 {
-	alignas(16) glm::mat4 model;
 	alignas(16) glm::mat4 view;
 	alignas(16) glm::mat4 proj;
+};
+
+struct ObjectUBO
+{
+	alignas(16) glm::mat4 model;
 };
 
 
@@ -232,12 +236,24 @@ private:
 	vk::raii::Buffer       _indexBuffer = nullptr;
 	vk::raii::DeviceMemory _indexBufferMemory = nullptr;
 
-	std::vector<vk::raii::Buffer>       _uniformBuffers;
-	std::vector<vk::raii::DeviceMemory> _uniformBuffersMemory;
-	std::vector<void*>                 _uniformBuffersMapped;
+	std::vector<vk::raii::Buffer>       _globalUniformBuffers;
+	std::vector<vk::raii::DeviceMemory> _globalUniformBuffersMemory;
+	std::vector<void*>                 _globalUniformBuffersMapped;
+
+	std::vector<vk::raii::Buffer>       _obj1UniformBuffers;
+	std::vector<vk::raii::DeviceMemory> _obj1UniformBuffersMemory;
+	std::vector<void*>                 _obj1UniformBuffersMapped;
+
+	std::vector<vk::raii::Buffer>       _obj2UniformBuffers;
+	std::vector<vk::raii::DeviceMemory> _obj2UniformBuffersMemory;
+	std::vector<void*>                 _obj2UniformBuffersMapped;
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
-	std::vector<vk::raii::DescriptorSet> _descriptorSets;
+	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
+
+	std::vector<vk::raii::DescriptorSet> _obj1DescriptorSets;
+	std::vector<vk::raii::DescriptorSet> _obj2DescriptorSets;
+
 
 	vk::raii::CommandPool                _commandPool = nullptr;
 	std::vector<vk::raii::CommandBuffer> _commandBuffers;

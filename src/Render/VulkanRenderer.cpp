@@ -159,15 +159,26 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	auto  currentTime = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-	UniformBufferObject ubo{};
-	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	//ubo.model = glm::mat4(1.0f);
-	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	ubo.proj =
+	CameraUBO camUBO{};
+	camUBO.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	camUBO.proj =
 		glm::perspective(glm::radians(45.0f), _swapChainExtent.width / (float)_swapChainExtent.height, 0.1f, 10.0f);
-	ubo.proj[1][1] *= -1;
+	camUBO.proj[1][1] *= -1;
 
-	memcpy(_uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));
+
+	ObjectUBO obj1UBO{};
+	obj1UBO.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	obj1UBO.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+	memcpy(_obj1UniformBuffersMapped[currentImage], &obj1UBO, sizeof(obj1UBO));
+
+	ObjectUBO obj2UBO{};
+	obj2UBO.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	obj2UBO.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+	memcpy(_obj2UniformBuffersMapped[currentImage], &obj2UBO, sizeof(obj2UBO));
+
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -355,15 +366,18 @@ void VulkanRenderer::CreateLogicalDevice()
 	};
 
 	// create a Device
-	float                     queuePriority = 0.0f;
+	// Priority between 0.0f to 1.0f
+	float queuePriority = 0.0f;
 	vk::DeviceQueueCreateInfo deviceQueueCreateInfo{
-		.queueFamilyIndex = _queueIndex, .queueCount = 1, .pQueuePriorities = &queuePriority };
-	vk::DeviceCreateInfo deviceCreateInfo{ .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-										  .queueCreateInfoCount = 1,
-										  .pQueueCreateInfos = &deviceQueueCreateInfo,
-										  .enabledExtensionCount =
-											  static_cast<uint32_t>(_requiredDeviceExtension.size()),
-										  .ppEnabledExtensionNames = _requiredDeviceExtension.data() };
+		.queueFamilyIndex = _queueIndex,
+		.queueCount = 1,
+		.pQueuePriorities = &queuePriority };
+	vk::DeviceCreateInfo deviceCreateInfo{
+		.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+		.queueCreateInfoCount = 1,
+		.pQueueCreateInfos = &deviceQueueCreateInfo,
+		.enabledExtensionCount = static_cast<uint32_t>(_requiredDeviceExtension.size()),
+		.ppEnabledExtensionNames = _requiredDeviceExtension.data() };
 
 	_device = vk::raii::Device(_physicalDevice, deviceCreateInfo);
 	_queue = vk::raii::Queue(_device, _queueIndex, 0);
@@ -484,11 +498,21 @@ void VulkanRenderer::RecreateSwapChain()
 
 void VulkanRenderer::CreateDescriptorSetLayout()
 {
+	// One more binding or change the 0th binding to count 2?
 	std::array bindings = {
-		vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex,
-									   nullptr),
-		vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1,
-									   vk::ShaderStageFlagBits::eFragment, nullptr),
+		vk::DescriptorSetLayoutBinding(
+			0, 
+			vk::DescriptorType::eUniformBuffer, 
+			1, 
+			vk::ShaderStageFlagBits::eVertex,
+			nullptr),
+
+		vk::DescriptorSetLayoutBinding(
+			1, 
+			vk::DescriptorType::eCombinedImageSampler, 
+			1,				   
+			vk::ShaderStageFlagBits::eFragment, 
+			nullptr),
 	};
 
 	vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()),
@@ -512,27 +536,33 @@ void VulkanRenderer::CreateDescriptorPool()
 void VulkanRenderer::CreateDescriptorSets()
 {
 	std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _descriptorSetLayout);
+
 	vk::DescriptorSetAllocateInfo        allocInfo{ .descriptorPool = _descriptorPool,
 												   .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
 												   .pSetLayouts = layouts.data() };
 
-	_descriptorSets.clear();
-	_descriptorSets = _device.allocateDescriptorSets(allocInfo);
+	_globalDescriptorSets.clear();
+	_globalDescriptorSets = _device.allocateDescriptorSets(allocInfo);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vk::DescriptorBufferInfo bufferInfo{
-			.buffer = _uniformBuffers[i], .offset = 0, .range = sizeof(UniformBufferObject) };
+		vk::DescriptorBufferInfo bufferInfo{ .buffer = _globalUniformBuffers[i], 
+											.offset = 0, 
+											.range = sizeof(CameraUBO)};
+
+
 		vk::DescriptorImageInfo imageInfo{ .sampler = _textureSampler,
 										  .imageView = _textureImageView,
 										  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-		std::array              descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _descriptorSets[i],
+
+
+		std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 																		.dstBinding = 0,
 																		.dstArrayElement = 0,
 																		.descriptorCount = 1,
 																		.descriptorType = vk::DescriptorType::eUniformBuffer,
 																		.pBufferInfo = &bufferInfo},
-									vk::WriteDescriptorSet{.dstSet = _descriptorSets[i],
+									vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 																		.dstBinding = 1,
 																		.dstArrayElement = 0,
 																		.descriptorCount = 1,
@@ -684,18 +714,38 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 									   .colorAttachmentCount = 1,
 									   .pColorAttachments = &colorAttachment,
 									   .pDepthAttachment = &depthAttachment };
+
 	_commandBuffers[_currentFrame].beginRendering(renderingInfo);
 	_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_graphicsPipeline);
+
 	_commandBuffers[_currentFrame].setViewport(0,
-		vk::Viewport(0.0f, 0.0f, static_cast<float>(_swapChainExtent.width),
-			static_cast<float>(_swapChainExtent.height), 0.0f, 1.0f));
-	_commandBuffers[_currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), _swapChainExtent));
+		vk::Viewport(
+			0.0f, 0.0f, 
+			static_cast<float>(_swapChainExtent.width),
+			static_cast<float>(_swapChainExtent.height), 
+			0.0f, 1.0f));
+
+	_commandBuffers[_currentFrame].setScissor(0, 
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			_swapChainExtent));
+
 	_commandBuffers[_currentFrame].bindVertexBuffers(0, *_vertexBuffer, { 0 });
+
 	_commandBuffers[_currentFrame].bindIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
-	_commandBuffers[_currentFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _pipelineLayout, 0,
-		*_descriptorSets[_currentFrame], nullptr);
+
+	_commandBuffers[_currentFrame].bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics, 
+		_pipelineLayout, 
+		0,
+		*_globalDescriptorSets[_currentFrame], 
+		nullptr);
+
 	_commandBuffers[_currentFrame].drawIndexed(_indices.size(), 1, 0, 0, 0);
+
 	_commandBuffers[_currentFrame].endRendering();
+
+
 	// After rendering, transition the swapchain image to PRESENT_SRC
 	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::ePresentSrcKHR,
@@ -1110,21 +1160,49 @@ void VulkanRenderer::CreateIndexBuffer()
 
 void VulkanRenderer::CreateUniformBuffers()
 {
-	_uniformBuffers.clear();
-	_uniformBuffersMemory.clear();
-	_uniformBuffersMapped.clear();
+	_globalUniformBuffers.clear();
+	_globalUniformBuffersMemory.clear();
+	_globalUniformBuffersMapped.clear();
+
+	_obj1UniformBuffers.clear();
+	_obj1UniformBuffersMemory.clear();
+	_obj1UniformBuffersMapped.clear();
+
+	_obj2UniformBuffers.clear();
+	_obj2UniformBuffersMemory.clear();
+	_obj2UniformBuffersMapped.clear();
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vk::DeviceSize         bufferSize = sizeof(UniformBufferObject);
+		vk::DeviceSize         bufferSize = sizeof(CameraUBO);
 		vk::raii::Buffer       buffer({});
 		vk::raii::DeviceMemory bufferMem({});
 		CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
 			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer,
 			bufferMem);
-		_uniformBuffers.emplace_back(std::move(buffer));
-		_uniformBuffersMemory.emplace_back(std::move(bufferMem));
-		_uniformBuffersMapped.emplace_back(_uniformBuffersMemory[i].mapMemory(0, bufferSize));
+		_globalUniformBuffers.emplace_back(std::move(buffer));
+		_globalUniformBuffersMemory.emplace_back(std::move(bufferMem));
+		_globalUniformBuffersMapped.emplace_back(_globalUniformBuffersMemory[i].mapMemory(0, bufferSize));
+
+		vk::DeviceSize         bufferSize1 = sizeof(ObjectUBO);
+		vk::raii::Buffer       buffer1({});
+		vk::raii::DeviceMemory bufferMem1({});
+		CreateBuffer(bufferSize1, vk::BufferUsageFlagBits::eUniformBuffer,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer1,
+			bufferMem1);
+		_obj1UniformBuffers.emplace_back(std::move(buffer1));
+		_obj1UniformBuffersMemory.emplace_back(std::move(bufferMem1));
+		_obj1UniformBuffersMapped.emplace_back(_obj1UniformBuffersMemory[i].mapMemory(0, bufferSize1));
+
+		vk::DeviceSize         bufferSize2 = sizeof(ObjectUBO);
+		vk::raii::Buffer       buffer2({});
+		vk::raii::DeviceMemory bufferMem2({});
+		CreateBuffer(bufferSize2, vk::BufferUsageFlagBits::eUniformBuffer,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer2,
+			bufferMem2);
+		_obj2UniformBuffers.emplace_back(std::move(buffer2));
+		_obj2UniformBuffersMemory.emplace_back(std::move(bufferMem2));
+		_obj2UniformBuffersMapped.emplace_back(_obj2UniformBuffersMemory[i].mapMemory(0, bufferSize2));
 	}
 }
 
