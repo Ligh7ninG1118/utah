@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include "RenderComponent.h"
+
 struct Vertex
 {
 	glm::vec3 pos;
@@ -210,7 +212,8 @@ private:
 	vk::Extent2D                     _swapChainExtent;
 	std::vector<vk::raii::ImageView> _swapChainImageViews;
 
-	vk::raii::DescriptorSetLayout _descriptorSetLayout = nullptr;
+	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
+	vk::raii::DescriptorSetLayout _objDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _pipelineLayout = nullptr;
 	vk::raii::Pipeline            _graphicsPipeline = nullptr;
 
@@ -240,20 +243,8 @@ private:
 	std::vector<vk::raii::DeviceMemory> _globalUniformBuffersMemory;
 	std::vector<void*>                 _globalUniformBuffersMapped;
 
-	std::vector<vk::raii::Buffer>       _obj1UniformBuffers;
-	std::vector<vk::raii::DeviceMemory> _obj1UniformBuffersMemory;
-	std::vector<void*>                 _obj1UniformBuffersMapped;
-
-	std::vector<vk::raii::Buffer>       _obj2UniformBuffers;
-	std::vector<vk::raii::DeviceMemory> _obj2UniformBuffersMemory;
-	std::vector<void*>                 _obj2UniformBuffersMapped;
-
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
-
-	std::vector<vk::raii::DescriptorSet> _obj1DescriptorSets;
-	std::vector<vk::raii::DescriptorSet> _obj2DescriptorSets;
-
 
 	vk::raii::CommandPool                _commandPool = nullptr;
 	std::vector<vk::raii::CommandBuffer> _commandBuffers;
@@ -272,5 +263,8 @@ private:
 	std::vector<const char*> _requiredDeviceExtension = { vk::KHRSwapchainExtensionName, vk::KHRSpirv14ExtensionName,
 														  vk::KHRSynchronization2ExtensionName,
 														  vk::KHRCreateRenderpass2ExtensionName };
+
+	//std::vector<RenderComponent> _objects;
+	std::array<RenderComponent, 3> _objects;
 };
 

@@ -23,6 +23,8 @@ const std::string TEXTURE_PATH = "models/viking_room.png";
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+constexpr int MAX_OBJECTS = 3;
+
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
 #ifdef NDEBUG
@@ -43,6 +45,11 @@ VulkanRenderer::~VulkanRenderer()
 
 void VulkanRenderer::Initialize()
 {
+	for (int i = 0; i < MAX_OBJECTS; i++)
+	{
+		_objects[i]._position.x = i;
+	}
+
 	CreateInstance();
 	SetupDebugMessenger();
 	RegisterResizeCallback();
@@ -74,6 +81,8 @@ void VulkanRenderer::Initialize()
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
+
+	
 }
 
 void VulkanRenderer::DrawFrame()
@@ -167,18 +176,14 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));
 
-	ObjectUBO obj1UBO{};
-	obj1UBO.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	obj1UBO.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	for (auto& object : _objects)
+	{
+		object._rotation.x += 0.00001f;
+		ObjectUBO objUBO{};
+		objUBO.model = object.GetModelMatrix();
 
-	memcpy(_obj1UniformBuffersMapped[currentImage], &obj1UBO, sizeof(obj1UBO));
-
-	ObjectUBO obj2UBO{};
-	obj2UBO.model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	obj2UBO.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(-90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
-	memcpy(_obj2UniformBuffersMapped[currentImage], &obj2UBO, sizeof(obj2UBO));
-
+		memcpy(object._uboMapped[currentImage], &objUBO, sizeof(objUBO));
+	}
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -498,35 +503,50 @@ void VulkanRenderer::RecreateSwapChain()
 
 void VulkanRenderer::CreateDescriptorSetLayout()
 {
-	// One more binding or change the 0th binding to count 2?
 	std::array bindings = {
 		vk::DescriptorSetLayoutBinding(
 			0, 
 			vk::DescriptorType::eUniformBuffer, 
 			1, 
 			vk::ShaderStageFlagBits::eVertex,
-			nullptr),
-
-		vk::DescriptorSetLayoutBinding(
-			1, 
-			vk::DescriptorType::eCombinedImageSampler, 
-			1,				   
-			vk::ShaderStageFlagBits::eFragment, 
-			nullptr),
+			nullptr)
 	};
 
 	vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()),
 												 .pBindings = bindings.data() };
-	_descriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfo);
+	_globalDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfo);
+
+	std::array bindingsObj = {
+		vk::DescriptorSetLayoutBinding(
+			0,
+			vk::DescriptorType::eUniformBuffer,
+			1,
+			vk::ShaderStageFlagBits::eVertex,
+			nullptr),
+		vk::DescriptorSetLayoutBinding(
+			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			1,
+			vk::ShaderStageFlagBits::eFragment,
+			nullptr),
+	};
+
+	vk::DescriptorSetLayoutCreateInfo layoutInfoObj{ .bindingCount = static_cast<uint32_t>(bindingsObj.size()),
+												 .pBindings = bindingsObj.data() };
+	_objDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfoObj);
+
 }
 
 void VulkanRenderer::CreateDescriptorPool()
 {
-	std::array poolSize{ vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+	const uint32_t totalUBOs = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * MAX_OBJECTS;
+
+	std::array poolSize{
+						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, totalUBOs),
 						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT) };
 
 	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-										  .maxSets = MAX_FRAMES_IN_FLIGHT,
+										  .maxSets = totalUBOs,
 										  .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
 										  .pPoolSizes = poolSize.data() };
 
@@ -535,11 +555,11 @@ void VulkanRenderer::CreateDescriptorPool()
 
 void VulkanRenderer::CreateDescriptorSets()
 {
-	std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _descriptorSetLayout);
+	std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _globalDescriptorSetLayout);
 
-	vk::DescriptorSetAllocateInfo        allocInfo{ .descriptorPool = _descriptorPool,
-												   .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-												   .pSetLayouts = layouts.data() };
+	vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = _descriptorPool,
+											.descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+											.pSetLayouts = layouts.data() };
 
 	_globalDescriptorSets.clear();
 	_globalDescriptorSets = _device.allocateDescriptorSets(allocInfo);
@@ -550,26 +570,52 @@ void VulkanRenderer::CreateDescriptorSets()
 											.offset = 0, 
 											.range = sizeof(CameraUBO)};
 
-
-		vk::DescriptorImageInfo imageInfo{ .sampler = _textureSampler,
-										  .imageView = _textureImageView,
-										  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-
-
 		std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 																		.dstBinding = 0,
 																		.dstArrayElement = 0,
 																		.descriptorCount = 1,
 																		.descriptorType = vk::DescriptorType::eUniformBuffer,
-																		.pBufferInfo = &bufferInfo},
-									vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
-																		.dstBinding = 1,
-																		.dstArrayElement = 0,
-																		.descriptorCount = 1,
-																		.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-																		.pImageInfo = &imageInfo} };
+																		.pBufferInfo = &bufferInfo}};
 		_device.updateDescriptorSets(descriptorWrites, {});
 	}
+
+	for (auto& object : _objects)
+	{
+		std::vector<vk::DescriptorSetLayout> layoutsObj(MAX_FRAMES_IN_FLIGHT, _objDescriptorSetLayout);
+
+		vk::DescriptorSetAllocateInfo allocInfoObj{ .descriptorPool = _descriptorPool,
+												.descriptorSetCount = static_cast<uint32_t>(layoutsObj.size()),
+												.pSetLayouts = layoutsObj.data() };
+
+		object._descSets.clear();
+		object._descSets = _device.allocateDescriptorSets(allocInfoObj);
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+			vk::DescriptorBufferInfo bufferInfo{ .buffer = object._ubo[i],
+											.offset = 0,
+											.range = sizeof(ObjectUBO) };
+
+			vk::DescriptorImageInfo imageInfo{ .sampler = _textureSampler,
+											  .imageView = _textureImageView,
+											  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+
+			std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = *object._descSets[i],
+																			.dstBinding = 0,
+																			.dstArrayElement = 0,
+																			.descriptorCount = 1,
+																			.descriptorType = vk::DescriptorType::eUniformBuffer,
+																			.pBufferInfo = &bufferInfo},
+										vk::WriteDescriptorSet{.dstSet = *object._descSets[i],
+																			.dstBinding = 1,
+																			.dstArrayElement = 0,
+																			.descriptorCount = 1,
+																			.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+																			.pImageInfo = &imageInfo} };
+			_device.updateDescriptorSets(descriptorWrites, {});
+		}
+	}
+
 }
 
 void VulkanRenderer::CreateGraphicsPipeline()
@@ -616,12 +662,21 @@ void VulkanRenderer::CreateGraphicsPipeline()
 														.attachmentCount = 1,
 														.pAttachments = &colorBlendAttachment };
 
-	std::vector                        dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+	std::vector dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
+	std::array<vk::DescriptorSetLayout, 2> setLayouts = 
+	{
+		*_globalDescriptorSetLayout,
+		*_objDescriptorSetLayout
+	};
+
+	
 	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-		.setLayoutCount = 1, .pSetLayouts = &*_descriptorSetLayout, .pushConstantRangeCount = 0 };
+		.setLayoutCount = static_cast<uint32_t>(setLayouts.size()), 
+		.pSetLayouts = setLayouts.data(), 
+		.pushConstantRangeCount = 0};
 
 	_pipelineLayout = vk::raii::PipelineLayout(_device, pipelineLayoutInfo);
 
@@ -735,13 +790,23 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	_commandBuffers[_currentFrame].bindIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
 
 	_commandBuffers[_currentFrame].bindDescriptorSets(
-		vk::PipelineBindPoint::eGraphics, 
-		_pipelineLayout, 
+		vk::PipelineBindPoint::eGraphics,
+		_pipelineLayout,
 		0,
-		*_globalDescriptorSets[_currentFrame], 
+		*_globalDescriptorSets[_currentFrame],
 		nullptr);
 
-	_commandBuffers[_currentFrame].drawIndexed(_indices.size(), 1, 0, 0, 0);
+	for (const auto& object : _objects)
+	{
+		_commandBuffers[_currentFrame].bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			1,
+			*object._descSets[_currentFrame],
+			nullptr);
+
+		_commandBuffers[_currentFrame].drawIndexed(_indices.size(), 1, 0, 0, 0);
+	}
 
 	_commandBuffers[_currentFrame].endRendering();
 
@@ -1164,14 +1229,6 @@ void VulkanRenderer::CreateUniformBuffers()
 	_globalUniformBuffersMemory.clear();
 	_globalUniformBuffersMapped.clear();
 
-	_obj1UniformBuffers.clear();
-	_obj1UniformBuffersMemory.clear();
-	_obj1UniformBuffersMapped.clear();
-
-	_obj2UniformBuffers.clear();
-	_obj2UniformBuffersMemory.clear();
-	_obj2UniformBuffersMapped.clear();
-
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		vk::DeviceSize         bufferSize = sizeof(CameraUBO);
@@ -1183,27 +1240,29 @@ void VulkanRenderer::CreateUniformBuffers()
 		_globalUniformBuffers.emplace_back(std::move(buffer));
 		_globalUniformBuffersMemory.emplace_back(std::move(bufferMem));
 		_globalUniformBuffersMapped.emplace_back(_globalUniformBuffersMemory[i].mapMemory(0, bufferSize));
-
-		vk::DeviceSize         bufferSize1 = sizeof(ObjectUBO);
-		vk::raii::Buffer       buffer1({});
-		vk::raii::DeviceMemory bufferMem1({});
-		CreateBuffer(bufferSize1, vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer1,
-			bufferMem1);
-		_obj1UniformBuffers.emplace_back(std::move(buffer1));
-		_obj1UniformBuffersMemory.emplace_back(std::move(bufferMem1));
-		_obj1UniformBuffersMapped.emplace_back(_obj1UniformBuffersMemory[i].mapMemory(0, bufferSize1));
-
-		vk::DeviceSize         bufferSize2 = sizeof(ObjectUBO);
-		vk::raii::Buffer       buffer2({});
-		vk::raii::DeviceMemory bufferMem2({});
-		CreateBuffer(bufferSize2, vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer2,
-			bufferMem2);
-		_obj2UniformBuffers.emplace_back(std::move(buffer2));
-		_obj2UniformBuffersMemory.emplace_back(std::move(bufferMem2));
-		_obj2UniformBuffersMapped.emplace_back(_obj2UniformBuffersMemory[i].mapMemory(0, bufferSize2));
 	}
+
+	for(auto& object : _objects)
+	{
+		object._ubo.clear();
+		object._uboMemory.clear();
+		object._uboMapped.clear();
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+		{
+
+			vk::DeviceSize         bufferSize = sizeof(ObjectUBO);
+			vk::raii::Buffer       buffer({});
+			vk::raii::DeviceMemory bufferMem({});
+			CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
+				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer,
+				bufferMem);
+			object._ubo.emplace_back(std::move(buffer));
+			object._uboMemory.emplace_back(std::move(bufferMem));
+			object._uboMapped.emplace_back(object._uboMemory[i].mapMemory(0, bufferSize));
+		}
+	}
+	
 }
 
 uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties)
