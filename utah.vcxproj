@@ -143,6 +143,7 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Render\DrawJob.cpp" />
     <ClCompile Include="src\Render\RenderComponent.cpp" />
     <ClCompile Include="src\Core\Component.cpp" />
     <ClCompile Include="src\Core\Entity.cpp" />
@@ -153,6 +154,7 @@
     <ClCompile Include="src\Render\VulkanRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Render\DrawJob.h" />
     <ClInclude Include="src\Core\TransformComponent.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
     <ClInclude Include="src\Core\Component.h" />

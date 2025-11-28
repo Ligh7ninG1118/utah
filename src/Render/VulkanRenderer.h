@@ -264,7 +264,12 @@ private:
 														  vk::KHRSynchronization2ExtensionName,
 														  vk::KHRCreateRenderpass2ExtensionName };
 
-	//std::vector<RenderComponent> _objects;
-	std::array<RenderComponent, 3> _objects;
+	std::vector<struct DrawJob> _drawList;
+
+	// pointer access to the one in RenderSystem
+	// or should I use something since it could get reallocation
+	std::vector<RenderComponent>* _renderComps;
+
+	//std::array<RenderComponent, 3> _objects;
 };
 

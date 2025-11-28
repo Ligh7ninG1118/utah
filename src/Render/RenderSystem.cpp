@@ -12,7 +12,6 @@ RenderSystem::RenderSystem()
 
 RenderSystem::~RenderSystem()
 {
-	
 	delete _renderer;
 }
 

@@ -1,14 +1,21 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 
-class Component;
+struct Component;
 
 class Entity
 {
-  public:
+public:
 	Entity(uint32_t entityID);
-	~Entity();
+	~Entity() = default;
 
-  private:
+	inline uint32_t GetID() const 
+	{ 
+		return _id; 
+	}
+
+private:
 	uint32_t _id;
+	//std::vector<Component*> _components;
 };

@@ -45,11 +45,6 @@ VulkanRenderer::~VulkanRenderer()
 
 void VulkanRenderer::Initialize()
 {
-	for (int i = 0; i < MAX_OBJECTS; i++)
-	{
-		_objects[i]._position.x = i;
-	}
-
 	CreateInstance();
 	SetupDebugMessenger();
 	RegisterResizeCallback();
@@ -176,14 +171,13 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));
 
-	for (auto& object : _objects)
+	/*for (auto& object : _objects)
 	{
-		object._rotation.x += 0.00001f;
-		ObjectUBO objUBO{};
-		objUBO.model = object.GetModelMatrix();
+		object._rotation.z += 0.00001f;
+		ObjectUBO objUBO{ object.GetModelMatrix() };
 
 		memcpy(object._uboMapped[currentImage], &objUBO, sizeof(objUBO));
-	}
+	}*/
 }
 
 void VulkanRenderer::RegisterResizeCallback()

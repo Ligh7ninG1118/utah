@@ -1,5 +1,6 @@
 #pragma once
 #include "Core/System.h"
+#include "Render/RenderComponent.h"
 
 class IRenderer;
 
@@ -13,7 +14,11 @@ public:
 
 	void WaitForRendererIdle();
 
+	void GatherDrawList();
+
 private:
 	IRenderer* _renderer;
+
+
 
 };
