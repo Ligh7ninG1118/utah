@@ -6,23 +6,33 @@
 RenderSystem::RenderSystem()
 {
 	//TODO: Use macro
-	_renderer = new VulkanRenderer();
-	_renderer->Initialize();
+	_pRenderer = new VulkanRenderer();
+	_pRenderer->Initialize();
 }
 
 RenderSystem::~RenderSystem()
 {
-	delete _renderer;
+	delete _pRenderer;
+}
+
+void RenderSystem::Init(Registry& registry)
+{
+	_pTransformPool = registry.GetPool<TransformComponent>();
+	_pRenderPool = registry.GetPool<RenderComponent>();
 }
 
 void RenderSystem::Update(float deltaTime)
 {
-	_renderer->DrawFrame();
+	_pRenderer->DrawFrame();
 }
 
 void RenderSystem::WaitForRendererIdle()
 {
-	_renderer->WaitForIdle();
+	_pRenderer->WaitForIdle();
+}
+
+void RenderSystem::GatherDrawList()
+{
 }
 
 

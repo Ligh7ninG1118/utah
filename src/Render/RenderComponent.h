@@ -1,7 +1,4 @@
 #pragma once
-#include "Core/Component.h"
-#include "Core/TransformComponent.h"
-
 #include <glm/gtc/matrix_transform.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -9,7 +6,7 @@
 
 
 
-struct RenderComponent : Component
+struct RenderComponent
 {
 	std::vector<vk::raii::Buffer> _ubo;
 	std::vector<vk::raii::DeviceMemory> _uboMemory;

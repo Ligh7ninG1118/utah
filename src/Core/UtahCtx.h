@@ -6,8 +6,8 @@
 #include <typeindex>
 #include <cassert>
 
-#include "Entity.h"
-#include "Component.h"
+#include "Registry.h"
+
 
 class System;
 class RenderSystem;
@@ -36,10 +36,6 @@ private:
 	void CleanUp() const;
 
 
-	Entity* CreateEntity();
-	void AddComponent(const Component& comp, Entity& entity);
-	uint8_t GetComponentTypeID(const Component& comp);
-
 	static UtahCtx* _instance;
 
 	GLFWwindow* _pWindow = nullptr;
@@ -48,13 +44,6 @@ private:
 
 	RenderSystem* _renderSystem;
 	
-	std::unordered_map<uint32_t, Entity*> _entities;
 
-	std::unordered_map<std::type_index, uint8_t> _componentTypeIDMap;
-
-
-	// [ComponentType][ComponentIndex]
-	std::vector<std::vector<Component>> _componentsPool;
-	// [ComponentType][IndexInPool]
-	std::vector<std::vector<size_t>> _components;
+	Registry _registry;
 };

@@ -145,19 +145,18 @@
   <ItemGroup>
     <ClCompile Include="src\Render\DrawJob.cpp" />
     <ClCompile Include="src\Render\RenderComponent.cpp" />
-    <ClCompile Include="src\Core\Component.cpp" />
-    <ClCompile Include="src\Core\Entity.cpp" />
     <ClCompile Include="src\Render\RenderSystem.cpp" />
     <ClCompile Include="src\Core\UtahCtx.cpp" />
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\Core\System.cpp" />
     <ClCompile Include="src\Render\VulkanRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Core\ComponentPool.h" />
+    <ClInclude Include="src\Core\ComponentType.h" />
+    <ClInclude Include="src\Core\Registry.h" />
     <ClInclude Include="src\Render\DrawJob.h" />
-    <ClInclude Include="src\Core\TransformComponent.h" />
+    <ClInclude Include="src\Gameplay\TransformComponent.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
-    <ClInclude Include="src\Core\Component.h" />
     <ClInclude Include="src\Core\Entity.h" />
     <ClInclude Include="src\Render\IRenderer.h" />
     <ClInclude Include="src\Render\RenderSystem.h" />

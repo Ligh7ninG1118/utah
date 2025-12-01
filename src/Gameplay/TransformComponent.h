@@ -1,10 +1,9 @@
 #pragma once
-#include "Core/Component.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
 
-struct TransformComponent : Component
+struct TransformComponent
 {
 	glm::vec3 _pos = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 _rot = { 0.0f, 0.0f, 0.0f };

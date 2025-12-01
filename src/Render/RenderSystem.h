@@ -1,6 +1,7 @@
 #pragma once
 #include "Core/System.h"
 #include "Render/RenderComponent.h"
+#include "Gameplay/TransformComponent.h"
 
 class IRenderer;
 
@@ -10,6 +11,8 @@ public:
 	RenderSystem();
 	~RenderSystem();
 
+	void Init(Registry& registry);
+
 	void Update(float deltaTime) override;
 
 	void WaitForRendererIdle();
@@ -17,8 +20,8 @@ public:
 	void GatherDrawList();
 
 private:
-	IRenderer* _renderer;
+	IRenderer* _pRenderer;
 
-
-
+	ComponentPool<TransformComponent>* _pTransformPool;
+	ComponentPool<RenderComponent>* _pRenderPool;
 };

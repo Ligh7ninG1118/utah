@@ -1,6 +1,6 @@
 #include "UtahCtx.h"
 #include "Render/RenderSystem.h"
-#include "Core/TransformComponent.h"
+#include "Gameplay/TransformComponent.h"
 #include "Render/RenderComponent.h"
 #include <utility>
 
@@ -51,14 +51,12 @@ void UtahCtx::InitDemo()
 {
 	for (int i = 0; i < 5; i++)
 	{
-		Entity* e = CreateEntity();
+		Entity e = _registry.CreateEntity();
 
-		TransformComponent transform{};
-		transform._pos.x = i;
-		AddComponent(transform, *e);
+		TransformComponent t;
+		t._pos.x = i;
 
-		RenderComponent render{};
-		AddComponent(render, *e);
+		_registry.AddComponent(e, t);
 	}
 }
 
@@ -68,10 +66,10 @@ void UtahCtx::MainLoop()
 	{
 		glfwPollEvents();
 		
-		_renderSystem->Update(0.05f);
+		//_renderSystem->Update(0.05f);
 	}
 
-	_renderSystem->WaitForRendererIdle();
+	//_renderSystem->WaitForRendererIdle();
 }
 
 void UtahCtx::CleanUp() const
@@ -81,48 +79,4 @@ void UtahCtx::CleanUp() const
 	glfwTerminate();
 
 	//TODO: Destroy all entities, systems, components
-}
-
-Entity* UtahCtx::CreateEntity()
-{
-	static uint32_t lastID = 0;
-
-	Entity* newEntity = new Entity(lastID++);
-
-	_entities.insert(std::make_pair(newEntity->GetID(), newEntity));
-
-	return newEntity;
-}
-
-void UtahCtx::AddComponent(const Component& comp, Entity& entity)
-{
-	uint8_t compID = GetComponentTypeID(comp);
-
-	if (_componentsPool.size() <= compID)
-		_componentsPool.resize(compID + 1);
-	if (_components.size() <= compID)
-		_components.resize(compID + 1);
-
-
-	//Problem! This seems only store the vfptr of comp in memory?
-	// Has to use template all over again...
-
-	//TODO: Make sure this is tightly packed in memory
-	_componentsPool[compID].push_back(comp); //memory contingiuous?
-	//TODO: When deletion, do the swap with back trick
-	_components[compID].push_back(_componentsPool[compID].size() - 1);
-	//TODO: Figure out a way to add to entity (can't be pointer)(use the index trick again?)
-}
-
-uint8_t UtahCtx::GetComponentTypeID(const Component& comp)
-{
-	static uint8_t lastID = 0;
-
-	auto type = std::type_index(typeid(comp));
-
-	if (_componentTypeIDMap.contains(type))
-		return _componentTypeIDMap.at(type);
-
-	_componentTypeIDMap.insert(std::make_pair(type, lastID++));
-	return lastID - 1;
 }
