@@ -1,6 +1,7 @@
 #pragma once
 
 
+// Not used for now
 class IRenderer
 {
 public:
@@ -11,5 +12,4 @@ public:
 	virtual void DrawFrame() = 0;
 
 	virtual void WaitForIdle() = 0;
-
 };

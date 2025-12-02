@@ -2,6 +2,8 @@
 #include "Entity.h"
 #include <vector>
 #include <cassert>
+#include <utility>
+
 
 class IComponentPool
 {
@@ -15,22 +17,28 @@ template <typename T>
 class ComponentPool : public IComponentPool
 {
 public:
-	void Insert(Entity e, T component)
+	template <typename... Args>
+	void Emplace(Entity e, Args&&...args)
 	{
 		if (e >= _componentMap.size())
 			_componentMap.resize(e + 1, INVALID_ID);
-		
+
 		// if component exists, update it
 		if (_componentMap[e] != INVALID_ID)
 		{
-			_componentData[_componentMap[e]] = component;
+			_componentData[_componentMap[e]] = T(std::forward<Args>(args)...);
 			return;
 		}
 
 		// add new component
-		_componentMap[e] = _componentData.size();
+		_componentMap[e] = static_cast<uint32_t>(_componentData.size());
 		_entityIndices.push_back(e);
-		_componentData.push_back(component);
+		_componentData.emplace_back(std::forward<Args>(args)...);
+	}
+
+	void Insert(Entity e, T component)
+	{
+		Emplace(e, std::move(component));
 	}
 
 	void Remove(Entity e) override
@@ -38,18 +46,23 @@ public:
 		if (e >= _componentMap.size() || _componentMap[e] == INVALID_ID)
 			return;
 
-		uint32_t indexToRemove = _componentMap[e];
-		uint32_t lastIndex = _componentData.size() - 1;
-		Entity lastEntity = _entityIndices[lastIndex];
+		const uint32_t indexToRemove = _componentMap[e];
+		const uint32_t lastIndex = static_cast<uint32_t>(_componentData.size() - 1);
+		const Entity lastEntity = _entityIndices[lastIndex];
 
-		// Swap
-		_componentData[indexToRemove] = _componentData[lastIndex];
-		_entityIndices[indexToRemove] = _entityIndices[indexToRemove];
-		_componentMap[lastEntity] = indexToRemove;
+		if (indexToRemove != lastIndex)
+		{
+			// Swap
+			_componentData[indexToRemove] = std::move(_componentData[lastIndex]);
+			_entityIndices[indexToRemove] = lastEntity; // or _entityIndices[indexToRemove]? Double check this
+			_componentMap[lastEntity] = indexToRemove;
+		}
+
+		
 
 		// And pop
 		_componentMap[e] = INVALID_ID;
-		_componentMap.pop_back();
+		_componentData.pop_back();
 		_entityIndices.pop_back();
 	}
 

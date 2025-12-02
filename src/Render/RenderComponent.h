@@ -4,8 +4,6 @@
 
 #include <vector>
 
-
-
 struct RenderComponent
 {
 	std::vector<vk::raii::Buffer> _ubo;
@@ -13,5 +11,13 @@ struct RenderComponent
 	std::vector<void*> _uboMapped;
 
 	std::vector<vk::raii::DescriptorSet> _descSets;
+
+	// Prevents copying and enables moving since raii is move only
+	RenderComponent() = default;
+	RenderComponent(RenderComponent&&) noexcept = default;
+	RenderComponent& operator=(RenderComponent&&) noexcept = default;
+
+	RenderComponent(const RenderComponent&) = delete;
+	RenderComponent& operator=(const RenderComponent&) = delete;
 };
 

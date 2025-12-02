@@ -17,8 +17,8 @@ class UtahCtx
 public:
 	static UtahCtx& Get()
 	{
-		assert(_instance && "UtahCtx::Get() called before construction");
-		return *_instance;
+		assert(_pInstance && "UtahCtx::Get() called before construction");
+		return *_pInstance;
 	}
 
 	UtahCtx();
@@ -36,13 +36,13 @@ private:
 	void CleanUp() const;
 
 
-	static UtahCtx* _instance;
+	static UtahCtx* _pInstance;
 
 	GLFWwindow* _pWindow = nullptr;
 
 	std::vector<System*> _systems;
 
-	RenderSystem* _renderSystem;
+	RenderSystem* _pRenderSystem;
 	
 
 	Registry _registry;

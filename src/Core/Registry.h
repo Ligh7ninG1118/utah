@@ -30,10 +30,17 @@ public:
 		_freeEntities.push_back(e);
 	}
 
-	template <typename T>
-	void AddComponent(Entity e, T component)
+	template <typename T, typename... Args>
+	void AddComponent(Entity e, Args&&... args)
 	{
-		GetPool<T>()->Insert(e, component);
+		GetPool<T>()->Emplace(e, std::forward<Args>(args)...);
+	}
+
+	template <typename T>
+	void AddComponent(Entity e, T&& component)
+	{
+		using Decayed = std::decay_t<T>;
+		GetPool<Decayed>()->Emplace(e, std::forward<T>(component));
 	}
 
 	template <typename T>

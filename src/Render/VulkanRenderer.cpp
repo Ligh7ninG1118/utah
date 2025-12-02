@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "DrawJob.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -23,7 +24,8 @@ const std::string TEXTURE_PATH = "models/viking_room.png";
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
-constexpr int MAX_OBJECTS = 3;
+//TODO: How do we estimate this?
+constexpr int MAX_OBJECTS = 5;
 
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
@@ -43,7 +45,7 @@ VulkanRenderer::~VulkanRenderer()
 {
 }
 
-void VulkanRenderer::Initialize()
+void VulkanRenderer::Initialize(std::vector<RenderComponent>& pool)
 {
 	CreateInstance();
 	SetupDebugMessenger();
@@ -70,14 +72,17 @@ void VulkanRenderer::Initialize()
 	LoadModel();
 	CreateVertexBuffer();
 	CreateIndexBuffer();
-	CreateUniformBuffers();
+	CreateUniformBuffers(pool);
 	CreateDescriptorPool();
-	CreateDescriptorSets();
+	CreateDescriptorSets(pool);
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
+}
 
-	
+void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob> list)
+{
+	_drawList = list;
 }
 
 void VulkanRenderer::DrawFrame()
@@ -171,13 +176,12 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));
 
-	/*for (auto& object : _objects)
+	for (auto& object : _drawList)
 	{
-		object._rotation.z += 0.00001f;
-		ObjectUBO objUBO{ object.GetModelMatrix() };
+		ObjectUBO objUBO{ object._model };
 
-		memcpy(object._uboMapped[currentImage], &objUBO, sizeof(objUBO));
-	}*/
+		memcpy(object._renderComp->_uboMapped[currentImage], &objUBO, sizeof(objUBO));
+	}
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -547,7 +551,7 @@ void VulkanRenderer::CreateDescriptorPool()
 	_descriptorPool = vk::raii::DescriptorPool(_device, poolInfo);
 }
 
-void VulkanRenderer::CreateDescriptorSets()
+void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
 {
 	std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _globalDescriptorSetLayout);
 
@@ -573,7 +577,7 @@ void VulkanRenderer::CreateDescriptorSets()
 		_device.updateDescriptorSets(descriptorWrites, {});
 	}
 
-	for (auto& object : _objects)
+	for (auto& object : pool)
 	{
 		std::vector<vk::DescriptorSetLayout> layoutsObj(MAX_FRAMES_IN_FLIGHT, _objDescriptorSetLayout);
 
@@ -790,13 +794,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		*_globalDescriptorSets[_currentFrame],
 		nullptr);
 
-	for (const auto& object : _objects)
+	for (const auto& object : _drawList)
 	{
 		_commandBuffers[_currentFrame].bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
 			_pipelineLayout,
 			1,
-			*object._descSets[_currentFrame],
+			*object._renderComp->_descSets[_currentFrame],
 			nullptr);
 
 		_commandBuffers[_currentFrame].drawIndexed(_indices.size(), 1, 0, 0, 0);
@@ -1217,7 +1221,7 @@ void VulkanRenderer::CreateIndexBuffer()
 	CopyBuffer(stagingBuffer, _indexBuffer, bufferSize);
 }
 
-void VulkanRenderer::CreateUniformBuffers()
+void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
 {
 	_globalUniformBuffers.clear();
 	_globalUniformBuffersMemory.clear();
@@ -1236,7 +1240,7 @@ void VulkanRenderer::CreateUniformBuffers()
 		_globalUniformBuffersMapped.emplace_back(_globalUniformBuffersMemory[i].mapMemory(0, bufferSize));
 	}
 
-	for(auto& object : _objects)
+	for(auto& object : pool)
 	{
 		object._ubo.clear();
 		object._uboMemory.clear();

@@ -75,17 +75,19 @@ struct ObjectUBO
 };
 
 
-class VulkanRenderer : public IRenderer
+class VulkanRenderer
 {
 public:
 	VulkanRenderer();
 	~VulkanRenderer();
 
-	void Initialize() override;
+	void Initialize(std::vector<RenderComponent>& pool);
 
-	void DrawFrame() override;
+	void UpdateDrawList(std::vector<struct DrawJob> list);
 
-	void WaitForIdle() override;
+	void DrawFrame();
+
+	void WaitForIdle();
 
 private:
 
@@ -131,7 +133,7 @@ private:
 	// Descriptor Creation
 	void CreateDescriptorSetLayout();
 	void CreateDescriptorPool();
-	void CreateDescriptorSets();
+	void CreateDescriptorSets(std::vector<RenderComponent>& pool);
 
 	// Graphics Pipeline
 	void CreateGraphicsPipeline();
@@ -179,7 +181,7 @@ private:
 		vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
-	void CreateUniformBuffers();
+	void CreateUniformBuffers(std::vector<RenderComponent>& pool);
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 	void CopyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
 
@@ -265,11 +267,5 @@ private:
 														  vk::KHRCreateRenderpass2ExtensionName };
 
 	std::vector<struct DrawJob> _drawList;
-
-	// pointer access to the one in RenderSystem
-	// or should I use something since it could get reallocation
-	std::vector<RenderComponent>* _renderComps;
-
-	//std::array<RenderComponent, 3> _objects;
 };
 

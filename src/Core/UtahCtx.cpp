@@ -7,25 +7,26 @@
 constexpr uint32_t WINDOW_WIDTH = 1920;
 constexpr uint32_t WINDOW_HEIGHT = 1080;
 
-UtahCtx* UtahCtx::_instance = nullptr;
+UtahCtx* UtahCtx::_pInstance = nullptr;
 
 
 UtahCtx::UtahCtx()
+	: _pRenderSystem(nullptr)
 {
-	_instance = this;
+	_pInstance = this;
 }
 
 UtahCtx::~UtahCtx()
 {
-	if (_instance == this)
-		_instance = nullptr;
+	if (_pInstance == this)
+		_pInstance = nullptr;
 }
 
 void UtahCtx::Run()
 {
 	InitWindow();
-	InitSystems();
 	InitDemo();
+	InitSystems();
 	MainLoop();
 	CleanUp();
 }
@@ -43,8 +44,10 @@ void UtahCtx::InitWindow()
 void UtahCtx::InitSystems()
 {
 	RenderSystem* renderSys = new RenderSystem();
+	renderSys->Init(_registry);
+	_pRenderSystem = renderSys;
+
 	_systems.push_back(renderSys);
-	_renderSystem = renderSys;
 }
 
 void UtahCtx::InitDemo()
@@ -54,9 +57,10 @@ void UtahCtx::InitDemo()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = i;
+		t._pos.x = -2 + i;
 
-		_registry.AddComponent(e, t);
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e);
 	}
 }
 
@@ -66,10 +70,17 @@ void UtahCtx::MainLoop()
 	{
 		glfwPollEvents();
 		
-		//_renderSystem->Update(0.05f);
+		auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
+		for (auto& obj : pool)
+		{
+			obj._rot.x += 0.00001f;
+		}
+
+		_pRenderSystem->Update(0.05f);
+
+		_pRenderSystem->WaitForRendererIdle();
 	}
 
-	//_renderSystem->WaitForRendererIdle();
 }
 
 void UtahCtx::CleanUp() const

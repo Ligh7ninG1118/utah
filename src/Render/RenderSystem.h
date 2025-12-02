@@ -3,7 +3,7 @@
 #include "Render/RenderComponent.h"
 #include "Gameplay/TransformComponent.h"
 
-class IRenderer;
+class VulkanRenderer;
 
 class RenderSystem : public System
 {
@@ -20,7 +20,8 @@ public:
 	void GatherDrawList();
 
 private:
-	IRenderer* _pRenderer;
+
+	VulkanRenderer* _pRenderer;
 
 	ComponentPool<TransformComponent>* _pTransformPool;
 	ComponentPool<RenderComponent>* _pRenderPool;
