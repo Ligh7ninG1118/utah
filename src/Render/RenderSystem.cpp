@@ -23,7 +23,7 @@ void RenderSystem::Init(Registry& registry)
 	_pRenderer->Initialize(_pRenderPool->GetPool());
 }
 
-void RenderSystem::Update(float deltaTime)
+void RenderSystem::Update(double deltaTime)
 {
 	GatherDrawList();
 

@@ -35,6 +35,8 @@ private:
 	void MainLoop();
 	void CleanUp() const;
 
+	static void MousePositionCallback(GLFWwindow* window, double xpos, double ypos);
+	static void KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
 	static UtahCtx* _pInstance;
 
@@ -43,7 +45,9 @@ private:
 	std::vector<System*> _systems;
 
 	RenderSystem* _pRenderSystem;
-	
 
 	Registry _registry;
+
+	double lastFrameTimestamp = 0.0;
+
 };

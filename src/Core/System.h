@@ -10,6 +10,6 @@ public:
 
 	virtual void Init(Registry& registry) = 0;
 
-	virtual void Update(float deltaTime) = 0;
+	virtual void Update(double deltaTime) = 0;
 private:
 };

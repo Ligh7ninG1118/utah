@@ -13,7 +13,7 @@ public:
 
 	void Init(Registry& registry);
 
-	void Update(float deltaTime) override;
+	void Update(double deltaTime) override;
 
 	void WaitForRendererIdle();
 
