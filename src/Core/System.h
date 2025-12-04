@@ -8,8 +8,8 @@ class System
 public:
 	virtual ~System() = default;
 
-	virtual void Init(Registry& registry) = 0;
+	virtual void Init(Registry& registry) { }
 
-	virtual void Update(double deltaTime) = 0;
+	virtual void Update(double deltaTime) { }
 private:
 };

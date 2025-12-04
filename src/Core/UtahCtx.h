@@ -11,6 +11,7 @@
 
 class System;
 class RenderSystem;
+class FlyCameraSystem;
 
 class UtahCtx
 {
@@ -45,6 +46,8 @@ private:
 	std::vector<System*> _systems;
 
 	RenderSystem* _pRenderSystem;
+
+	FlyCameraSystem* _pFlyCamera;
 
 	Registry _registry;
 

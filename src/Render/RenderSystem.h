@@ -2,6 +2,7 @@
 #include "Core/System.h"
 #include "Render/RenderComponent.h"
 #include "Gameplay/TransformComponent.h"
+#include "Gameplay/CameraComponent.h"
 
 class VulkanRenderer;
 
@@ -25,4 +26,5 @@ private:
 
 	ComponentPool<TransformComponent>* _pTransformPool;
 	ComponentPool<RenderComponent>* _pRenderPool;
+	ComponentPool<CameraComponent>* _pCameraPool;
 };

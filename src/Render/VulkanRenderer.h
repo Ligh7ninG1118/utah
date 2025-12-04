@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "RenderComponent.h"
+#include "Gameplay/CameraComponent.h"
 
 struct Vertex
 {
@@ -83,7 +84,9 @@ public:
 
 	void Initialize(std::vector<RenderComponent>& pool);
 
-	void UpdateDrawList(std::vector<struct DrawJob> list);
+	void UpdateDrawList(std::vector<struct DrawJob>& list);
+
+	void UpdateCamera(const CameraComponent& camera);
 
 	void DrawFrame();
 
@@ -267,5 +270,7 @@ private:
 														  vk::KHRCreateRenderpass2ExtensionName };
 
 	std::vector<struct DrawJob> _drawList;
+
+	struct CameraComponent _mainCam;
 };
 

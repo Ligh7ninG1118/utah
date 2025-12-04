@@ -1,5 +1,6 @@
 #include "UtahCtx.h"
 #include "Render/RenderSystem.h"
+#include "Gameplay/FlyCameraSystem.h"
 #include "Gameplay/TransformComponent.h"
 #include "Render/RenderComponent.h"
 #include <utility>
@@ -41,7 +42,7 @@ void UtahCtx::InitWindow()
 	_pWindow = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "utah", nullptr, nullptr);
 	glfwSetWindowUserPointer(_pWindow, this);
 
-	//glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	if (glfwRawMouseMotionSupported())
 		glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
@@ -55,8 +56,12 @@ void UtahCtx::InitSystems()
 	RenderSystem* renderSys = new RenderSystem();
 	renderSys->Init(_registry);
 	_pRenderSystem = renderSys;
-
 	_systems.push_back(renderSys);
+
+	FlyCameraSystem* flyCamera = new FlyCameraSystem();
+	flyCamera->Init(_registry);
+	_pFlyCamera = flyCamera;
+	_systems.push_back(flyCamera);
 }
 
 void UtahCtx::InitDemo()
@@ -71,6 +76,9 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e);
 	}
+
+	Entity flyCam = _registry.CreateEntity();
+	_registry.AddComponent<CameraComponent>(flyCam);
 }
 
 void UtahCtx::MainLoop()
@@ -83,11 +91,11 @@ void UtahCtx::MainLoop()
 		double deltaTime = currentTimestamp - lastFrameTimestamp;
 		lastFrameTimestamp = currentTimestamp;
 
-		auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
+		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
 		for (auto& obj : pool)
 		{
 			obj._rot.x += 0.00001f;
-		}
+		}*/
 
 		_pRenderSystem->Update(deltaTime);
 
@@ -107,21 +115,21 @@ void UtahCtx::CleanUp() const
 
 void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
-	//std::cout << "xpos " << xpos << "\typos " << ypos << std::endl;
+	UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
+	if (!ctx)
+		return;
+
+	ctx->_pFlyCamera->HandleMouseInput(xpos, ypos);
 }
 
 void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-	if (key == GLFW_KEY_W && action == GLFW_PRESS)
-		std::cout << "hello!" << std::endl;
-
-	if(key == GLFW_KEY_W && action == GLFW_RELEASE)
-		std::cout << "bye!" << std::endl;
+	UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
+	if (!ctx)
+		return;
 
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
-	{
-		UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
-		if (ctx)
-			glfwSetWindowShouldClose(ctx->GetContextWindow(), GLFW_TRUE);
-	}
+		glfwSetWindowShouldClose(ctx->_pWindow, GLFW_TRUE);
+
+	ctx->_pFlyCamera->HandleKeyboardInput(key, scancode, action, mods);
 }

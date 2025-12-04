@@ -80,9 +80,14 @@ void VulkanRenderer::Initialize(std::vector<RenderComponent>& pool)
 	CreateSyncObjects();
 }
 
-void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob> list)
+void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>& list)
 {
 	_drawList = list;
+}
+
+void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
+{
+	_mainCam = camera;
 }
 
 void VulkanRenderer::DrawFrame()
@@ -169,9 +174,11 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
 	CameraUBO camUBO{};
-	camUBO.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	//camUBO.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
+
 	camUBO.proj =
-		glm::perspective(glm::radians(45.0f), _swapChainExtent.width / (float)_swapChainExtent.height, 0.1f, 10.0f);
+		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._nearPlane, _mainCam._farPlane);
 	camUBO.proj[1][1] *= -1;
 
 	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));

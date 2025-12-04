@@ -14,11 +14,12 @@ RenderSystem::~RenderSystem()
 	delete _pRenderer;
 }
 
+
 void RenderSystem::Init(Registry& registry)
 {
 	_pTransformPool = registry.GetPool<TransformComponent>();
 	_pRenderPool = registry.GetPool<RenderComponent>();
-
+	_pCameraPool = registry.GetPool<CameraComponent>();
 	
 	_pRenderer->Initialize(_pRenderPool->GetPool());
 }
@@ -26,6 +27,8 @@ void RenderSystem::Init(Registry& registry)
 void RenderSystem::Update(double deltaTime)
 {
 	GatherDrawList();
+
+	_pRenderer->UpdateCamera(_pCameraPool->GetPool()[0]);
 
 	_pRenderer->DrawFrame();
 }
