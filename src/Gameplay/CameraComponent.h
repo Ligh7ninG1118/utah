@@ -17,9 +17,9 @@ struct CameraComponent
 	{
 		return glm::normalize(
 			glm::vec3(
-			glm::cos(glm::radians(_rot.y)) * glm::cos(glm::radians(_rot.x)),
-			glm::sin(glm::radians(_rot.x)),
-			glm::sin(glm::radians(_rot.y)) * glm::cos(glm::radians(_rot.x))
+			glm::cos(glm::radians(_rot.z)) * glm::cos(glm::radians(_rot.y)),
+			glm::sin(glm::radians(_rot.z)),
+			glm::sin(glm::radians(_rot.y)) * glm::cos(glm::radians(_rot.z))
 		));
 	}
 

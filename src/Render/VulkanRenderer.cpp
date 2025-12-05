@@ -174,7 +174,6 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
 	CameraUBO camUBO{};
-	//camUBO.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	camUBO.proj =

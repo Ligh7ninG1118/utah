@@ -97,6 +97,8 @@ void UtahCtx::MainLoop()
 			obj._rot.x += 0.00001f;
 		}*/
 
+		_pFlyCamera->Update(deltaTime);
+
 		_pRenderSystem->Update(deltaTime);
 
 		_pRenderSystem->WaitForRendererIdle();

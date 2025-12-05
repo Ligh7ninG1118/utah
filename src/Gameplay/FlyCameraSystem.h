@@ -12,6 +12,8 @@ public:
 
 	void Init(Registry& registry);
 
+	void Update(double deltaTime) override;
+
 	void HandleMouseInput(double xpos, double ypos);
 	void HandleKeyboardInput(int key, int scancode, int action, int mods);
 
@@ -23,6 +25,5 @@ private:
 	double _lastMouseXPos;
 	double _lastMouseYPos;
 	float _mouseSens = 0.1f;
-
 };
 

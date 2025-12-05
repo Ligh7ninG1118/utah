@@ -18,48 +18,60 @@ void FlyCameraSystem::Init(Registry& registry)
 	_pCameraPool = registry.GetPool<CameraComponent>();
 }
 
+void FlyCameraSystem::Update(double deltaTime)
+{
+	GLFWwindow* window = UtahCtx::Get().GetContextWindow();
+	glm::vec3 _rawMoveDir = glm::vec3(0.0f, 0.0f, 0.0f);
+	if (window != nullptr)
+	{
+		const bool w = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+		const bool s = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+		const bool a = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
+		const bool d = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
+		const bool q = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
+		const bool e = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+
+		_rawMoveDir = glm::vec3(
+			(w ? 1.0f : 0.0f) + (s ? -1.0f : 0.0f), // x (forward/back)
+			(e ? 1.0f : 0.0f) + (q ? -1.0f : 0.0f), // y (up/down)
+			(d ? 1.0f : 0.0f) + (a ? -1.0f : 0.0f)  // z (right/left)
+		);
+	}
+
+	if (glm::length(_rawMoveDir) >= glm::epsilon<float>())
+	{
+		_rawMoveDir = glm::normalize(_rawMoveDir);
+
+		CameraComponent& cam = _pCameraPool->GetPool()[_mainCamIndex];
+
+		glm::vec3 moveDir = _rawMoveDir.x * cam.GetFrontVector() +
+			_rawMoveDir.y * glm::vec3(0.0f, 1.0f, 0.0f) +
+			_rawMoveDir.z * cam.GetRightVector();
+
+		cam._pos += moveDir * 1.0f * static_cast<float>(deltaTime);
+	}
+}
+
 void FlyCameraSystem::HandleMouseInput(double xpos, double ypos)
 {
 	CameraComponent& cam = _pCameraPool->GetPool()[_mainCamIndex];
 
-	double deltaHor = _lastMouseXPos - xpos;
-	double deltaVer = _lastMouseYPos - ypos;
+	double deltaHor = xpos - _lastMouseXPos;
+	double deltaVer = ypos - _lastMouseYPos;
 
 	_lastMouseXPos = xpos;
 	_lastMouseYPos = ypos;
 
 
-	cam._rot.x += deltaVer * _mouseSens;
-	cam._rot.y += -deltaHor * _mouseSens;
+	cam._rot.z += -deltaVer * _mouseSens;
+	cam._rot.y += deltaHor * _mouseSens;
 
-	cam._rot.y = glm::clamp(cam._rot.y, -89.0f, 89.0f);
-
-	std::cout << cam._rot.y << std::endl;
-
+	cam._rot.z = glm::clamp(cam._rot.z, -89.0f, 89.0f);
 }
 
 void FlyCameraSystem::HandleKeyboardInput(int key, int scancode, int action, int mods)
 {
-	// this will not recognize hold!
-	// bad, still need my own input system it seems
-	glm::vec2 rawMove(0.0f, 0.0f);
-	if (key == GLFW_KEY_W && action == GLFW_PRESS)
-		rawMove.x = 1;
-	if (key == GLFW_KEY_S && action == GLFW_PRESS)
-		rawMove.x = -1;
-	if (key == GLFW_KEY_A && action == GLFW_PRESS)
-		rawMove.y = -1;
-	if (key == GLFW_KEY_D && action == GLFW_PRESS)
-		rawMove.y = 1;
-		
-	if (glm::length(rawMove) >= glm::epsilon<float>())
-	{
-		rawMove = glm::normalize(rawMove);
-
-		// polling rate?
-		_pCameraPool->GetPool()[_mainCamIndex]._pos.x += rawMove.x * 0.05f;
-		_pCameraPool->GetPool()[_mainCamIndex]._pos.y += rawMove.y * 0.05f;
-	}
+	
 }
 	
 
