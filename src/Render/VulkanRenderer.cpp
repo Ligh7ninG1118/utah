@@ -180,7 +180,15 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._nearPlane, _mainCam._farPlane);
 	camUBO.proj[1][1] *= -1;
 
-	memcpy(_globalUniformBuffersMapped[currentImage], &camUBO, sizeof(camUBO));
+	LightUBO testLight{};
+	testLight.lightColor = glm::vec3(0.0f, 1.0f, 0.0f);
+
+	char* p = static_cast<char*>(_globalUniformBuffersMapped[currentImage]);
+
+	memcpy(p, &camUBO, sizeof(camUBO));
+	memcpy(p + sizeof(camUBO), &testLight, sizeof(testLight));
+
+	//TODO: More elegant way to pass this
 
 	for (auto& object : _drawList)
 	{
@@ -508,11 +516,19 @@ void VulkanRenderer::RecreateSwapChain()
 void VulkanRenderer::CreateDescriptorSetLayout()
 {
 	std::array bindings = {
+		// Camera Data
 		vk::DescriptorSetLayoutBinding(
 			0, 
 			vk::DescriptorType::eUniformBuffer, 
 			1, 
 			vk::ShaderStageFlagBits::eVertex,
+			nullptr),
+		// Lights Data
+		vk::DescriptorSetLayoutBinding(
+			1,
+			vk::DescriptorType::eUniformBuffer,
+			1,
+			vk::ShaderStageFlagBits::eFragment,
 			nullptr)
 	};
 
@@ -521,12 +537,14 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 	_globalDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfo);
 
 	std::array bindingsObj = {
+		// Object Model matrix
 		vk::DescriptorSetLayoutBinding(
 			0,
 			vk::DescriptorType::eUniformBuffer,
 			1,
 			vk::ShaderStageFlagBits::eVertex,
 			nullptr),
+		// Object texture
 		vk::DescriptorSetLayoutBinding(
 			1,
 			vk::DescriptorType::eCombinedImageSampler,
@@ -543,11 +561,12 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 
 void VulkanRenderer::CreateDescriptorPool()
 {
-	const uint32_t totalUBOs = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * MAX_OBJECTS;
+	// 1 is for global data
+	const uint32_t totalUBOs = MAX_FRAMES_IN_FLIGHT * (MAX_OBJECTS + 1);
 
 	std::array poolSize{
-						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, totalUBOs),
-						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT) };
+						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * (MAX_OBJECTS + 2)),
+						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * MAX_OBJECTS) };
 
 	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 										  .maxSets = totalUBOs,
@@ -555,6 +574,8 @@ void VulkanRenderer::CreateDescriptorPool()
 										  .pPoolSizes = poolSize.data() };
 
 	_descriptorPool = vk::raii::DescriptorPool(_device, poolInfo);
+
+	//TODO: Check out using dynamic uniform buffers to cut down the number
 }
 
 void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
@@ -570,16 +591,27 @@ void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vk::DescriptorBufferInfo bufferInfo{ .buffer = _globalUniformBuffers[i], 
+		vk::DescriptorBufferInfo cameraBufferInfo{ .buffer = _globalUniformBuffers[i], 
 											.offset = 0, 
 											.range = sizeof(CameraUBO)};
+
+		//TODO: Separate buffer or use the offset here? I will bite with offset for now...
+		vk::DescriptorBufferInfo lightsBufferInfo{ .buffer = _globalUniformBuffers[i],
+											.offset = sizeof(CameraUBO),
+											.range = sizeof(LightUBO) };
 
 		std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 																		.dstBinding = 0,
 																		.dstArrayElement = 0,
 																		.descriptorCount = 1,
 																		.descriptorType = vk::DescriptorType::eUniformBuffer,
-																		.pBufferInfo = &bufferInfo}};
+																		.pBufferInfo = &cameraBufferInfo},
+									vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+																		.dstBinding = 1,
+																		.dstArrayElement = 0,
+																		.descriptorCount = 1,
+																		.descriptorType = vk::DescriptorType::eUniformBuffer,
+																		.pBufferInfo = &lightsBufferInfo} };
 		_device.updateDescriptorSets(descriptorWrites, {});
 	}
 
@@ -1235,7 +1267,7 @@ void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vk::DeviceSize         bufferSize = sizeof(CameraUBO);
+		vk::DeviceSize         bufferSize = sizeof(CameraUBO) + sizeof(LightUBO);
 		vk::raii::Buffer       buffer({});
 		vk::raii::DeviceMemory bufferMem({});
 		CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,

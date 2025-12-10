@@ -15,7 +15,6 @@ public:
 	void Update(double deltaTime) override;
 
 	void HandleMouseInput(double xpos, double ypos);
-	void HandleKeyboardInput(int key, int scancode, int action, int mods);
 
 private:
 	ComponentPool<CameraComponent>* _pCameraPool;

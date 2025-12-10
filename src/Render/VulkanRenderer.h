@@ -26,6 +26,7 @@
 
 #include "RenderComponent.h"
 #include "Gameplay/CameraComponent.h"
+#include "Render/PointLightComponent.h"
 
 struct Vertex
 {
@@ -68,6 +69,12 @@ struct CameraUBO
 {
 	alignas(16) glm::mat4 view;
 	alignas(16) glm::mat4 proj;
+};
+
+struct LightUBO
+{
+	alignas(16) glm::vec3 lightColor;
+	float padding;
 };
 
 struct ObjectUBO

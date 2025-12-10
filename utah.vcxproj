@@ -155,8 +155,10 @@
     <ClInclude Include="src\Core\ComponentType.h" />
     <ClInclude Include="src\Core\Registry.h" />
     <ClInclude Include="src\Gameplay\CameraComponent.h" />
+    <ClInclude Include="src\Render\DirectionalLightComponent.h" />
     <ClInclude Include="src\Render\DrawJob.h" />
     <ClInclude Include="src\Gameplay\TransformComponent.h" />
+    <ClInclude Include="src\Render\PointLightComponent.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
     <ClInclude Include="src\Core\Entity.h" />
     <ClInclude Include="src\Render\IRenderer.h" />
@@ -166,6 +168,7 @@
     <ClInclude Include="src\Render\VulkanRenderer.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\BlinnPhong.slang" />
     <None Include="shaders\HelloTri.slang" />
     <None Include="shaders\slangCompile.bat" />
   </ItemGroup>

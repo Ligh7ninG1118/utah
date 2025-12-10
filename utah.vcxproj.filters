@@ -74,11 +74,18 @@
     <ClInclude Include="src\Gameplay\CameraComponent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Render\DirectionalLightComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Render\PointLightComponent.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\HelloTri.slang" />
     <None Include="shaders\slangCompile.bat">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="shaders\BlinnPhong.slang" />
   </ItemGroup>
 </Project>

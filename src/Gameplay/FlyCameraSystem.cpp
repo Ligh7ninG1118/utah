@@ -68,10 +68,5 @@ void FlyCameraSystem::HandleMouseInput(double xpos, double ypos)
 
 	cam._rot.z = glm::clamp(cam._rot.z, -89.0f, 89.0f);
 }
-
-void FlyCameraSystem::HandleKeyboardInput(int key, int scancode, int action, int mods)
-{
-	
-}
 	
 

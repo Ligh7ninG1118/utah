@@ -132,6 +132,4 @@ void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int ac
 
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
 		glfwSetWindowShouldClose(ctx->_pWindow, GLFW_TRUE);
-
-	ctx->_pFlyCamera->HandleKeyboardInput(key, scancode, action, mods);
 }
