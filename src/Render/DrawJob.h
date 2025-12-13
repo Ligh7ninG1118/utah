@@ -17,9 +17,9 @@ struct DrawJob
 		_model = glm::mat4(1.0f);
 		_model = glm::translate(_model, transform._pos);
 	
-		_model = glm::rotate(_model, transform._rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
-		_model = glm::rotate(_model, transform._rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
-		_model = glm::rotate(_model, transform._rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
+		_model = glm::rotate(_model, glm::radians(transform._rot.x), glm::vec3(1.0f, 0.0f, 0.0f));
+		_model = glm::rotate(_model, glm::radians(transform._rot.y), glm::vec3(0.0f, 1.0f, 0.0f));
+		_model = glm::rotate(_model, glm::radians(transform._rot.z), glm::vec3(0.0f, 0.0f, 1.0f));
 
 		_model = glm::scale(_model, transform._scale);
 	}

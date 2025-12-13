@@ -71,14 +71,23 @@ void UtahCtx::InitDemo()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = -2 + i;
+		t._pos.x = -4 + i * 2;
+		t._rot.x = -90.0f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e);
 	}
 
 	Entity flyCam = _registry.CreateEntity();
-	_registry.AddComponent<CameraComponent>(flyCam);
+
+	CameraComponent c;
+	c._pos.x = 4.0f;
+	c._pos.y = 2.0f;
+	c._pos.z = -2.5f;
+	c._rot.y = 130.0f;
+	c._rot.z = -30.f;
+
+	_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 }
 
 void UtahCtx::MainLoop()
@@ -90,12 +99,6 @@ void UtahCtx::MainLoop()
 		double currentTimestamp = glfwGetTime();
 		double deltaTime = currentTimestamp - lastFrameTimestamp;
 		lastFrameTimestamp = currentTimestamp;
-
-		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
-		for (auto& obj : pool)
-		{
-			obj._rot.x += 0.00001f;
-		}*/
 
 		_pFlyCamera->Update(deltaTime);
 
