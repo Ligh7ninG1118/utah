@@ -48,7 +48,7 @@ void FlyCameraSystem::Update(double deltaTime)
 			_rawMoveDir.y * glm::vec3(0.0f, 1.0f, 0.0f) +
 			_rawMoveDir.z * cam.GetRightVector();
 
-		cam._pos += moveDir * 1.0f * static_cast<float>(deltaTime);
+		cam._pos += moveDir * 2.0f * static_cast<float>(deltaTime);
 	}
 }
 

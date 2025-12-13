@@ -71,7 +71,7 @@ struct CameraUBO
 	alignas(16) glm::mat4 proj;
 };
 
-struct LightUBO
+struct alignas(16) LightUBO
 {
 	glm::vec3 eyePos;
 	unsigned int pointLightNum;

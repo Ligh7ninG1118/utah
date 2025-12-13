@@ -184,7 +184,14 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	LightUBO testLight{};
 	testLight.eyePos = _mainCam._pos;
 	testLight.pointLightNum = 1;
-	testLight.pointLights[0].ambient = glm::vec3(0.0f, 0.0f, 1.0f);
+	testLight.pointLights[0].position = glm::vec3(0.0f, 5.0f, 0.0f);
+	testLight.pointLights[0].ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	testLight.pointLights[0].diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+	testLight.pointLights[0].specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+	testLight.pointLights[0].constant = 1.0f;
+	testLight.pointLights[0].linear = 0.07f;
+	testLight.pointLights[0].quadratic = 0.017f;
 
 	char* p = static_cast<char*>(_globalUniformBuffersMapped[currentImage]);
 
