@@ -178,10 +178,13 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	camUBO.proj =
 		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._nearPlane, _mainCam._farPlane);
+	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
 
 	LightUBO testLight{};
-	testLight.lightColor = glm::vec3(0.0f, 1.0f, 0.0f);
+	testLight.eyePos = _mainCam._pos;
+	testLight.pointLightNum = 1;
+	testLight.pointLights[0].ambient = glm::vec3(0.0f, 0.0f, 1.0f);
 
 	char* p = static_cast<char*>(_globalUniformBuffersMapped[currentImage]);
 
@@ -780,7 +783,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::ImageAspectFlagBits::eDepth);
 
-	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
 	// Color attachment (multisampled) with resolve attachment
@@ -1146,13 +1149,16 @@ void VulkanRenderer::LoadModel()
 		{
 			Vertex vertex{};
 
-			vertex.pos = { attrib.vertices[3 * index.vertex_index + 0], attrib.vertices[3 * index.vertex_index + 1],
-						  attrib.vertices[3 * index.vertex_index + 2] };
+			vertex.pos = { attrib.vertices[3 * index.vertex_index + 0], 
+							attrib.vertices[3 * index.vertex_index + 1],
+							attrib.vertices[3 * index.vertex_index + 2] };
+
+			vertex.normal = { attrib.normals[3 * index.normal_index + 0], 
+							attrib.normals[3 * index.normal_index + 1],
+							attrib.normals[3 * index.normal_index + 2] };
 
 			vertex.texCoord = { attrib.texcoords[2 * index.texcoord_index + 0],
 							   1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
-
-			vertex.color = { 1.0f, 1.0f, 1.0f };
 
 			if (!uniqueVertices.contains(vertex))
 			{

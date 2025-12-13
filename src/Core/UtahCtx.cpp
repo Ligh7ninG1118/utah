@@ -3,6 +3,7 @@
 #include "Gameplay/FlyCameraSystem.h"
 #include "Gameplay/TransformComponent.h"
 #include "Render/RenderComponent.h"
+#include "Render/PointLightComponent.h"
 #include <utility>
 #include <iostream>
 
@@ -66,6 +67,7 @@ void UtahCtx::InitSystems()
 
 void UtahCtx::InitDemo()
 {
+	// Models
 	for (int i = 0; i < 5; i++)
 	{
 		Entity e = _registry.CreateEntity();
@@ -78,6 +80,7 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<RenderComponent>(e);
 	}
 
+	// Fly camera
 	Entity flyCam = _registry.CreateEntity();
 
 	CameraComponent c;
@@ -88,6 +91,21 @@ void UtahCtx::InitDemo()
 	c._rot.z = -30.f;
 
 	_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
+
+	// Point lights
+	for (int i = 0; i < 1; i++)
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.y = 5.0f;
+
+		PointLightComponent p;
+		p.ambient = glm::vec3(0.05f, 0.05f, 0.05f);
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<PointLightComponent>(e, std::move(p));
+	}
 }
 
 void UtahCtx::MainLoop()
@@ -99,6 +117,12 @@ void UtahCtx::MainLoop()
 		double currentTimestamp = glfwGetTime();
 		double deltaTime = currentTimestamp - lastFrameTimestamp;
 		lastFrameTimestamp = currentTimestamp;
+
+		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
+		for (auto& obj : pool)
+		{
+			obj._rot.z += 10.0f * deltaTime;
+		}*/
 
 		_pFlyCamera->Update(deltaTime);
 

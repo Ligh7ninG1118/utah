@@ -1,14 +1,15 @@
 struct VSInput 
 {
     float3 inPosition;
-    float3 inColor;
+    float3 inNormal;
     float2 inTexCoord;
 };
 
 struct VSOutput
 {
     float4 pos : SV_Position;
-    float3 fragColor;
+    float3 norm;
+    float3 worldPos;
     float2 fragTexCoord;
 };
 
@@ -18,10 +19,25 @@ struct CameraUBO
     float4x4 proj;
 };
 
+struct PointLight
+{
+    float3 ambient;
+    float3 diffuse;
+    float3 specular;
+
+    float constant;
+    float linear;
+    float quadratic;
+}
+
+static const uint MAX_POINT_LIGHTS = 32;
+
 struct LightUBO
 {
-    float3 color;
-    float1 padding;
+    float3 eyePos;
+    uint lightNum;
+
+    PointLight pointLights[MAX_POINT_LIGHTS];
 }
 
 struct ObjectUBO
@@ -39,9 +55,10 @@ ConstantBuffer<ObjectUBO> objUBO;
 VSOutput vertMain(VSInput input) 
 {
     VSOutput output;
-
-    output.pos = mul(camUBO.proj, mul(camUBO.view, mul(objUBO.model, float4(input.inPosition, 1.0))));
-    output.fragColor = input.inColor;
+    output.worldPos = mul(objUBO.model, float4(input.inPosition, 1.0)).xyz;
+    output.pos = mul(camUBO.proj, mul(camUBO.view, float4(output.worldPos, 1.0)));
+    // May need to use normalInterp (transpose(inverse(model))) if the model has non uniform scaling
+    output.norm = input.inNormal;
     output.fragTexCoord = input.inTexCoord;
     return output;
 }
@@ -53,10 +70,13 @@ ConstantBuffer<LightUBO> lightUBO;
 Sampler2D texture;
 
 [shader("fragment")]
-float4 fragMain(VSOutput vertIn) : SV_TARGET
+float3 fragMain(VSOutput vertIn) : SV_TARGET
 {
+    float3 result = float3(0.0f);
     float4 tex = texture.Sample(vertIn.fragTexCoord);
-    float4 result = tex * 0.5f;
-    result += float4(lightUBO.color.xyz, 1.0f) * 0.5f;
+
+    result += tex.xyz;
+    result += lightUBO.pointLights[0].ambient;
+
     return result;
 }
