@@ -26,7 +26,7 @@
 
 #include "RenderComponent.h"
 #include "Gameplay/CameraComponent.h"
-#include "Render/PointLightComponent.h"
+#include "Render/PointLightData.h"
 
 struct Vertex
 {
@@ -76,7 +76,7 @@ struct alignas(16) LightUBO
 	glm::vec3 eyePos;
 	unsigned int pointLightNum;
 
-	PointLightComponent pointLights[32];
+	PointLightData pointLights[32];
 };
 
 struct ObjectUBO
@@ -96,6 +96,8 @@ public:
 	void UpdateDrawList(std::vector<struct DrawJob>& list);
 
 	void UpdateCamera(const CameraComponent& camera);
+
+	void UpdateLights(std::vector<PointLightData> lights);
 
 	void DrawFrame();
 
@@ -281,5 +283,7 @@ private:
 	std::vector<struct DrawJob> _drawList;
 
 	struct CameraComponent _mainCam;
+
+	std::vector<PointLightData> _pointLights;
 };
 

@@ -20,6 +20,7 @@ void RenderSystem::Init(Registry& registry)
 	_pTransformPool = registry.GetPool<TransformComponent>();
 	_pRenderPool = registry.GetPool<RenderComponent>();
 	_pCameraPool = registry.GetPool<CameraComponent>();
+	_pPointLightPool = registry.GetPool<PointLightComponent>();
 	
 	_pRenderer->Initialize(_pRenderPool->GetPool());
 }
@@ -27,6 +28,8 @@ void RenderSystem::Init(Registry& registry)
 void RenderSystem::Update(double deltaTime)
 {
 	GatherDrawList();
+
+	GatherLights();
 
 	_pRenderer->UpdateCamera(_pCameraPool->GetPool()[0]);
 
@@ -41,7 +44,7 @@ void RenderSystem::WaitForRendererIdle()
 void RenderSystem::GatherDrawList()
 {
 	auto& renderPool = _pRenderPool->GetPool();
-	auto& transformPool = _pTransformPool->GetPool();
+	auto& renderCompToEntity = _pRenderPool->GetEntities();
 	
 	std::vector<DrawJob> list;
 	list.reserve(renderPool.size());
@@ -50,12 +53,38 @@ void RenderSystem::GatherDrawList()
 	{
 		DrawJob job;
 		job._renderComp = &renderPool[i];
-		// Assuming same ordering
-		job.SetModelMatrix(transformPool[i]);
+
+		job.SetModelMatrix(_pTransformPool->Get(renderCompToEntity[i]));
 		list.push_back(job);
 	}
 
 	_pRenderer->UpdateDrawList(list);
+}
+
+void RenderSystem::GatherLights()
+{
+	auto& pointLightPool = _pPointLightPool->GetPool();
+	auto& lightToEntity = _pPointLightPool->GetEntities();
+
+	std::vector<PointLightData> lights;
+	lights.reserve(pointLightPool.size());
+
+	for (size_t i = 0; i < pointLightPool.size(); i++)
+	{
+		PointLightData light;
+		light.ambient = pointLightPool[i].ambient;
+		light.diffuse = pointLightPool[i].diffuse;
+		light.specular = pointLightPool[i].specular;
+		light.constant = pointLightPool[i].constant;
+		light.linear = pointLightPool[i].linear;
+		light.quadratic = pointLightPool[i].quadratic;
+
+		light.position = _pTransformPool->Get(lightToEntity[i])._pos;
+
+		lights.push_back(light);
+	}
+
+	_pRenderer->UpdateLights(lights);
 }
 
 

@@ -101,7 +101,13 @@ void UtahCtx::InitDemo()
 		t._pos.y = 5.0f;
 
 		PointLightComponent p;
-		p.ambient = glm::vec3(0.05f, 0.05f, 0.05f);
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+		p.constant = 1.0f;
+		p.linear = 0.07f;
+		p.quadratic = 0.017f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightComponent>(e, std::move(p));

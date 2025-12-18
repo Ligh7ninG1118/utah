@@ -90,6 +90,11 @@ void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
 	_mainCam = camera;
 }
 
+void VulkanRenderer::UpdateLights(std::vector<PointLightData> lights)
+{
+	_pointLights = lights;
+}
+
 void VulkanRenderer::DrawFrame()
 {
 	// Wait previous frame to finish (block execution)
@@ -181,24 +186,20 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
 
-	LightUBO testLight{};
-	testLight.eyePos = _mainCam._pos;
-	testLight.pointLightNum = 1;
-	testLight.pointLights[0].position = glm::vec3(0.0f, 5.0f, 0.0f);
-	testLight.pointLights[0].ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-	testLight.pointLights[0].diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
-	testLight.pointLights[0].specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-	testLight.pointLights[0].constant = 1.0f;
-	testLight.pointLights[0].linear = 0.07f;
-	testLight.pointLights[0].quadratic = 0.017f;
+	//TODO: more memory efficient way to pass this?
+	LightUBO lightUBO;
+	lightUBO.eyePos = _mainCam._pos;
+	lightUBO.pointLightNum = _pointLights.size();
+	for (size_t i = 0; i < _pointLights.size(); i++)
+	{
+		lightUBO.pointLights[i] = _pointLights[i];
+	}
 
 	char* p = static_cast<char*>(_globalUniformBuffersMapped[currentImage]);
 
 	memcpy(p, &camUBO, sizeof(camUBO));
-	memcpy(p + sizeof(camUBO), &testLight, sizeof(testLight));
-
-	//TODO: More elegant way to pass this
+	memcpy(p + sizeof(camUBO), &lightUBO, sizeof(lightUBO));
+	//TODO: More elegant way to pass this, use std::byte for offset
 
 	for (auto& object : _drawList)
 	{

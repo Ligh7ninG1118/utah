@@ -159,6 +159,7 @@
     <ClInclude Include="src\Render\DrawJob.h" />
     <ClInclude Include="src\Gameplay\TransformComponent.h" />
     <ClInclude Include="src\Render\PointLightComponent.h" />
+    <ClInclude Include="src\Render\PointLightData.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
     <ClInclude Include="src\Core\Entity.h" />
     <ClInclude Include="src\Render\IRenderer.h" />
