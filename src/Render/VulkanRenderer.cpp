@@ -667,16 +667,18 @@ void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
 
 void VulkanRenderer::CreateGraphicsPipeline()
 {
-	vk::raii::ShaderModule shaderModule = CreateShaderModule(ReadFile("shaderBin/HelloTri.spv"));
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile("shaderBin/HelloTri_vert.spv"));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile("shaderBin/HelloTri_frag.spv"));
+
 
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-		.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain" };
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
 	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-		.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "fragMain" };
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
 	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-	auto                                   bindingDescription = Vertex::GetBindingDescription();
-	auto                                   attributeDescriptions = Vertex::GetAttributeDescriptions();
+	auto bindingDescription = Vertex::GetBindingDescription();
+	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
 		.vertexBindingDescriptionCount = 1,
 		.pVertexBindingDescriptions = &bindingDescription,
