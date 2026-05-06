@@ -1,34 +1,35 @@
 #version 450
 
-// --------------- Camera UBO (set 0, binding 0) ---------------
-layout(set = 0, binding = 0) uniform CameraUBO
-{
+layout(set = 0, binding = 0) uniform CameraUBO {
     mat4 view;
     mat4 proj;
-} camUBO;
+} cam;
 
-// --------------- Object UBO (set 1, binding 0) ---------------
-layout(set = 1, binding = 0) uniform ObjectUBO
-{
-    mat4 model;
-} objUBO;
+struct ObjectData { mat4 model; };
+layout(set = 0, binding = 2) readonly buffer ObjectBuffer {
+    ObjectData objects[];
+} objBuf;
 
-// --------------- Vertex Input ---------------
-layout(location = 0) in vec3 inPosition;
+layout(push_constant) uniform PushConstants {
+    uint objectIndex;
+    uint textureIndex;
+} pc;
+
+layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inTexCoord;
+layout(location = 2) in vec2 inUV;
 
-// --------------- Vertex Output ---------------
-layout(location = 0) out vec3 outNormal;
-layout(location = 1) out vec3 outWorldPos;
-layout(location = 2) out vec2 outTexCoord;
+layout(location = 0) out vec3 outWorldPos;
+layout(location = 1) out vec3 outNormal;
+layout(location = 2) out vec2 outUV;
+layout(location = 3) flat out uint outTextureIndex;
 
-void main()
-{
-    outWorldPos = (objUBO.model * vec4(inPosition, 1.0)).xyz;
-    gl_Position = camUBO.proj * camUBO.view * vec4(outWorldPos, 1.0);
-
-    // For non-uniform scale, pass inverse-transpose separately
-    outNormal   = normalize(mat3(objUBO.model) * inNormal);
-    outTexCoord = inTexCoord;
+void main() {
+    mat4 model      = objBuf.objects[pc.objectIndex].model;
+    vec4 worldPos   = model * vec4(inPos, 1.0);
+    gl_Position     = cam.proj * cam.view * worldPos;
+    outWorldPos     = worldPos.xyz;
+    outNormal       = normalize(mat3(model) * inNormal);
+    outUV           = inUV;
+    outTextureIndex = pc.textureIndex;
 }

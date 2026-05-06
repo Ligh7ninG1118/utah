@@ -83,6 +83,13 @@ struct ObjectUBO
 	alignas(16) glm::mat4 model;
 };
 
+struct ObjectGPU
+{
+	alignas(16) glm::mat4 model;
+	//Future TODO: normal, material index, AABB
+};
+
+
 
 class VulkanRenderer
 {
@@ -256,10 +263,6 @@ private:
 	vk::raii::Buffer       _indexBuffer = nullptr;
 	vk::raii::DeviceMemory _indexBufferMemory = nullptr;
 
-	/*std::vector<vk::raii::Buffer>       _globalUniformBuffers;
-	std::vector<vk::raii::DeviceMemory> _globalUniformBuffersMemory;
-	std::vector<void*>                 _globalUniformBuffersMapped;*/
-
 	std::vector<vk::raii::Buffer>       _cameraUBOs;
 	std::vector<vk::raii::DeviceMemory> _cameraUBOMemory;
 	std::vector<void*>                  _cameraUBOMapped;
@@ -267,6 +270,11 @@ private:
 	std::vector<vk::raii::Buffer>       _lightUBOs;
 	std::vector<vk::raii::DeviceMemory> _lightUBOMemory;
 	std::vector<void*>                  _lightUBOMapped;
+
+
+	std::vector<vk::raii::Buffer>		_objectSSBOs;
+	std::vector<vk::raii::DeviceMemory> _objectSSBOMemory;
+	std::vector<ObjectGPU*>				_objectSSBOMapped;
 
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;

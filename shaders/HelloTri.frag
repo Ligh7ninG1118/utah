@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 
 // --------------- Point Light ---------------
 struct PointLight
@@ -24,12 +25,13 @@ layout(set = 0, binding = 1) uniform LightUBO
 } lightUBO;
 
 // --------------- Texture (set 1, binding 1) ---------------
-layout(set = 1, binding = 1) uniform sampler2D albedoTexture;
+layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 // --------------- Fragment Input ---------------
 layout(location = 0) in vec3 inNormal;
 layout(location = 1) in vec3 inWorldPos;
 layout(location = 2) in vec2 inTexCoord;
+layout(location = 3) flat in uint inTextureIndex;
 
 // --------------- Fragment Output ---------------
 layout(location = 0) out vec4 outColor;
@@ -57,7 +59,7 @@ vec3 CalculatePointLightTex(PointLight light, vec3 normal, vec3 fragPos, vec3 vi
 
 void main()
 {
-    vec4 tex     = texture(albedoTexture, inTexCoord);
+    vec4 tex     = texture(textures[nonuniformEXT(inTextureIndex)], inTexCoord);
     vec3 viewDir = normalize(lightUBO.eyePos - inWorldPos);
 
     vec3 result = vec3(0.0);

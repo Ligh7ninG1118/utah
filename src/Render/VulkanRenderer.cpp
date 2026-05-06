@@ -24,8 +24,9 @@ const std::string TEXTURE_PATH = "models/viking_room.png";
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
-//TODO: How do we estimate this?
-constexpr int MAX_OBJECTS = 5;
+constexpr int MAX_OBJECTS = 10000;
+
+constexpr int MAX_TEXTURES = 1024;
 
 const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
@@ -193,13 +194,11 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightData));
 	memcpy(_lightUBOMapped[currentImage], &lightUBO, sizeof(lightUBO));
 
-	//TODO: Use Single SSBO
-	/*for (auto& object : _drawList)
+	ObjectGPU* objects = _objectSSBOMapped[currentImage];
+	for (size_t i = 0; i < _drawList.size(); ++i)
 	{
-		ObjectUBO objUBO{ object._model };
-
-		memcpy(object._renderComp->_uboMapped[currentImage], &objUBO, sizeof(objUBO));
-	}*/
+		objects[i].model = _drawList[i]._model;
+	}
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -323,7 +322,7 @@ void VulkanRenderer::CreateSurface()
 void VulkanRenderer::PickPhysicalDevice()
 {
 	std::vector<vk::raii::PhysicalDevice> devices = _instance.enumeratePhysicalDevices();
-	const auto                            devIter = std::ranges::find_if(devices, [&](auto const& device) {
+	const auto devIter = std::ranges::find_if(devices, [&](auto const& device) {
 		// Check if the device supports the Vulkan 1.3 API version
 		bool supportsVulkan1_3 = device.getProperties().apiVersion >= VK_API_VERSION_1_3;
 
@@ -342,11 +341,18 @@ void VulkanRenderer::PickPhysicalDevice()
 					});
 			});
 
-		auto features = device.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+		auto features = device.template getFeatures2<
+			vk::PhysicalDeviceFeatures2, 
+			vk::PhysicalDeviceVulkan13Features,
+			vk::PhysicalDeviceVulkan12Features,
 			vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
 		bool supportsRequiredFeatures =
 			features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy &&
 			features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
+			features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
+			features.template get<vk::PhysicalDeviceVulkan12Features>().runtimeDescriptorArray &&
+			features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingPartiallyBound &&
+			features.template get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
 			features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
 
 		return supportsVulkan1_3 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
@@ -382,11 +388,20 @@ void VulkanRenderer::CreateLogicalDevice()
 	}
 
 	// query for Vulkan 1.3 features
-	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+	vk::StructureChain<
+		vk::PhysicalDeviceFeatures2, 
+		vk::PhysicalDeviceVulkan13Features,
+		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
 		featureChain = {
 			{.features = {.samplerAnisotropy = true}},                   // vk::PhysicalDeviceFeatures2
 			{.synchronization2 = true, .dynamicRendering = true},        // vk::PhysicalDeviceVulkan13Features
+			{.descriptorIndexing = true,								 // vk::PhysicalDeviceVulkan12Features
+			  .shaderSampledImageArrayNonUniformIndexing = true,
+			  .descriptorBindingSampledImageUpdateAfterBind = true,
+			  .descriptorBindingPartiallyBound = true,
+			  .runtimeDescriptorArray = true,
+			  .bufferDeviceAddress = false},
 			{.extendedDynamicState = true}                               // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
 	};
 
@@ -524,46 +539,47 @@ void VulkanRenderer::RecreateSwapChain()
 void VulkanRenderer::CreateDescriptorSetLayout()
 {
 	std::array bindings = {
-		// Camera Data
-		vk::DescriptorSetLayoutBinding(
-			0, 
-			vk::DescriptorType::eUniformBuffer, 
-			1, 
-			vk::ShaderStageFlagBits::eVertex,
-			nullptr),
-		// Lights Data
-		vk::DescriptorSetLayoutBinding(
-			1,
-			vk::DescriptorType::eUniformBuffer,
-			1,
-			vk::ShaderStageFlagBits::eFragment,
-			nullptr)
+			// 0: CameraUBO (vertex)
+			vk::DescriptorSetLayoutBinding{
+				.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer,
+				.descriptorCount = 1,
+				.stageFlags = vk::ShaderStageFlagBits::eVertex },
+			// 1: LightUBO (fragment)
+			vk::DescriptorSetLayoutBinding{
+				.binding = 1, .descriptorType = vk::DescriptorType::eUniformBuffer,
+				.descriptorCount = 1,
+				.stageFlags = vk::ShaderStageFlagBits::eFragment },
+			// 2: ObjectBuffer SSBO (vertex)
+			vk::DescriptorSetLayoutBinding{
+				.binding = 2, .descriptorType = vk::DescriptorType::eStorageBuffer,
+				.descriptorCount = 1,
+				.stageFlags = vk::ShaderStageFlagBits::eVertex },
+			// 3: combined-image-sampler array (fragment) — bindless texture slot
+			vk::DescriptorSetLayoutBinding{
+				.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.descriptorCount = MAX_TEXTURES,
+				.stageFlags = vk::ShaderStageFlagBits::eFragment },
 	};
 
-	vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()),
-												 .pBindings = bindings.data() };
-	_globalDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfo);
-
-	std::array bindingsObj = {
-		// Object Model matrix
-		vk::DescriptorSetLayoutBinding(
-			0,
-			vk::DescriptorType::eUniformBuffer,
-			1,
-			vk::ShaderStageFlagBits::eVertex,
-			nullptr),
-		// Object texture
-		vk::DescriptorSetLayoutBinding(
-			1,
-			vk::DescriptorType::eCombinedImageSampler,
-			1,
-			vk::ShaderStageFlagBits::eFragment,
-			nullptr),
+	// Per-binding flags so binding 3 can be partially-bound + update-after-bind
+	std::array<vk::DescriptorBindingFlags, 4> bindingFlags = {
+		{}, {}, {},
+		vk::DescriptorBindingFlagBits::ePartiallyBound |
+		vk::DescriptorBindingFlagBits::eUpdateAfterBind
+	};
+	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
+		.bindingCount = static_cast<uint32_t>(bindingFlags.size()),
+		.pBindingFlags = bindingFlags.data()
 	};
 
-	vk::DescriptorSetLayoutCreateInfo layoutInfoObj{ .bindingCount = static_cast<uint32_t>(bindingsObj.size()),
-												 .pBindings = bindingsObj.data() };
-	_objDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, layoutInfoObj);
+	vk::DescriptorSetLayoutCreateInfo info{
+		.pNext = &flagsInfo,
+		.flags = vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool,
+		.bindingCount = static_cast<uint32_t>(bindings.size()),
+		.pBindings = bindings.data()
+	};
+
+	_globalDescriptorSetLayout = vk::raii::DescriptorSetLayout(_device, info);
 
 }
 
@@ -711,17 +727,17 @@ void VulkanRenderer::CreateGraphicsPipeline()
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
-	std::array<vk::DescriptorSetLayout, 2> setLayouts = 
-	{
-		*_globalDescriptorSetLayout,
-		*_objDescriptorSetLayout
+	vk::PushConstantRange pushRange{
+		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+		.offset = 0,
+		.size = sizeof(uint32_t) * 2   // objectIndex, textureIndex
 	};
 
-	
 	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-		.setLayoutCount = static_cast<uint32_t>(setLayouts.size()), 
-		.pSetLayouts = setLayouts.data(), 
-		.pushConstantRangeCount = 0};
+		.setLayoutCount = 1,
+		.pSetLayouts = &*_globalDescriptorSetLayout,
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &pushRange};
 
 	_pipelineLayout = vk::raii::PipelineLayout(_device, pipelineLayoutInfo);
 
@@ -767,6 +783,9 @@ void VulkanRenderer::CreateCommandBuffers()
 
 void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 {
+
+
+
 	_commandBuffers[_currentFrame].begin({});
 	// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eUndefined,
@@ -1301,40 +1320,21 @@ void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
 	makeMapped(sizeof(CameraUBO), _cameraUBOs, _cameraUBOMemory, _cameraUBOMapped);
 	makeMapped(sizeof(LightUBO), _lightUBOs, _lightUBOMemory, _lightUBOMapped);
 
+	const vk::DeviceSize objSize = sizeof(ObjectGPU) * MAX_OBJECTS;
 
-	/*for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
 	{
-		vk::DeviceSize         bufferSize = sizeof(CameraUBO) + sizeof(LightUBO);
-		vk::raii::Buffer       buffer({});
-		vk::raii::DeviceMemory bufferMem({});
-		CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer,
-			bufferMem);
-		_globalUniformBuffers.emplace_back(std::move(buffer));
-		_globalUniformBuffersMemory.emplace_back(std::move(bufferMem));
-		_globalUniformBuffersMapped.emplace_back(_globalUniformBuffersMemory[i].mapMemory(0, bufferSize));
+		vk::raii::Buffer       buf({});
+		vk::raii::DeviceMemory mem({});
+		CreateBuffer(objSize,
+			vk::BufferUsageFlagBits::eStorageBuffer,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+			buf, mem);
+		_objectSSBOs.emplace_back(std::move(buf));
+		_objectSSBOMemory.emplace_back(std::move(mem));
+		_objectSSBOMapped.emplace_back(
+			static_cast<ObjectGPU*>(_objectSSBOMemory[i].mapMemory(0, objSize)));
 	}
-
-	for(auto& object : pool)
-	{
-		object._ubo.clear();
-		object._uboMemory.clear();
-		object._uboMapped.clear();
-
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-		{
-
-			vk::DeviceSize         bufferSize = sizeof(ObjectUBO);
-			vk::raii::Buffer       buffer({});
-			vk::raii::DeviceMemory bufferMem({});
-			CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer,
-				bufferMem);
-			object._ubo.emplace_back(std::move(buffer));
-			object._uboMemory.emplace_back(std::move(bufferMem));
-			object._uboMapped.emplace_back(object._uboMemory[i].mapMemory(0, bufferSize));
-		}
-	}*/
 	
 }
 
