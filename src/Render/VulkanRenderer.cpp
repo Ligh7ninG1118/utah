@@ -180,33 +180,26 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	CameraUBO camUBO{};
 	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
-
 	camUBO.proj =
 		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._nearPlane, _mainCam._farPlane);
 	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
+	memcpy(_cameraUBOMapped[currentImage], &camUBO, sizeof(camUBO));
 
-	//TODO: more memory efficient way to pass this?
-	LightUBO lightUBO;
+	LightUBO lightUBO{};
 	lightUBO.eyePos = _mainCam._pos;
-	lightUBO.pointLightNum = _pointLights.size();
-	for (size_t i = 0; i < _pointLights.size(); i++)
-	{
-		lightUBO.pointLights[i] = _pointLights[i];
-	}
+	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
+	std::memcpy(lightUBO.pointLights, _pointLights.data(),
+		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightData));
+	memcpy(_lightUBOMapped[currentImage], &lightUBO, sizeof(lightUBO));
 
-	char* p = static_cast<char*>(_globalUniformBuffersMapped[currentImage]);
-
-	memcpy(p, &camUBO, sizeof(camUBO));
-	memcpy(p + sizeof(camUBO), &lightUBO, sizeof(lightUBO));
-	//TODO: More elegant way to pass this, use std::byte for offset
-
-	for (auto& object : _drawList)
+	//TODO: Use Single SSBO
+	/*for (auto& object : _drawList)
 	{
 		ObjectUBO objUBO{ object._model };
 
 		memcpy(object._renderComp->_uboMapped[currentImage], &objUBO, sizeof(objUBO));
-	}
+	}*/
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -606,13 +599,12 @@ void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		vk::DescriptorBufferInfo cameraBufferInfo{ .buffer = _globalUniformBuffers[i], 
+		vk::DescriptorBufferInfo cameraBufferInfo{ .buffer = _cameraUBOs[i],
 											.offset = 0, 
 											.range = sizeof(CameraUBO)};
 
-		//TODO: Separate buffer or use the offset here? I will bite with offset for now...
-		vk::DescriptorBufferInfo lightsBufferInfo{ .buffer = _globalUniformBuffers[i],
-											.offset = sizeof(CameraUBO),
+		vk::DescriptorBufferInfo lightsBufferInfo{ .buffer = _lightUBOs[i],
+											.offset = 0,
 											.range = sizeof(LightUBO) };
 
 		std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
@@ -1281,11 +1273,36 @@ void VulkanRenderer::CreateIndexBuffer()
 
 void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
 {
-	_globalUniformBuffers.clear();
-	_globalUniformBuffersMemory.clear();
-	_globalUniformBuffersMapped.clear();
+	auto makeMapped = [&](vk::DeviceSize size,
+		std::vector<vk::raii::Buffer>& buffers,
+		std::vector<vk::raii::DeviceMemory>& memory,
+		std::vector<void*>& mapped)
+		{
+			buffers.clear();
+			memory.clear();
+			mapped.clear();
 
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+			for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+			{
+				vk::raii::Buffer       buffer({});
+				vk::raii::DeviceMemory mem({});
+				CreateBuffer(size,
+					vk::BufferUsageFlagBits::eUniformBuffer,
+					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+					buffer,
+					mem);
+
+				buffers.emplace_back(std::move(buffer));
+				memory.emplace_back(std::move(mem));
+				mapped.emplace_back(memory[i].mapMemory(0, size));
+			}
+		};
+
+	makeMapped(sizeof(CameraUBO), _cameraUBOs, _cameraUBOMemory, _cameraUBOMapped);
+	makeMapped(sizeof(LightUBO), _lightUBOs, _lightUBOMemory, _lightUBOMapped);
+
+
+	/*for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		vk::DeviceSize         bufferSize = sizeof(CameraUBO) + sizeof(LightUBO);
 		vk::raii::Buffer       buffer({});
@@ -1317,7 +1334,7 @@ void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
 			object._uboMemory.emplace_back(std::move(bufferMem));
 			object._uboMapped.emplace_back(object._uboMemory[i].mapMemory(0, bufferSize));
 		}
-	}
+	}*/
 	
 }
 

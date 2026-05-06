@@ -256,9 +256,18 @@ private:
 	vk::raii::Buffer       _indexBuffer = nullptr;
 	vk::raii::DeviceMemory _indexBufferMemory = nullptr;
 
-	std::vector<vk::raii::Buffer>       _globalUniformBuffers;
+	/*std::vector<vk::raii::Buffer>       _globalUniformBuffers;
 	std::vector<vk::raii::DeviceMemory> _globalUniformBuffersMemory;
-	std::vector<void*>                 _globalUniformBuffersMapped;
+	std::vector<void*>                 _globalUniformBuffersMapped;*/
+
+	std::vector<vk::raii::Buffer>       _cameraUBOs;
+	std::vector<vk::raii::DeviceMemory> _cameraUBOMemory;
+	std::vector<void*>                  _cameraUBOMapped;
+
+	std::vector<vk::raii::Buffer>       _lightUBOs;
+	std::vector<vk::raii::DeviceMemory> _lightUBOMemory;
+	std::vector<void*>                  _lightUBOMapped;
+
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
