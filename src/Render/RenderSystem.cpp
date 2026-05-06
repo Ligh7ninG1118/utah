@@ -46,8 +46,8 @@ void RenderSystem::GatherDrawList()
 	auto& renderPool = _pRenderPool->GetPool();
 	auto& renderCompToEntity = _pRenderPool->GetEntities();
 	
-	std::vector<DrawJob> list;
-	list.reserve(renderPool.size());
+	_drawListScratch.clear();
+	_drawListScratch.reserve(renderPool.size());
 
 	for (size_t i = 0; i < renderPool.size(); i++)
 	{
@@ -55,36 +55,27 @@ void RenderSystem::GatherDrawList()
 		job._renderComp = &renderPool[i];
 
 		job.SetModelMatrix(_pTransformPool->Get(renderCompToEntity[i]));
-		list.push_back(job);
+		_drawListScratch.push_back(job);
 	}
 
-	_pRenderer->UpdateDrawList(list);
+	_pRenderer->UpdateDrawList(std::move(_drawListScratch));
 }
 
 void RenderSystem::GatherLights()
 {
 	auto& pointLightPool = _pPointLightPool->GetPool();
-	auto& lightToEntity = _pPointLightPool->GetEntities();
+	auto& owners = _pPointLightPool->GetEntities();
 
 	std::vector<PointLightData> lights;
 	lights.reserve(pointLightPool.size());
 
 	for (size_t i = 0; i < pointLightPool.size(); i++)
 	{
-		PointLightData light;
-		light.ambient = pointLightPool[i].ambient;
-		light.diffuse = pointLightPool[i].diffuse;
-		light.specular = pointLightPool[i].specular;
-		light.constant = pointLightPool[i].constant;
-		light.linear = pointLightPool[i].linear;
-		light.quadratic = pointLightPool[i].quadratic;
-
-		light.position = _pTransformPool->Get(lightToEntity[i])._pos;
-
-		lights.push_back(light);
+		const glm::vec3& pos = _pTransformPool->Get(owners[i])._pos;
+		lights.push_back(pointLightPool[i].ToGPU(pos));
 	}
 
-	_pRenderer->UpdateLights(lights);
+	_pRenderer->UpdateLights(std::move(lights));
 }
 
 void RenderSystem::NotifyResized()

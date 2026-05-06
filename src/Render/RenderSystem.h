@@ -6,6 +6,7 @@
 #include "Gameplay/CameraComponent.h"
 
 class VulkanRenderer;
+struct DrawJob;
 
 class RenderSystem : public System
 {
@@ -32,4 +33,6 @@ private:
 	ComponentPool<RenderComponent>* _pRenderPool;
 	ComponentPool<CameraComponent>* _pCameraPool;
 	ComponentPool<PointLightComponent>* _pPointLightPool;
+
+	std::vector<DrawJob> _drawListScratch;
 };

@@ -80,9 +80,9 @@ void VulkanRenderer::Initialize(std::vector<RenderComponent>& pool)
 	CreateSyncObjects();
 }
 
-void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>& list)
+void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>&& list)
 {
-	_drawList = list;
+	_drawList = std::move(list);
 }
 
 void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
@@ -90,9 +90,9 @@ void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
 	_mainCam = camera;
 }
 
-void VulkanRenderer::UpdateLights(std::vector<PointLightData> lights)
+void VulkanRenderer::UpdateLights(std::vector<PointLightData>&& lights)
 {
-	_pointLights = lights;
+	_pointLights = std::move(lights);
 }
 
 void VulkanRenderer::DrawFrame()

@@ -92,11 +92,11 @@ public:
 
 	void Initialize(std::vector<RenderComponent>& pool);
 
-	void UpdateDrawList(std::vector<struct DrawJob>& list);
+	void UpdateDrawList(std::vector<struct DrawJob>&& list);
 
 	void UpdateCamera(const CameraComponent& camera);
 
-	void UpdateLights(std::vector<PointLightData> lights);
+	void UpdateLights(std::vector<PointLightData>&& lights);
 
 	void DrawFrame();
 
