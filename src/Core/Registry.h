@@ -75,6 +75,12 @@ public:
 		return static_cast<ComponentPool<T>*>(_componentPools[cTypeID].get());
 	}
 
+	void Clear()
+	{
+		_componentPools.clear();
+		_freeEntities.clear();
+		_entityCounter = 0;
+	}
 
 private:
 	// Component

@@ -1,6 +1,5 @@
 #pragma once
 #include "Core/UtahCtx.h"
-#include "Render/IRenderer.h"
 
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS 1
@@ -102,6 +101,8 @@ public:
 	void DrawFrame();
 
 	void WaitForIdle();
+
+	void NotifyResized() { _framebufferResized = true; }
 
 private:
 
@@ -269,7 +270,7 @@ private:
 	std::vector<vk::raii::Semaphore> _renderFinishedSemaphores;
 	std::vector<vk::raii::Fence>     _inFlightFences;
 
-	uint32_t _semaphoreIndex;
+	uint32_t _semaphoreIndex = 0;
 	uint32_t _currentFrame = 0;
 
 	bool _framebufferResized = false;

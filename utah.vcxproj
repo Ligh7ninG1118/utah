@@ -162,7 +162,6 @@
     <ClInclude Include="src\Render\PointLightData.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
     <ClInclude Include="src\Core\Entity.h" />
-    <ClInclude Include="src\Render\IRenderer.h" />
     <ClInclude Include="src\Render\RenderSystem.h" />
     <ClInclude Include="src\Core\UtahCtx.h" />
     <ClInclude Include="src\Core\System.h" />

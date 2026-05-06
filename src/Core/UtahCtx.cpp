@@ -133,19 +133,23 @@ void UtahCtx::MainLoop()
 		_pFlyCamera->Update(deltaTime);
 
 		_pRenderSystem->Update(deltaTime);
-
-		_pRenderSystem->WaitForRendererIdle();
 	}
 
 }
 
-void UtahCtx::CleanUp() const
+void UtahCtx::CleanUp()
 {
+	_pRenderSystem->WaitForRendererIdle();
+
+	_registry.Clear();
+
+	for (auto* sys : _systems)
+		delete sys;
+	_systems.clear();
+
 	glfwDestroyWindow(_pWindow);
 
 	glfwTerminate();
-
-	//TODO: Destroy all entities, systems, components
 }
 
 void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos)
@@ -165,4 +169,9 @@ void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int ac
 
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
 		glfwSetWindowShouldClose(ctx->_pWindow, GLFW_TRUE);
+}
+
+void UtahCtx::NotifyFramebufferResized()
+{
+	_pRenderSystem->NotifyResized();
 }

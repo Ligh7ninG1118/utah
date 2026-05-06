@@ -29,12 +29,14 @@ public:
 
 	GLFWwindow* GetContextWindow() const { return _pWindow; }
 
+	void NotifyFramebufferResized();
+
 private:
 	void InitWindow();
 	void InitSystems();
 	void InitDemo();
 	void MainLoop();
-	void CleanUp() const;
+	void CleanUp();
 
 	static void MousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 	static void KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);

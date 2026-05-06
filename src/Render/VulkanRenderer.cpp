@@ -216,8 +216,12 @@ void VulkanRenderer::RegisterResizeCallback()
 
 void VulkanRenderer::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 {
-	auto pAppCtx = static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(window));
-	pAppCtx->_framebufferResized = true;
+	auto* pAppCtx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
+	if (!pAppCtx)
+		throw std::runtime_error("Unable to get Utah Context from GLFW");
+
+	// Reroute resize notification to UtahCtx->RenderSystem->VulkanRenderer
+	pAppCtx->NotifyFramebufferResized();
 }
 
 void VulkanRenderer::CreateInstance()
@@ -226,7 +230,7 @@ void VulkanRenderer::CreateInstance()
 										  .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
 										  .pEngineName = "No Engine",
 										  .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-										  .apiVersion = vk::ApiVersion14 };
+										  .apiVersion = vk::ApiVersion13 };
 	// Can use appInfo.pNext to point to extension information
 
 	std::vector<char const*> requiredLayers;

@@ -87,4 +87,10 @@ void RenderSystem::GatherLights()
 	_pRenderer->UpdateLights(lights);
 }
 
+void RenderSystem::NotifyResized()
+{
+	_pRenderer->NotifyResized();
+}
+
+
 

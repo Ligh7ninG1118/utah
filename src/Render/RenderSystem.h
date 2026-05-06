@@ -19,6 +19,8 @@ public:
 
 	void WaitForRendererIdle();
 
+	void NotifyResized();
+
 private:
 	void GatherDrawList();
 
