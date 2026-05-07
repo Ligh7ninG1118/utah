@@ -148,6 +148,7 @@
     <ClCompile Include="src\Core\UtahCtx.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Render\VulkanRenderer.cpp" />
+    <ClCompile Include="src\Render\VulkanContext.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Gameplay\FlyCameraSystem.h" />
@@ -166,6 +167,7 @@
     <ClInclude Include="src\Core\UtahCtx.h" />
     <ClInclude Include="src\Core\System.h" />
     <ClInclude Include="src\Render\VulkanRenderer.h" />
+    <ClInclude Include="src\Render\VulkanContext.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\BlinnPhong.slang" />

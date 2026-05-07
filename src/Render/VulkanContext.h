@@ -1,0 +1,62 @@
+#pragma once
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS 1
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
+
+#include <vulkan/vulkan_raii.hpp>
+
+#include <cstdint>
+#include <vector>
+
+
+struct GLFWwindow;
+
+
+class VulkanContext
+{
+public:
+	VulkanContext();
+	~VulkanContext();
+
+	void Initialize(GLFWwindow* pWindow);
+
+	const vk::raii::Instance& GetInstance() const { return _instance; }
+	const vk::raii::PhysicalDevice& GetPhysicalDevice() const { return _physicalDevice; }
+	const vk::raii::Device& GetDevice() const { return _device; }
+	const vk::raii::SurfaceKHR& GetSurface() const { return _surface; }
+	const vk::raii::Queue& GetQueue() const { return _queue; }
+	uint32_t GetQueueFamilyIndex() const { return _queueIndex; }
+
+private:
+	void CreateInstance();
+	void SetupDebugMessenger();
+	void CreateSurface(GLFWwindow* pWindow);
+	void PickPhysicalDevice();
+	void CreateLogicalDevice();
+
+	static std::vector<const char*> GetRequiredInstanceExtensions();
+
+	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
+		vk::DebugUtilsMessageTypeFlagsEXT             messageType,
+		const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+		void* pUserData);
+
+
+	vk::raii::Context                _vkContext;
+	vk::raii::Instance               _instance = nullptr;
+	vk::raii::DebugUtilsMessengerEXT _debugMessenger = nullptr;
+	vk::raii::SurfaceKHR             _surface = nullptr;
+	vk::raii::PhysicalDevice         _physicalDevice = nullptr;
+	vk::raii::Device                 _device = nullptr;
+
+	uint32_t        _queueIndex = ~0u;
+	vk::raii::Queue _queue = nullptr;
+
+	std::vector<const char*> _validationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+	std::vector<const char*> _requiredDeviceExtension = { 
+		vk::KHRSwapchainExtensionName, 
+		vk::KHRSpirv14ExtensionName,
+		vk::KHRSynchronization2ExtensionName,
+		vk::KHRCreateRenderpass2ExtensionName };
+};
+

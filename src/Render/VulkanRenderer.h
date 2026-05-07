@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "VulkanContext.h"
 #include "RenderComponent.h"
 #include "Gameplay/CameraComponent.h"
 #include "Render/PointLightData.h"
@@ -90,7 +91,6 @@ struct PerDrawPC
 	uint32_t textureIndex;
 };
 
-
 class VulkanRenderer
 {
 public:
@@ -119,18 +119,6 @@ private:
 	// Window resize callback
 	void RegisterResizeCallback();
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
-
-	// Core Vulkan Setup
-	void CreateInstance();
-	std::vector<const char*> GetRequiredExtensions() const;
-	void SetupDebugMessenger();
-	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT      messageSeverity,
-		vk::DebugUtilsMessageTypeFlagsEXT             messageType,
-		const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-		void* pUserData);
-	void CreateSurface();
-	void PickPhysicalDevice();
-	void CreateLogicalDevice();
 
 	// Swap Chain
 	struct SwapChainSupportDetails
@@ -219,17 +207,12 @@ private:
 	void CreateColorResources();
 
 	// Variables
-	UtahCtx& _ctxRef;
-	vk::raii::Context                _vkContext;
-	vk::raii::Instance               _instance = nullptr;
-	vk::raii::DebugUtilsMessengerEXT _debugMessenger = nullptr;
-	vk::raii::PhysicalDevice         _physicalDevice = nullptr;
-	vk::raii::Device                 _device = nullptr;
-	vk::raii::SurfaceKHR             _surface = nullptr;
+	// Ref to windows and program context
+	UtahCtx& _programCtx;
 
-	uint32_t        _queueIndex = ~0;
-	vk::raii::Queue _queue = nullptr;
-
+	// Handles instance creation, device management, etc.
+	VulkanContext _vkCtx;
+	
 	vk::raii::SwapchainKHR           _swapChain = nullptr;
 	std::vector<vk::Image>           _swapChainImages;
 	vk::SurfaceFormatKHR             _swapChainSurfaceFormat;
@@ -292,10 +275,6 @@ private:
 	bool _framebufferResized = false;
 
 	vk::SampleCountFlagBits _msaaSamples = vk::SampleCountFlagBits::e1;
-
-	std::vector<const char*> _requiredDeviceExtension = { vk::KHRSwapchainExtensionName, vk::KHRSpirv14ExtensionName,
-														  vk::KHRSynchronization2ExtensionName,
-														  vk::KHRCreateRenderpass2ExtensionName };
 
 	std::vector<struct DrawJob> _drawList;
 
