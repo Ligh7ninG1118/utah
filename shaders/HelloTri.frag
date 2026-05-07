@@ -28,8 +28,8 @@ layout(set = 0, binding = 1) uniform LightUBO
 layout(set = 0, binding = 3) uniform sampler2D textures[];
 
 // --------------- Fragment Input ---------------
-layout(location = 0) in vec3 inNormal;
-layout(location = 1) in vec3 inWorldPos;
+layout(location = 0) in vec3 inWorldPos;
+layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
 layout(location = 3) flat in uint inTextureIndex;
 

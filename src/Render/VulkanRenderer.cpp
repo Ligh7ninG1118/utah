@@ -46,7 +46,7 @@ VulkanRenderer::~VulkanRenderer()
 {
 }
 
-void VulkanRenderer::Initialize(std::vector<RenderComponent>& pool)
+void VulkanRenderer::Initialize()
 {
 	CreateInstance();
 	SetupDebugMessenger();
@@ -73,9 +73,9 @@ void VulkanRenderer::Initialize(std::vector<RenderComponent>& pool)
 	LoadModel();
 	CreateVertexBuffer();
 	CreateIndexBuffer();
-	CreateUniformBuffers(pool);
+	CreateUniformBuffers();
 	CreateDescriptorPool();
-	CreateDescriptorSets(pool);
+	CreateDescriptorSets();
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
@@ -563,9 +563,11 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 
 	// Per-binding flags so binding 3 can be partially-bound + update-after-bind
 	std::array<vk::DescriptorBindingFlags, 4> bindingFlags = {
+	{
 		{}, {}, {},
 		vk::DescriptorBindingFlagBits::ePartiallyBound |
 		vk::DescriptorBindingFlagBits::eUpdateAfterBind
+	}
 	};
 	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
 		.bindingCount = static_cast<uint32_t>(bindingFlags.size()),
@@ -585,15 +587,13 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 
 void VulkanRenderer::CreateDescriptorPool()
 {
-	// 1 is for global data
-	const uint32_t totalUBOs = MAX_FRAMES_IN_FLIGHT * (MAX_OBJECTS + 1);
-
 	std::array poolSize{
-						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * (MAX_OBJECTS + 2)),
-						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * MAX_OBJECTS) };
+						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 2),
+						vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * 1),
+						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES) };
 
-	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-										  .maxSets = totalUBOs,
+	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+										  .maxSets = MAX_FRAMES_IN_FLIGHT,
 										  .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
 										  .pPoolSizes = poolSize.data() };
 
@@ -602,7 +602,7 @@ void VulkanRenderer::CreateDescriptorPool()
 	//TODO: Check out using dynamic uniform buffers to cut down the number
 }
 
-void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
+void VulkanRenderer::CreateDescriptorSets()
 {
 	std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _globalDescriptorSetLayout);
 
@@ -616,65 +616,53 @@ void VulkanRenderer::CreateDescriptorSets(std::vector<RenderComponent>& pool)
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		vk::DescriptorBufferInfo cameraBufferInfo{ .buffer = _cameraUBOs[i],
-											.offset = 0, 
-											.range = sizeof(CameraUBO)};
+											.offset = 0,
+											.range = sizeof(CameraUBO) };
 
 		vk::DescriptorBufferInfo lightsBufferInfo{ .buffer = _lightUBOs[i],
 											.offset = 0,
 											.range = sizeof(LightUBO) };
 
-		std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
-																		.dstBinding = 0,
-																		.dstArrayElement = 0,
-																		.descriptorCount = 1,
-																		.descriptorType = vk::DescriptorType::eUniformBuffer,
-																		.pBufferInfo = &cameraBufferInfo},
-									vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
-																		.dstBinding = 1,
-																		.dstArrayElement = 0,
-																		.descriptorCount = 1,
-																		.descriptorType = vk::DescriptorType::eUniformBuffer,
-																		.pBufferInfo = &lightsBufferInfo} };
-		_device.updateDescriptorSets(descriptorWrites, {});
-	}
-
-	for (auto& object : pool)
-	{
-		std::vector<vk::DescriptorSetLayout> layoutsObj(MAX_FRAMES_IN_FLIGHT, _objDescriptorSetLayout);
-
-		vk::DescriptorSetAllocateInfo allocInfoObj{ .descriptorPool = _descriptorPool,
-												.descriptorSetCount = static_cast<uint32_t>(layoutsObj.size()),
-												.pSetLayouts = layoutsObj.data() };
-
-		object._descSets.clear();
-		object._descSets = _device.allocateDescriptorSets(allocInfoObj);
-
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-		{
-			vk::DescriptorBufferInfo bufferInfo{ .buffer = object._ubo[i],
+		vk::DescriptorBufferInfo objectBufferInfo{ .buffer = _objectSSBOs[i],
 											.offset = 0,
-											.range = sizeof(ObjectUBO) };
+											.range = sizeof(ObjectGPU) * MAX_OBJECTS };
 
-			vk::DescriptorImageInfo imageInfo{ .sampler = _textureSampler,
-											  .imageView = _textureImageView,
-											  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+			// Slot 0 of the bindless texture array -- partially-bound, so we only
+			// write the slots actually accessed by the shader.
+		vk::DescriptorImageInfo textureInfo{ .sampler = _textureSampler,
+											.imageView = _textureImageView,
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
-			std::array descriptorWrites{ vk::WriteDescriptorSet{.dstSet = *object._descSets[i],
-																			.dstBinding = 0,
-																			.dstArrayElement = 0,
-																			.descriptorCount = 1,
-																			.descriptorType = vk::DescriptorType::eUniformBuffer,
-																			.pBufferInfo = &bufferInfo},
-										vk::WriteDescriptorSet{.dstSet = *object._descSets[i],
-																			.dstBinding = 1,
-																			.dstArrayElement = 0,
-																			.descriptorCount = 1,
-																			.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-																			.pImageInfo = &imageInfo} };
-			_device.updateDescriptorSets(descriptorWrites, {});
-		}
+		std::array descriptorWrites{
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 0,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eUniformBuffer,
+									.pBufferInfo = &cameraBufferInfo},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 1,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eUniformBuffer,
+									.pBufferInfo = &lightsBufferInfo},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 2,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eStorageBuffer,
+									.pBufferInfo = &objectBufferInfo},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 3,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+									.pImageInfo = &textureInfo} };
+
+		_device.updateDescriptorSets(descriptorWrites, {});
+
+
 	}
-
 }
 
 void VulkanRenderer::CreateGraphicsPipeline()
@@ -723,7 +711,16 @@ void VulkanRenderer::CreateGraphicsPipeline()
 														.attachmentCount = 1,
 														.pAttachments = &colorBlendAttachment };
 
-	std::vector dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+	std::vector dynamicStates = { 
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp,
+		vk::DynamicState::ePrimitiveTopology };
+
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
@@ -783,9 +780,6 @@ void VulkanRenderer::CreateCommandBuffers()
 
 void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 {
-
-
-
 	_commandBuffers[_currentFrame].begin({});
 	// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eUndefined,
@@ -849,6 +843,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			vk::Offset2D(0, 0),
 			_swapChainExtent));
 
+	_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+	_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+	_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+	_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+	_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eLess);
+	_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
 	_commandBuffers[_currentFrame].bindVertexBuffers(0, *_vertexBuffer, { 0 });
 
 	_commandBuffers[_currentFrame].bindIndexBuffer(*_indexBuffer, 0, vk::IndexType::eUint32);
@@ -860,16 +861,18 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		*_globalDescriptorSets[_currentFrame],
 		nullptr);
 
-	for (const auto& object : _drawList)
+	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
-		_commandBuffers[_currentFrame].bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
+		PerDrawPC pc{ i, 0 };
+		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
 			_pipelineLayout,
-			1,
-			*object._renderComp->_descSets[_currentFrame],
-			nullptr);
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
 
-		_commandBuffers[_currentFrame].drawIndexed(_indices.size(), 1, 0, 0, 0);
+		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(_indices.size()), 1, 0, 0, 0);
+
 	}
 
 	_commandBuffers[_currentFrame].endRendering();
@@ -1002,40 +1005,50 @@ void VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint32_t mipLe
 	return vk::raii::ImageView(_device, viewInfo);
 }
 
-void VulkanRenderer::TransitionImageLayout(const vk::raii::Image& image, const vk::ImageLayout oldLayout,
-	const vk::ImageLayout newLayout, uint32_t mipLevels)
+void VulkanRenderer::TransitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout,
+	vk::ImageLayout newLayout, uint32_t mipLevels)
 {
 	const auto commandBuffer = BeginSingleTimeCommands();
 
-	vk::ImageMemoryBarrier barrier{ .oldLayout = oldLayout,
-								   .newLayout = newLayout,
-								   .image = image,
-								   .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, 1} };
-
-	vk::PipelineStageFlags sourceStage;
-	vk::PipelineStageFlags destinationStage;
+	vk::AccessFlags2 srcAccess{}, dstAccess{};
+	vk::PipelineStageFlags2 srcStage{}, dstStage{};
 
 	if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
 	{
-		barrier.srcAccessMask = {};
-		barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-
-		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
-		destinationStage = vk::PipelineStageFlagBits::eTransfer;
+		srcAccess = {};
+		dstAccess = vk::AccessFlagBits2::eTransferWrite;
+		srcStage = vk::PipelineStageFlagBits2::eTopOfPipe;
+		dstStage = vk::PipelineStageFlagBits2::eAllTransfer;
 	}
 	else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
 	{
-		barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-		barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-		sourceStage = vk::PipelineStageFlagBits::eTransfer;
-		destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+		srcAccess = vk::AccessFlagBits2::eTransferWrite;
+		dstAccess = vk::AccessFlagBits2::eShaderRead;
+		srcStage = vk::PipelineStageFlagBits2::eAllTransfer;
+		dstStage = vk::PipelineStageFlagBits2::eFragmentShader;
 	}
 	else
 	{
 		throw std::invalid_argument("unsupported layout transition!");
 	}
-	commandBuffer->pipelineBarrier(sourceStage, destinationStage, {}, {}, nullptr, barrier);
+
+	vk::ImageMemoryBarrier2 barrier{
+		.srcStageMask = srcStage,
+		.srcAccessMask = srcAccess,
+		.dstStageMask = dstStage,
+		.dstAccessMask = dstAccess,
+		.oldLayout = oldLayout,
+		.newLayout = newLayout,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = image,
+		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, 1} };
+
+	vk::DependencyInfo dependencyInfo{
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &barrier };
+
+	commandBuffer->pipelineBarrier2(dependencyInfo);
 	EndSingleTimeCommands(*commandBuffer);
 }
 void VulkanRenderer::TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
@@ -1090,13 +1103,10 @@ void VulkanRenderer::GenerateMipmaps(const vk::raii::Image& image, vk::Format im
 
 	std::unique_ptr<vk::raii::CommandBuffer> commandBuffer = BeginSingleTimeCommands();
 
-	vk::ImageMemoryBarrier barrier = { .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-											   .dstAccessMask = vk::AccessFlagBits::eTransferRead,
-											   .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-											   .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-											   .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-											   .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-											   .image = image };
+	vk::ImageMemoryBarrier2 barrier{
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = image };
 	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 	barrier.subresourceRange.baseArrayLayer = 0;
 	barrier.subresourceRange.layerCount = 1;
@@ -1110,11 +1120,13 @@ void VulkanRenderer::GenerateMipmaps(const vk::raii::Image& image, vk::Format im
 		barrier.subresourceRange.baseMipLevel = i - 1;
 		barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
 		barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-		barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-		barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+		barrier.srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer;
+		barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+		barrier.dstStageMask = vk::PipelineStageFlagBits2::eAllTransfer;
+		barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
 
-		commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {},
-			{}, {}, barrier);
+		commandBuffer->pipelineBarrier2(vk::DependencyInfo{
+			.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 
 		vk::ArrayWrapper1D<vk::Offset3D, 2> offsets, dstOffsets;
 		offsets[0] = vk::Offset3D(0, 0, 0);
@@ -1131,11 +1143,13 @@ void VulkanRenderer::GenerateMipmaps(const vk::raii::Image& image, vk::Format im
 
 		barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
 		barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-		barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-		barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+		barrier.srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer;
+		barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+		barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+		barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
 
-		commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
-			{}, {}, {}, barrier);
+		commandBuffer->pipelineBarrier2(vk::DependencyInfo{
+			.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 
 		if (mipWidth > 1)
 			mipWidth /= 2;
@@ -1146,11 +1160,13 @@ void VulkanRenderer::GenerateMipmaps(const vk::raii::Image& image, vk::Format im
 	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
 	barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
 	barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-	barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-	barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+	barrier.srcStageMask = vk::PipelineStageFlagBits2::eAllTransfer;
+	barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+	barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+	barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
 
-	commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {},
-		{}, {}, barrier);
+	commandBuffer->pipelineBarrier2(vk::DependencyInfo{
+		.imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 
 	EndSingleTimeCommands(*commandBuffer);
 }
@@ -1290,7 +1306,7 @@ void VulkanRenderer::CreateIndexBuffer()
 	CopyBuffer(stagingBuffer, _indexBuffer, bufferSize);
 }
 
-void VulkanRenderer::CreateUniformBuffers(std::vector<RenderComponent>& pool)
+void VulkanRenderer::CreateUniformBuffers()
 {
 	auto makeMapped = [&](vk::DeviceSize size,
 		std::vector<vk::raii::Buffer>& buffers,

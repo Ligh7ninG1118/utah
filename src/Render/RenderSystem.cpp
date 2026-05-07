@@ -22,7 +22,7 @@ void RenderSystem::Init(Registry& registry)
 	_pCameraPool = registry.GetPool<CameraComponent>();
 	_pPointLightPool = registry.GetPool<PointLightComponent>();
 	
-	_pRenderer->Initialize(_pRenderPool->GetPool());
+	_pRenderer->Initialize();
 }
 
 void RenderSystem::Update(double deltaTime)

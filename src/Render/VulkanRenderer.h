@@ -78,17 +78,17 @@ struct alignas(16) LightUBO
 	PointLightData pointLights[32];
 };
 
-struct ObjectUBO
-{
-	alignas(16) glm::mat4 model;
-};
-
 struct ObjectGPU
 {
 	alignas(16) glm::mat4 model;
 	//Future TODO: normal, material index, AABB
 };
 
+struct PerDrawPC
+{
+	uint32_t objectIndex;
+	uint32_t textureIndex;
+};
 
 
 class VulkanRenderer
@@ -97,7 +97,7 @@ public:
 	VulkanRenderer();
 	~VulkanRenderer();
 
-	void Initialize(std::vector<RenderComponent>& pool);
+	void Initialize();
 
 	void UpdateDrawList(std::vector<struct DrawJob>&& list);
 
@@ -155,7 +155,7 @@ private:
 	// Descriptor Creation
 	void CreateDescriptorSetLayout();
 	void CreateDescriptorPool();
-	void CreateDescriptorSets(std::vector<RenderComponent>& pool);
+	void CreateDescriptorSets();
 
 	// Graphics Pipeline
 	void CreateGraphicsPipeline();
@@ -177,8 +177,8 @@ private:
 		vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
 	[[nodiscard]] vk::raii::ImageView CreateImageView(const vk::raii::Image& image, vk::Format format,
 		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-	void TransitionImageLayout(const vk::raii::Image& image, const vk::ImageLayout oldLayout,
-		const vk::ImageLayout newLayout, uint32_t mipLevels);
+	void TransitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout,
+		vk::ImageLayout newLayout, uint32_t mipLevels);
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
 		vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask,
 		vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask,
@@ -203,7 +203,7 @@ private:
 		vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
-	void CreateUniformBuffers(std::vector<RenderComponent>& pool);
+	void CreateUniformBuffers();
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 	void CopyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
 
@@ -237,7 +237,6 @@ private:
 	std::vector<vk::raii::ImageView> _swapChainImageViews;
 
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
-	vk::raii::DescriptorSetLayout _objDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _pipelineLayout = nullptr;
 	vk::raii::Pipeline            _graphicsPipeline = nullptr;
 
