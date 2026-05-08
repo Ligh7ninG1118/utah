@@ -160,21 +160,20 @@ private:
 	void CreateTextureImageView();
 	void CreateTextureSampler();
 
-	void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
-		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-		vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
-	[[nodiscard]] vk::raii::ImageView CreateImageView(const vk::raii::Image& image, vk::Format format,
+	[[nodiscard]] AllocatedImage CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
+		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO);
+	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
 		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-	void TransitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout,
+
+	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout, uint32_t mipLevels);
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
 		vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask,
 		vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask,
 		vk::ImageAspectFlags aspectMask);
-	void CopyBufferToImage(const vk::raii::Buffer& buffer, const vk::raii::Image& image, uint32_t width,
-		uint32_t height);
-	void GenerateMipmaps(const vk::raii::Image& image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight,
-		uint32_t mipLevels);
+
+	void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
+	void GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
 	// Model
 	void LoadModel();
@@ -187,13 +186,14 @@ private:
 	bool HasStencilComponent(vk::Format format) const;
 
 	// Buffer Creation and Data Transfer
-	void CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties,
-		vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory);
+	[[nodiscard]] AllocatedBuffer CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+		VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocFlags = 0);
+	void DestroyBuffer(AllocatedBuffer& buffer);
+	void DestroyImage(AllocatedImage& image);
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
 	void CreateUniformBuffers();
-	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
-	void CopyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+	void CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 
 	// Synchronization
 	void CreateSyncObjects();
@@ -223,40 +223,25 @@ private:
 	vk::raii::PipelineLayout      _pipelineLayout = nullptr;
 	vk::raii::Pipeline            _graphicsPipeline = nullptr;
 
-	vk::raii::Image        _colorImage = nullptr;
-	vk::raii::DeviceMemory _colorImageMemory = nullptr;
+	AllocatedImage		   _colorImage{};
 	vk::raii::ImageView    _colorImageView = nullptr;
 
-	vk::raii::Image        _depthImage = nullptr;
-	vk::raii::DeviceMemory _depthImageMemory = nullptr;
+	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;
 
 	uint32_t               _mipLevels = 0;
-	vk::raii::Image        _textureImage = nullptr;
-	vk::raii::DeviceMemory _textureImageMemory = nullptr;
+	AllocatedImage		   _textureImage{};
 	vk::raii::ImageView    _textureImageView = nullptr;
 	vk::raii::Sampler      _textureSampler = nullptr;
 
 	std::vector<Vertex>    _vertices;
 	std::vector<uint32_t>  _indices;
-	vk::raii::Buffer       _vertexBuffer = nullptr;
-	vk::raii::DeviceMemory _vertexBufferMemory = nullptr;
+	AllocatedBuffer		   _vertexBuffer{};
+	AllocatedBuffer		   _indexBuffer{};
 
-	vk::raii::Buffer       _indexBuffer = nullptr;
-	vk::raii::DeviceMemory _indexBufferMemory = nullptr;
-
-	std::vector<vk::raii::Buffer>       _cameraUBOs;
-	std::vector<vk::raii::DeviceMemory> _cameraUBOMemory;
-	std::vector<void*>                  _cameraUBOMapped;
-
-	std::vector<vk::raii::Buffer>       _lightUBOs;
-	std::vector<vk::raii::DeviceMemory> _lightUBOMemory;
-	std::vector<void*>                  _lightUBOMapped;
-
-
-	std::vector<vk::raii::Buffer>		_objectSSBOs;
-	std::vector<vk::raii::DeviceMemory> _objectSSBOMemory;
-	std::vector<ObjectGPU*>				_objectSSBOMapped;
+	std::vector<AllocatedBuffer> _cameraUBOs;
+	std::vector<AllocatedBuffer> _lightUBOs;
+	std::vector<AllocatedBuffer> _objectSSBOs;
 
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;

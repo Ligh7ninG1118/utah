@@ -1,5 +1,10 @@
 #include "VulkanContext.h"
 
+#define VMA_IMPLEMENTATION
+#define VMA_STATIC_VULKAN_FUNCTIONS  0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#include <vk_mem_alloc.h>
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -24,6 +29,11 @@ VulkanContext::VulkanContext()
 
 VulkanContext::~VulkanContext()
 {
+	if (_allocator != VK_NULL_HANDLE)
+	{
+		vmaDestroyAllocator(_allocator);
+		_allocator = VK_NULL_HANDLE;
+	}
 }
 
 void VulkanContext::Initialize(GLFWwindow* pWindow)
@@ -33,6 +43,24 @@ void VulkanContext::Initialize(GLFWwindow* pWindow)
 	CreateSurface(pWindow);
 	PickPhysicalDevice();
 	CreateLogicalDevice();
+	
+	CreateAllocator();
+}
+
+void VulkanContext::CreateAllocator()
+{
+	VmaVulkanFunctions vkFunctions{};
+	vkFunctions.vkGetInstanceProcAddr = _vkContext.getDispatcher()->vkGetInstanceProcAddr;
+	vkFunctions.vkGetDeviceProcAddr = _device.getDispatcher()->vkGetDeviceProcAddr;
+
+	VmaAllocatorCreateInfo info = {};
+	info.physicalDevice = *_physicalDevice;
+	info.device = *_device;
+	info.instance = *_instance;
+	info.pVulkanFunctions = &vkFunctions;
+	info.vulkanApiVersion = VK_API_VERSION_1_3;
+	if (vmaCreateAllocator(&info, &_allocator) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create VMA allocator");
 }
 
 void VulkanContext::CreateInstance()

@@ -3,12 +3,27 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include <cstdint>
 #include <vector>
 
 
 struct GLFWwindow;
+
+struct AllocatedBuffer
+{
+	VkBuffer buffer = VK_NULL_HANDLE;
+	VmaAllocation allocation = VK_NULL_HANDLE;
+	VmaAllocationInfo info{};
+};
+
+struct AllocatedImage
+{
+	VkImage image = VK_NULL_HANDLE;
+	VmaAllocation allocation = VK_NULL_HANDLE;
+};
+
 
 
 class VulkanContext
@@ -26,7 +41,11 @@ public:
 	const vk::raii::Queue& GetQueue() const { return _queue; }
 	uint32_t GetQueueFamilyIndex() const { return _queueIndex; }
 
+	VmaAllocator GetAllocator() const { return _allocator; }
+
 private:
+	void CreateAllocator();
+
 	void CreateInstance();
 	void SetupDebugMessenger();
 	void CreateSurface(GLFWwindow* pWindow);
@@ -58,5 +77,7 @@ private:
 		vk::KHRSpirv14ExtensionName,
 		vk::KHRSynchronization2ExtensionName,
 		vk::KHRCreateRenderpass2ExtensionName };
+
+	VmaAllocator _allocator = VK_NULL_HANDLE;
 };
 
