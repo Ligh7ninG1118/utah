@@ -109,7 +109,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -130,7 +130,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,6 +143,13 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="imgui\imgui.cpp" />
+    <ClCompile Include="imgui\imgui_demo.cpp" />
+    <ClCompile Include="imgui\imgui_draw.cpp" />
+    <ClCompile Include="imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="imgui\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="imgui\imgui_tables.cpp" />
+    <ClCompile Include="imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\Gameplay\FlyCameraSystem.cpp" />
     <ClCompile Include="src\Render\RenderSystem.cpp" />
     <ClCompile Include="src\Core\UtahCtx.cpp" />
@@ -151,6 +158,14 @@
     <ClCompile Include="src\Render\VulkanContext.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="imgui\imconfig.h" />
+    <ClInclude Include="imgui\imgui.h" />
+    <ClInclude Include="imgui\imgui_impl_glfw.h" />
+    <ClInclude Include="imgui\imgui_impl_vulkan.h" />
+    <ClInclude Include="imgui\imgui_internal.h" />
+    <ClInclude Include="imgui\imstb_rectpack.h" />
+    <ClInclude Include="imgui\imstb_textedit.h" />
+    <ClInclude Include="imgui\imstb_truetype.h" />
     <ClInclude Include="src\Gameplay\FlyCameraSystem.h" />
     <ClInclude Include="src\Core\ComponentPool.h" />
     <ClInclude Include="src\Core\ComponentType.h" />

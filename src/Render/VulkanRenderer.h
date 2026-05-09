@@ -247,6 +247,8 @@ private:
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
 
+	vk::raii::DescriptorPool			 _imguiDescriptorPool = nullptr;
+
 	vk::raii::CommandPool                _commandPool = nullptr;
 	std::vector<vk::raii::CommandBuffer> _commandBuffers;
 

@@ -7,6 +7,12 @@
 #include <utility>
 #include <iostream>
 
+
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
+
 constexpr uint32_t WINDOW_WIDTH = 1920;
 constexpr uint32_t WINDOW_HEIGHT = 1080;
 
@@ -43,13 +49,20 @@ void UtahCtx::InitWindow()
 	_pWindow = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "utah", nullptr, nullptr);
 	glfwSetWindowUserPointer(_pWindow, this);
 
-	glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	//glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	if (glfwRawMouseMotionSupported())
 		glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 
 	glfwSetCursorPosCallback(_pWindow, MousePositionCallback);
 	glfwSetKeyCallback(_pWindow, KeyInputCallback);
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
 }
 
 void UtahCtx::InitSystems()
@@ -124,6 +137,11 @@ void UtahCtx::MainLoop()
 		double deltaTime = currentTimestamp - lastFrameTimestamp;
 		lastFrameTimestamp = currentTimestamp;
 
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+		ImGui::ShowDemoWindow();
+
 		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
 		for (auto& obj : pool)
 		{
@@ -140,12 +158,16 @@ void UtahCtx::MainLoop()
 void UtahCtx::CleanUp()
 {
 	_pRenderSystem->WaitForRendererIdle();
+	ImGui_ImplVulkan_Shutdown();
 
 	_registry.Clear();
 
 	for (auto* sys : _systems)
 		delete sys;
 	_systems.clear();
+
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
 
 	glfwDestroyWindow(_pWindow);
 

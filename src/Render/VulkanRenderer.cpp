@@ -16,6 +16,12 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
+
+
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
 constexpr uint32_t WINDOW_WIDTH = 1920;
 constexpr uint32_t WINDOW_HEIGHT = 1080;
 
@@ -90,6 +96,43 @@ void VulkanRenderer::Initialize()
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
+
+	vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler,
+									IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE };
+	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+										.maxSets = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE,
+										.poolSizeCount = 1,
+										.pPoolSizes = &poolSize};
+
+	_imguiDescriptorPool = vk::raii::DescriptorPool(_vkCtx.GetDevice(), poolInfo);
+
+	ImGui_ImplGlfw_InitForVulkan(_programCtx.GetContextWindow(), true);
+	VkFormat colorFormat = static_cast<VkFormat>(_swapChainSurfaceFormat.format);
+	VkFormat depthFormat = static_cast<VkFormat>(FindDepthFormat());
+
+	ImGui_ImplVulkan_InitInfo initInfo{};
+	initInfo.ApiVersion = VK_API_VERSION_1_3;
+	initInfo.Instance = *_vkCtx.GetInstance();
+	initInfo.PhysicalDevice = *_vkCtx.GetPhysicalDevice();
+	initInfo.Device = *_vkCtx.GetDevice();
+	initInfo.QueueFamily = _vkCtx.GetQueueFamilyIndex();
+	initInfo.Queue = *_vkCtx.GetQueue();
+	initInfo.DescriptorPool = *_imguiDescriptorPool;
+	initInfo.MinImageCount = 2;
+	initInfo.ImageCount = static_cast<uint32_t>(_swapChainImages.size());
+	initInfo.PipelineCache = VK_NULL_HANDLE;
+
+	initInfo.PipelineInfoMain.MSAASamples = static_cast<VkSampleCountFlagBits>(_msaaSamples);
+	initInfo.UseDynamicRendering = true;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {};
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
+		VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
+
+
+	ImGui_ImplVulkan_Init(&initInfo);
 }
 
 void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>&& list)
@@ -684,6 +727,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(_indices.size()), 1, 0, 0, 0);
 
 	}
+
+	ImGui::Render();
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *_commandBuffers[_currentFrame]);
 
 	_commandBuffers[_currentFrame].endRendering();
 
