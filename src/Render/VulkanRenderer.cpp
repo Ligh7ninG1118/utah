@@ -97,42 +97,7 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler,
-									IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE };
-	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-										.maxSets = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE,
-										.poolSizeCount = 1,
-										.pPoolSizes = &poolSize};
-
-	_imguiDescriptorPool = vk::raii::DescriptorPool(_vkCtx.GetDevice(), poolInfo);
-
-	ImGui_ImplGlfw_InitForVulkan(_programCtx.GetContextWindow(), true);
-	VkFormat colorFormat = static_cast<VkFormat>(_swapChainSurfaceFormat.format);
-	VkFormat depthFormat = static_cast<VkFormat>(FindDepthFormat());
-
-	ImGui_ImplVulkan_InitInfo initInfo{};
-	initInfo.ApiVersion = VK_API_VERSION_1_3;
-	initInfo.Instance = *_vkCtx.GetInstance();
-	initInfo.PhysicalDevice = *_vkCtx.GetPhysicalDevice();
-	initInfo.Device = *_vkCtx.GetDevice();
-	initInfo.QueueFamily = _vkCtx.GetQueueFamilyIndex();
-	initInfo.Queue = *_vkCtx.GetQueue();
-	initInfo.DescriptorPool = *_imguiDescriptorPool;
-	initInfo.MinImageCount = 2;
-	initInfo.ImageCount = static_cast<uint32_t>(_swapChainImages.size());
-	initInfo.PipelineCache = VK_NULL_HANDLE;
-
-	initInfo.PipelineInfoMain.MSAASamples = static_cast<VkSampleCountFlagBits>(_msaaSamples);
-	initInfo.UseDynamicRendering = true;
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {};
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
-		VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
-
-
-	ImGui_ImplVulkan_Init(&initInfo);
+	InitImGUI();
 }
 
 void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>&& list)
@@ -224,6 +189,47 @@ void VulkanRenderer::DrawFrame()
 void VulkanRenderer::WaitForIdle()
 {
 	_vkCtx.GetDevice().waitIdle();
+}
+
+void VulkanRenderer::InitImGUI()
+{
+	// Separate desc pool for imgui
+	vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler,
+									IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE };
+	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+										.maxSets = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE,
+										.poolSizeCount = 1,
+										.pPoolSizes = &poolSize };
+
+	_imguiDescriptorPool = vk::raii::DescriptorPool(_vkCtx.GetDevice(), poolInfo);
+
+	ImGui_ImplGlfw_InitForVulkan(_programCtx.GetContextWindow(), true);
+	VkFormat colorFormat = static_cast<VkFormat>(_swapChainSurfaceFormat.format);
+	VkFormat depthFormat = static_cast<VkFormat>(FindDepthFormat());
+
+	ImGui_ImplVulkan_InitInfo initInfo{};
+	initInfo.ApiVersion = VK_API_VERSION_1_3;
+	initInfo.Instance = *_vkCtx.GetInstance();
+	initInfo.PhysicalDevice = *_vkCtx.GetPhysicalDevice();
+	initInfo.Device = *_vkCtx.GetDevice();
+	initInfo.QueueFamily = _vkCtx.GetQueueFamilyIndex();
+	initInfo.Queue = *_vkCtx.GetQueue();
+	initInfo.DescriptorPool = *_imguiDescriptorPool;
+	initInfo.MinImageCount = 2;
+	initInfo.ImageCount = static_cast<uint32_t>(_swapChainImages.size());
+	initInfo.PipelineCache = VK_NULL_HANDLE;
+
+	initInfo.PipelineInfoMain.MSAASamples = static_cast<VkSampleCountFlagBits>(_msaaSamples);
+	initInfo.UseDynamicRendering = true;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {};
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
+		VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
+
+
+	ImGui_ImplVulkan_Init(&initInfo);
 }
 
 void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)

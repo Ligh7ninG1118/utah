@@ -63,6 +63,7 @@ void UtahCtx::InitWindow()
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
+	ImGui::StyleColorsDark();
 }
 
 void UtahCtx::InitSystems()
@@ -137,10 +138,20 @@ void UtahCtx::MainLoop()
 		double deltaTime = currentTimestamp - lastFrameTimestamp;
 		lastFrameTimestamp = currentTimestamp;
 
+		telemetryUpdateTimer += deltaTime;
+		// Only update telemetry display every 1s
+		if (telemetryUpdateTimer >= telemetryUpdateInterval)
+		{
+			telemetryUpdateTimer = 0.0f;
+			telemetryDeltaTime = deltaTime;
+		}
+
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
+		ImGui::Begin("Telemetry", 0, ImGuiWindowFlags_AlwaysAutoResize);
+		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / telemetryDeltaTime, telemetryDeltaTime * 1000.0f);
+		ImGui::End();
 
 		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
 		for (auto& obj : pool)

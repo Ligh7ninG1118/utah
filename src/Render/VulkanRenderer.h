@@ -112,6 +112,9 @@ public:
 	void NotifyResized() { _framebufferResized = true; }
 
 private:
+	// ImGUI stuff
+	void InitImGUI();
+
 
 	// Per-Frame Update
 	void UpdateUniformBuffer(uint32_t currentImage);

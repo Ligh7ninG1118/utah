@@ -55,4 +55,8 @@ private:
 
 	double lastFrameTimestamp = 0.0;
 
+	// Only update telemetry every 1s
+	float telemetryUpdateInterval = 1.0f;
+	float telemetryUpdateTimer = 0.0f;
+	float telemetryDeltaTime = 0.0f;
 };

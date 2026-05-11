@@ -429,3 +429,6 @@ FodyWeavers.xsd
 
 # Ignore compiled shader binaries
 shaderBin
+
+# Ignore ImGUI config file
+imgui.ini
