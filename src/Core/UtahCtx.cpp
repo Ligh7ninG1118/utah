@@ -49,7 +49,7 @@ void UtahCtx::InitWindow()
 	_pWindow = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "utah", nullptr, nullptr);
 	glfwSetWindowUserPointer(_pWindow, this);
 
-	//glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	if (glfwRawMouseMotionSupported())
 		glfwSetInputMode(_pWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
@@ -135,22 +135,22 @@ void UtahCtx::MainLoop()
 		glfwPollEvents();
 		
 		double currentTimestamp = glfwGetTime();
-		double deltaTime = currentTimestamp - lastFrameTimestamp;
-		lastFrameTimestamp = currentTimestamp;
+		double deltaTime = currentTimestamp - _lastFrameTimestamp;
+		_lastFrameTimestamp = currentTimestamp;
 
-		telemetryUpdateTimer += deltaTime;
+		_telemetryUpdateTimer += deltaTime;
 		// Only update telemetry display every 1s
-		if (telemetryUpdateTimer >= telemetryUpdateInterval)
+		if (_telemetryUpdateTimer >= _telemetryUpdateInterval)
 		{
-			telemetryUpdateTimer = 0.0f;
-			telemetryDeltaTime = deltaTime;
+			_telemetryUpdateTimer = 0.0f;
+			_telemetryDeltaTime = deltaTime;
 		}
 
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImGui::Begin("Telemetry", 0, ImGuiWindowFlags_AlwaysAutoResize);
-		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / telemetryDeltaTime, telemetryDeltaTime * 1000.0f);
+		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
 		ImGui::End();
 
 		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
@@ -185,13 +185,23 @@ void UtahCtx::CleanUp()
 	glfwTerminate();
 }
 
+void UtahCtx::ToggleCursorMode()
+{
+	_isCursorMode = !_isCursorMode;
+	if(_isCursorMode)
+		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	else
+		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
 void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
 	UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
 	if (!ctx)
 		return;
 
-	ctx->_pFlyCamera->HandleMouseInput(xpos, ypos);
+	if(!ctx->_isCursorMode)
+		ctx->_pFlyCamera->HandleMouseInput(xpos, ypos);
 }
 
 void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
@@ -202,6 +212,11 @@ void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int ac
 
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
 		glfwSetWindowShouldClose(ctx->_pWindow, GLFW_TRUE);
+
+	if (key == GLFW_KEY_F1 && action == GLFW_RELEASE)
+	{
+		ctx->ToggleCursorMode();
+	}
 }
 
 void UtahCtx::NotifyFramebufferResized()

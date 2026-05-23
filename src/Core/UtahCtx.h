@@ -38,6 +38,8 @@ private:
 	void MainLoop();
 	void CleanUp();
 
+	void ToggleCursorMode();
+
 	static void MousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 	static void KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
@@ -53,10 +55,13 @@ private:
 
 	Registry _registry;
 
-	double lastFrameTimestamp = 0.0;
+	double _lastFrameTimestamp = 0.0;
 
 	// Only update telemetry every 1s
-	float telemetryUpdateInterval = 1.0f;
-	float telemetryUpdateTimer = 0.0f;
-	float telemetryDeltaTime = 0.0f;
+	float _telemetryUpdateInterval = 1.0f;
+	float _telemetryUpdateTimer = 0.0f;
+	float _telemetryDeltaTime = 0.0f;
+
+	// Using cursor to interact with ImGUI, and block camera input
+	bool _isCursorMode = false;
 };
