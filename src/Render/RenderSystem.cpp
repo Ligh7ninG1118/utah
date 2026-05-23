@@ -20,7 +20,7 @@ void RenderSystem::Init(Registry& registry)
 	_pTransformPool = registry.GetPool<TransformComponent>();
 	_pRenderPool = registry.GetPool<RenderComponent>();
 	_pCameraPool = registry.GetPool<CameraComponent>();
-	_pPointLightPool = registry.GetPool<PointLightComponent>();
+	_pPointLightPool = registry.GetPool<PointLightCPU>();
 	
 	_pRenderer->Initialize();
 }
@@ -66,7 +66,7 @@ void RenderSystem::GatherLights()
 	auto& pointLightPool = _pPointLightPool->GetPool();
 	auto& owners = _pPointLightPool->GetEntities();
 
-	std::vector<PointLightData> lights;
+	std::vector<PointLightGPU> lights;
 	lights.reserve(pointLightPool.size());
 
 	for (size_t i = 0; i < pointLightPool.size(); i++)

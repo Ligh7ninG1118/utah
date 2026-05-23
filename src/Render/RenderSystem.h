@@ -1,9 +1,10 @@
 #pragma once
 #include "Core/System.h"
 #include "Render/RenderComponent.h"
-#include "Render/PointLightComponent.h"
+#include "Render/CPUTypes.h"
 #include "Gameplay/TransformComponent.h"
 #include "Gameplay/CameraComponent.h"
+
 
 class VulkanRenderer;
 struct DrawJob;
@@ -32,7 +33,7 @@ private:
 	ComponentPool<TransformComponent>* _pTransformPool;
 	ComponentPool<RenderComponent>* _pRenderPool;
 	ComponentPool<CameraComponent>* _pCameraPool;
-	ComponentPool<PointLightComponent>* _pPointLightPool;
+	ComponentPool<PointLightCPU>* _pPointLightPool;
 
 	std::vector<DrawJob> _drawListScratch;
 };

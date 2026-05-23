@@ -3,7 +3,7 @@
 #include "Gameplay/FlyCameraSystem.h"
 #include "Gameplay/TransformComponent.h"
 #include "Render/RenderComponent.h"
-#include "Render/PointLightComponent.h"
+#include "Render/CPUTypes.h"
 #include <utility>
 #include <iostream>
 
@@ -114,7 +114,7 @@ void UtahCtx::InitDemo()
 		TransformComponent t;
 		t._pos.y = 5.0f;
 
-		PointLightComponent p;
+		PointLightCPU p;
 		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
 		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
 		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -124,7 +124,7 @@ void UtahCtx::InitDemo()
 		p.quadratic = 0.017f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<PointLightComponent>(e, std::move(p));
+		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
 }
 

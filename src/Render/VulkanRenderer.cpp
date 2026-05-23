@@ -110,7 +110,7 @@ void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
 	_mainCam = camera;
 }
 
-void VulkanRenderer::UpdateLights(std::vector<PointLightData>&& lights)
+void VulkanRenderer::UpdateLights(std::vector<PointLightGPU>&& lights)
 {
 	_pointLights = std::move(lights);
 }
@@ -251,7 +251,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	lightUBO.eyePos = _mainCam._pos;
 	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
 	std::memcpy(lightUBO.pointLights, _pointLights.data(),
-		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightData));
+		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightGPU));
 	memcpy(_lightUBOs[currentImage].info.pMappedData, &lightUBO, sizeof(lightUBO));
 
 	ObjectGPU* objects = static_cast<ObjectGPU*>(_objectSSBOs[currentImage].info.pMappedData);

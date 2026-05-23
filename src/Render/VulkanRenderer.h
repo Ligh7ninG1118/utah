@@ -26,7 +26,7 @@
 #include "VulkanContext.h"
 #include "RenderComponent.h"
 #include "Gameplay/CameraComponent.h"
-#include "Render/PointLightData.h"
+#include "Render/GPUTypes.h"
 
 struct Vertex
 {
@@ -76,7 +76,7 @@ struct alignas(16) LightUBO
 	glm::vec3 eyePos;
 	unsigned int pointLightNum;
 
-	PointLightData pointLights[32];
+	PointLightGPU pointLights[32];
 };
 
 struct ObjectGPU
@@ -103,7 +103,7 @@ public:
 
 	void UpdateCamera(const CameraComponent& camera);
 
-	void UpdateLights(std::vector<PointLightData>&& lights);
+	void UpdateLights(std::vector<PointLightGPU>&& lights);
 
 	void DrawFrame();
 
@@ -270,6 +270,6 @@ private:
 
 	struct CameraComponent _mainCam;
 
-	std::vector<PointLightData> _pointLights;
+	std::vector<PointLightGPU> _pointLights;
 };
 
