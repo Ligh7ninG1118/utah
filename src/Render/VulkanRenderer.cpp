@@ -241,8 +241,9 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	CameraUBO camUBO{};
 	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
+	// Swap far and near plane input -> Reverse Z for greater precision
 	camUBO.proj =
-		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._nearPlane, _mainCam._farPlane);
+		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._farPlane, _mainCam._nearPlane);
 	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
 	memcpy(_cameraUBOs[currentImage].info.pMappedData, &camUBO, sizeof(camUBO));
@@ -662,7 +663,8 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::ImageAspectFlagBits::eDepth);
 
 	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
-	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+	// Reverse Z, cleared 0.0f instead
+	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 
 	// Color attachment (multisampled) with resolve attachment
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _colorImageView,
@@ -706,7 +708,8 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
 	_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
 	_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
-	_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eLess);
+	// Reverse Z, use Greater instead
+	_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
 	_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 	_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(_vertexBuffer.buffer), {0});
