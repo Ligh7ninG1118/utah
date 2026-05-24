@@ -489,7 +489,7 @@ void VulkanRenderer::CreateDescriptorSets()
 
 			// Slot 0 of the bindless texture array -- partially-bound, so we only
 			// write the slots actually accessed by the shader.
-		vk::DescriptorImageInfo textureInfo{ .sampler = _textureSampler,
+		vk::DescriptorImageInfo textureInfo{ .sampler = _textureSamplerLinearRepeat,
 											.imageView = _textureImageView,
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
@@ -778,7 +778,7 @@ void VulkanRenderer::EndSingleTimeCommands(const vk::raii::CommandBuffer& comman
 
 void VulkanRenderer::CreateTextureImage()
 {
-	int            texWidth, texHeight, texChannels;
+	int texWidth, texHeight, texChannels;
 	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	vk::DeviceSize imageSize = texWidth * texHeight * 4;
 	_mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
@@ -832,7 +832,7 @@ void VulkanRenderer::CreateTextureSampler()
 											 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
 											 .compareEnable = vk::False,
 											 .compareOp = vk::CompareOp::eAlways };
-	_textureSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
+	_textureSamplerLinearRepeat = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
 }
 
 AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, 
@@ -1112,6 +1112,7 @@ vk::Format VulkanRenderer::FindSupportedFormat(const std::vector<vk::Format>& ca
 
 [[nodiscard]] vk::Format VulkanRenderer::FindDepthFormat() const
 {
+	//TODO: Currently using reverse z, which only works with D32Sfloat. Switch based on the supported depth format found?
 	return FindSupportedFormat({ vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
 		vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 }

@@ -65,31 +65,6 @@ struct std::hash<Vertex>
 	}
 };
 
-struct CameraUBO
-{
-	alignas(16) glm::mat4 view;
-	alignas(16) glm::mat4 proj;
-};
-
-struct alignas(16) LightUBO
-{
-	glm::vec3 eyePos;
-	unsigned int pointLightNum;
-
-	PointLightGPU pointLights[32];
-};
-
-struct ObjectGPU
-{
-	alignas(16) glm::mat4 model;
-	//Future TODO: normal, material index, AABB
-};
-
-struct PerDrawPC
-{
-	uint32_t objectIndex;
-	uint32_t textureIndex;
-};
 
 class VulkanRenderer
 {
@@ -235,7 +210,7 @@ private:
 	uint32_t               _mipLevels = 0;
 	AllocatedImage		   _textureImage{};
 	vk::raii::ImageView    _textureImageView = nullptr;
-	vk::raii::Sampler      _textureSampler = nullptr;
+	vk::raii::Sampler      _textureSamplerLinearRepeat = nullptr;
 
 	std::vector<Vertex>    _vertices;
 	std::vector<uint32_t>  _indices;
