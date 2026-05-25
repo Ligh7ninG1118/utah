@@ -3,9 +3,12 @@
 #include <stb_image.h>
 
 #include "VulkanRenderer.h"
+#include "RenderCommons.h"
+
 
 TextureManager::TextureManager()
 {
+	_textures.reserve(MAX_TEXTURES);
 }
 
 TextureManager::~TextureManager()
@@ -30,7 +33,6 @@ uint32_t TextureManager::ImportTexture(const std::string& texPath)
 	if (_pRenderer == nullptr)
 	{
 		throw std::runtime_error("Texture Manager not initialized");
-		return 0xFFFFFFFF;
 	}
 
 	int texWidth, texHeight, texChannels;
@@ -41,7 +43,6 @@ uint32_t TextureManager::ImportTexture(const std::string& texPath)
 	if (!pixels)
 	{
 		throw std::runtime_error("Failed to load texture image!");
-		return 0xFFFFFFFF; //TODO: replace this with a constexpr, project wide
 	}
 
 	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(

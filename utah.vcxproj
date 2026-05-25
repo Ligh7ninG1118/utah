@@ -179,6 +179,7 @@
     <ClInclude Include="src\Render\DrawJob.h" />
     <ClInclude Include="src\Gameplay\TransformComponent.h" />
     <ClInclude Include="src\Render\GPUTypes.h" />
+    <ClInclude Include="src\Render\RenderCommons.h" />
     <ClInclude Include="src\Render\RenderComponent.h" />
     <ClInclude Include="src\Core\Entity.h" />
     <ClInclude Include="src\Render\RenderSystem.h" />

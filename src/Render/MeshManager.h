@@ -21,7 +21,7 @@ public:
 
 	uint32_t ImportMesh(const std::string& meshPath);
 
-	Mesh GetMesh(uint32_t index) const { return _meshes[index]; }
+	const Mesh& GetMesh(uint32_t index) const { return _meshes[index]; }
 
 private:
 	VulkanRenderer* _pRenderer;

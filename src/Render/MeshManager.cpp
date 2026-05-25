@@ -4,9 +4,11 @@
 #include <unordered_map>
 
 #include "VulkanRenderer.h"
+#include "RenderCommons.h"
 
 MeshManager::MeshManager()
 {
+	_meshes.reserve(MAX_OBJECTS);
 }
 
 MeshManager::~MeshManager()

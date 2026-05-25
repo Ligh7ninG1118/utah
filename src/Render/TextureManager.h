@@ -28,7 +28,7 @@ public:
 	vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[_textures[index].samplerIndex]; }
 
-	uint32_t GetTexturesCount() const { return _textures.size(); }
+	size_t GetTexturesCount() const { return _textures.size(); }
 
 private:
 	void CreateTextureSampler();
