@@ -25,6 +25,9 @@
 
 #include "VulkanContext.h"
 #include "RenderComponent.h"
+#include "TextureManager.h"
+#include "MaterialManager.h"
+#include "MeshManager.h"
 #include "Gameplay/CameraComponent.h"
 #include "Render/GPUTypes.h"
 
@@ -86,6 +89,31 @@ public:
 
 	void NotifyResized() { _framebufferResized = true; }
 
+	//TODO: Sort these into a separate ResourceFactory class
+
+	[[nodiscard]] AllocatedImage CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
+		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO);
+	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
+		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
+
+	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
+		vk::ImageLayout newLayout, uint32_t mipLevels);
+	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+		vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask,
+		vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask,
+		vk::ImageAspectFlags aspectMask);
+
+	void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
+	void GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+
+	// Buffer Creation and Data Transfer
+	[[nodiscard]] AllocatedBuffer CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+		VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocFlags = 0);
+	void DestroyBuffer(AllocatedBuffer& buffer);
+	void DestroyImage(AllocatedImage& image);
+	void CreateUniformBuffers();
+	void CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
+
 private:
 	// ImGUI stuff
 	void InitImGUI();
@@ -133,45 +161,12 @@ private:
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
 
-	// Texture
-	void CreateTextureImage();
-	void CreateTextureImageView();
-	void CreateTextureSampler();
-
-	[[nodiscard]] AllocatedImage CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
-		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO);
-	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
-		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-
-	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
-		vk::ImageLayout newLayout, uint32_t mipLevels);
-	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
-		vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask,
-		vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask,
-		vk::ImageAspectFlags aspectMask);
-
-	void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
-	void GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
-
-	// Model
-	void LoadModel();
-
 	// Depth Buffer
 	void CreateDepthResources();
 	vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling,
 		vk::FormatFeatureFlags features) const;
 	vk::Format FindDepthFormat() const;
 	bool HasStencilComponent(vk::Format format) const;
-
-	// Buffer Creation and Data Transfer
-	[[nodiscard]] AllocatedBuffer CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
-		VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocFlags = 0);
-	void DestroyBuffer(AllocatedBuffer& buffer);
-	void DestroyImage(AllocatedImage& image);
-	void CreateVertexBuffer();
-	void CreateIndexBuffer();
-	void CreateUniformBuffers();
-	void CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 
 	// Synchronization
 	void CreateSyncObjects();
@@ -207,15 +202,8 @@ private:
 	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;
 
-	uint32_t               _mipLevels = 0;
-	AllocatedImage		   _textureImage{};
-	vk::raii::ImageView    _textureImageView = nullptr;
-	vk::raii::Sampler      _textureSamplerLinearRepeat = nullptr;
-
-	std::vector<Vertex>    _vertices;
-	std::vector<uint32_t>  _indices;
-	AllocatedBuffer		   _vertexBuffer{};
-	AllocatedBuffer		   _indexBuffer{};
+	TextureManager _textureManger;
+	MeshManager _meshManager;
 
 	std::vector<AllocatedBuffer> _cameraUBOs;
 	std::vector<AllocatedBuffer> _lightUBOs;

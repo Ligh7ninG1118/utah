@@ -10,23 +10,12 @@
 #include <stdexcept>
 #include <unordered_map>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-
-
-
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
 constexpr uint32_t WINDOW_WIDTH = 1920;
 constexpr uint32_t WINDOW_HEIGHT = 1080;
-
-const std::string MODEL_PATH = "models/viking_room.obj";
-const std::string TEXTURE_PATH = "models/viking_room.png";
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -49,14 +38,9 @@ VulkanRenderer::~VulkanRenderer()
 
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
-	_textureImageView = nullptr;
 
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
-	DestroyImage(_textureImage);
-
-	DestroyBuffer(_vertexBuffer);
-	DestroyBuffer(_indexBuffer);
 
 	for (auto& ubo : _cameraUBOs)
 		DestroyBuffer(ubo);
@@ -83,13 +67,13 @@ void VulkanRenderer::Initialize()
 	CreateColorResources();
 	CreateDepthResources();
 
-	CreateTextureImage();
-	CreateTextureImageView();
-	CreateTextureSampler();
+	_textureManger.Initialize(this, &_vkCtx);
+	_textureManger.ImportTexture("models/viking_room.png");
+	_textureManger.ImportTexture("models/viking_room_2.png");
 
-	LoadModel();
-	CreateVertexBuffer();
-	CreateIndexBuffer();
+	_meshManager.Initialize(this);
+	_meshManager.ImportMesh("models/viking_room.obj");
+
 	CreateUniformBuffers();
 	CreateDescriptorPool();
 	CreateDescriptorSets();
@@ -255,7 +239,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightGPU));
 	memcpy(_lightUBOs[currentImage].info.pMappedData, &lightUBO, sizeof(lightUBO));
 
-	ObjectGPU* objects = static_cast<ObjectGPU*>(_objectSSBOs[currentImage].info.pMappedData);
+	ObjectSSBO* objects = static_cast<ObjectSSBO*>(_objectSSBOs[currentImage].info.pMappedData);
 	for (size_t i = 0; i < _drawList.size(); ++i)
 	{
 		objects[i].model = _drawList[i]._model;
@@ -485,13 +469,22 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		vk::DescriptorBufferInfo objectBufferInfo{ .buffer = _objectSSBOs[i].buffer,
 											.offset = 0,
-											.range = sizeof(ObjectGPU) * MAX_OBJECTS };
+											.range = sizeof(ObjectSSBO) * MAX_OBJECTS };
 
 			// Slot 0 of the bindless texture array -- partially-bound, so we only
 			// write the slots actually accessed by the shader.
-		vk::DescriptorImageInfo textureInfo{ .sampler = _textureSamplerLinearRepeat,
-											.imageView = _textureImageView,
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+
+		size_t texCount = _textureManger.GetTexturesCount();
+		std::vector<vk::DescriptorImageInfo> textureInfos;
+		textureInfos.reserve(texCount);
+
+		for (int i = 0; i < texCount; i++)
+		{
+			textureInfos.push_back(vk::DescriptorImageInfo{ .sampler = _textureManger.GetTextureSampler(i),
+											.imageView = _textureManger.GetTextureImageView(i),
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+		}
+
 
 		std::array descriptorWrites{
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
@@ -515,9 +508,9 @@ void VulkanRenderer::CreateDescriptorSets()
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 									.dstBinding = 3,
 									.dstArrayElement = 0,
-									.descriptorCount = 1,
+									.descriptorCount = static_cast<uint32_t>(texCount),
 									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-									.pImageInfo = &textureInfo} };
+									.pImageInfo = textureInfos.data()}};
 
 		_vkCtx.GetDevice().updateDescriptorSets(descriptorWrites, {});
 
@@ -712,9 +705,11 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
 	_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-	_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(_vertexBuffer.buffer), {0});
+	Mesh mesh = _meshManager.GetMesh(0);
 
-	_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(_indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), {0});
+
+	_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
 
 	_commandBuffers[_currentFrame].bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -725,7 +720,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
-		PerDrawPC pc{ i, 0 };
+		PerDrawPC pc{ i, i % 2 };
 		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
 			_pipelineLayout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -733,7 +728,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			pc
 		);
 
-		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(_indices.size()), 1, 0, 0, 0);
+		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 
 	}
 
@@ -776,64 +771,6 @@ void VulkanRenderer::EndSingleTimeCommands(const vk::raii::CommandBuffer& comman
 	_vkCtx.GetQueue().waitIdle();
 }
 
-void VulkanRenderer::CreateTextureImage()
-{
-	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	vk::DeviceSize imageSize = texWidth * texHeight * 4;
-	_mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
-
-	if (!pixels)
-	{
-		throw std::runtime_error("failed to load texture image!");
-	}
-
-	AllocatedBuffer stagingBuffer = CreateBuffer(
-		imageSize,
-		vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, pixels, imageSize);
-
-	stbi_image_free(pixels);
-
-	_textureImage = CreateImage(texWidth, texHeight, _mipLevels,
-		vk::SampleCountFlagBits::e1,
-		vk::Format::eR8G8B8A8Srgb,
-		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
-
-	TransitionImageLayout(_textureImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, _mipLevels);
-	CopyBufferToImage(stagingBuffer.buffer, _textureImage.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-
-	GenerateMipmaps(_textureImage.image, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, _mipLevels);
-
-	DestroyBuffer(stagingBuffer);
-}
-
-void VulkanRenderer::CreateTextureImageView()
-{
-	_textureImageView =
-		CreateImageView(_textureImage.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, _mipLevels);
-}
-
-void VulkanRenderer::CreateTextureSampler()
-{
-	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();
-	vk::SamplerCreateInfo        samplerInfo{ .magFilter = vk::Filter::eLinear,
-											 .minFilter = vk::Filter::eLinear,
-											 .mipmapMode = vk::SamplerMipmapMode::eLinear,
-											 .addressModeU = vk::SamplerAddressMode::eRepeat,
-											 .addressModeV = vk::SamplerAddressMode::eRepeat,
-											 .addressModeW = vk::SamplerAddressMode::eRepeat,
-											 .mipLodBias = 0.0f,
-											 .anisotropyEnable = vk::True,
-											 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-											 .compareEnable = vk::False,
-											 .compareOp = vk::CompareOp::eAlways };
-	_textureSamplerLinearRepeat = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
-}
 
 AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, 
 	vk::SampleCountFlagBits numSamples,
@@ -1043,47 +980,6 @@ void VulkanRenderer::GenerateMipmaps(vk::Image image, vk::Format imageFormat, in
 	EndSingleTimeCommands(*commandBuffer);
 }
 
-void VulkanRenderer::LoadModel()
-{
-	tinyobj::attrib_t                attrib;
-	std::vector<tinyobj::shape_t>    shapes;
-	std::vector<tinyobj::material_t> materials;
-	std::string                      err;
-	std::string                      warn;
-
-	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
-		throw std::runtime_error(err);
-
-	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-	for (const auto& shape : shapes)
-	{
-		for (const auto& index : shape.mesh.indices)
-		{
-			Vertex vertex{};
-
-			vertex.pos = { attrib.vertices[3 * index.vertex_index + 0], 
-							attrib.vertices[3 * index.vertex_index + 1],
-							attrib.vertices[3 * index.vertex_index + 2] };
-
-			vertex.normal = { attrib.normals[3 * index.normal_index + 0], 
-							attrib.normals[3 * index.normal_index + 1],
-							attrib.normals[3 * index.normal_index + 2] };
-
-			vertex.texCoord = { attrib.texcoords[2 * index.texcoord_index + 0],
-							   1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
-
-			if (!uniqueVertices.contains(vertex))
-			{
-				uniqueVertices[vertex] = static_cast<uint32_t>(_vertices.size());
-				_vertices.push_back(vertex);
-			}
-
-			_indices.push_back(uniqueVertices[vertex]);
-		}
-	}
-}
-
 void VulkanRenderer::CreateDepthResources()
 {
 	vk::Format depthFormat = FindDepthFormat();
@@ -1161,44 +1057,6 @@ void VulkanRenderer::DestroyImage(AllocatedImage& image)
 	}
 }
 
-void VulkanRenderer::CreateVertexBuffer()
-{
-	vk::DeviceSize bufferSize = sizeof(_vertices[0]) * _vertices.size();
-
-	AllocatedBuffer stagingBuffer = CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, _vertices.data(), bufferSize);
-
-	_vertexBuffer = CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	CopyBuffer(stagingBuffer.buffer, _vertexBuffer.buffer, bufferSize);
-
-	DestroyBuffer(stagingBuffer);
-}
-
-void VulkanRenderer::CreateIndexBuffer()
-{
-	vk::DeviceSize bufferSize = sizeof(_indices[0]) * _indices.size();
-
-	AllocatedBuffer stagingBuffer = CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, _indices.data(), bufferSize);
-
-	_indexBuffer = CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	CopyBuffer(stagingBuffer.buffer, _indexBuffer.buffer, bufferSize);
-
-	DestroyBuffer(stagingBuffer);
-}
-
 void VulkanRenderer::CreateUniformBuffers()
 {
 	auto makePersistentMapped = [&](vk::DeviceSize size,
@@ -1217,7 +1075,7 @@ void VulkanRenderer::CreateUniformBuffers()
 
 	makePersistentMapped(sizeof(CameraUBO), vk::BufferUsageFlagBits::eUniformBuffer, _cameraUBOs);
 	makePersistentMapped(sizeof(LightUBO), vk::BufferUsageFlagBits::eUniformBuffer, _lightUBOs);
-	makePersistentMapped(sizeof(ObjectGPU) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _objectSSBOs);
+	makePersistentMapped(sizeof(ObjectSSBO) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _objectSSBOs);
 }
 
 void VulkanRenderer::CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size)

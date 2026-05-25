@@ -38,7 +38,7 @@ struct alignas(16) SpotLightGPU
 	float outerCutoff;
 };
 
-// UBO, Object specific
+// UBO, SSBO, PushConstant
 
 struct alignas(16) CameraUBO
 {
@@ -54,7 +54,7 @@ struct alignas(16) LightUBO
 	PointLightGPU pointLights[32];
 };
 
-struct alignas(16) ObjectGPU
+struct alignas(16) ObjectSSBO
 {
 	glm::mat4 model;
 	//Future TODO: normal, material index, AABB
