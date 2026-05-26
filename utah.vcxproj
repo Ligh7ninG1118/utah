@@ -193,10 +193,12 @@
   <ItemGroup>
     <None Include="shaders\BlinnPhong.slang" />
     <None Include="shaders\glslCompile.bat" />
-    <None Include="shaders\*.frag" />
+    <None Include="shaders\blinn_phong.frag" />
     <None Include="shaders\HelloTri.slang" />
-    <None Include="shaders\*.vert" />
+    <None Include="shaders\blinn_phong.vert" />
     <None Include="shaders\slangCompile.bat" />
+    <None Include="shaders\unlit.frag" />
+    <None Include="shaders\unlit.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

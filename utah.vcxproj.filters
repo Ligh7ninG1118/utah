@@ -161,5 +161,7 @@
     </None>
     <None Include="shaders\*.frag" />
     <None Include="shaders\*.vert" />
+    <None Include="shaders\unlit.vert" />
+    <None Include="shaders\unlit.frag" />
   </ItemGroup>
 </Project>

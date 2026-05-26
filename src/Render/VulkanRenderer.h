@@ -152,7 +152,7 @@ private:
 	void CreateDescriptorSets();
 
 	// Graphics Pipeline
-	void CreateGraphicsPipeline();
+	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -194,7 +194,8 @@ private:
 
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _pipelineLayout = nullptr;
-	vk::raii::Pipeline            _graphicsPipeline = nullptr;
+	std::vector<vk::raii::Pipeline> _pipelines;
+	//vk::raii::Pipeline            _graphicsPipeline = nullptr;
 
 	AllocatedImage		   _colorImage{};
 	vk::raii::ImageView    _colorImageView = nullptr;
@@ -204,10 +205,12 @@ private:
 
 	TextureManager _textureManger;
 	MeshManager _meshManager;
+	MaterialManager _materialManager;
 
 	std::vector<AllocatedBuffer> _cameraUBOs;
 	std::vector<AllocatedBuffer> _lightUBOs;
 	std::vector<AllocatedBuffer> _objectSSBOs;
+	std::vector<AllocatedBuffer> _materialSSBOs;
 
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;

@@ -60,8 +60,14 @@ struct alignas(16) ObjectSSBO
 	//Future TODO: normal, material index, AABB
 };
 
+struct alignas(16) MaterialSSBO
+{
+	uint32_t texIndices[4];
+	glm::vec4 color;
+};
+
 struct PerDrawPC
 {
-	uint32_t objectIndex;
-	uint32_t textureIndex;
+	uint32_t objIndex;
+	uint32_t matIndex;
 };

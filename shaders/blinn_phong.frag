@@ -16,7 +16,7 @@ struct PointLight
 
 const uint MAX_POINT_LIGHTS = 32;
 
-// --------------- Light UBO (set 0, binding 1) ---------------
+// --------------- Light UBO ---------------
 layout(set = 0, binding = 1) uniform LightUBO
 {
     vec3 eyePos;
@@ -24,14 +24,24 @@ layout(set = 0, binding = 1) uniform LightUBO
     PointLight pointLights[MAX_POINT_LIGHTS];
 } lightUBO;
 
-// --------------- Texture (set 1, binding 1) ---------------
-layout(set = 0, binding = 3) uniform sampler2D textures[];
+struct MatData 
+{ 
+    uint texIndices[4];
+    vec4 color;
+};
+
+layout(set = 0, binding = 3) readonly buffer MaterialBuffer {
+    MatData materials[];
+} matBuf;
+
+// --------------- Texture ---------------
+layout(set = 0, binding = 4) uniform sampler2D textures[];
 
 // --------------- Fragment Input ---------------
 layout(location = 0) in vec3 inWorldPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) flat in uint inTextureIndex;
+layout(location = 3) flat in uint inMatIndex;   //Need for this? PC can also reach frag shader(?)
 
 // --------------- Fragment Output ---------------
 layout(location = 0) out vec4 outColor;
@@ -59,7 +69,8 @@ vec3 CalculatePointLightTex(PointLight light, vec3 normal, vec3 fragPos, vec3 vi
 
 void main()
 {
-    vec4 tex     = texture(textures[nonuniformEXT(inTextureIndex)], inTexCoord);
+    uint texIndex = matBuf.materials[inMatIndex].texIndices[0];
+    vec4 tex     = texture(textures[nonuniformEXT(texIndex)], inTexCoord);
     vec3 viewDir = normalize(lightUBO.eyePos - inWorldPos);
 
     vec3 result = vec3(0.0);

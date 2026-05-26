@@ -82,13 +82,20 @@ void UtahCtx::InitSystems()
 void UtahCtx::InitDemo()
 {
 	// Models
-	for (int i = 0; i < 5; i++)
+	for (int i = 0; i < 6; i++)
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = -4 + i * 2;
-		t._rot.x = -90.0f;
+		t._pos.x = -4.0f + i * 2.0f;
+		if (i % 2 == 0)
+		{
+			t._rot.x = -90.0f;
+		}
+		else
+		{
+			t._scale = glm::vec3(0.3f);
+		}
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e);

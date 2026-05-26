@@ -38,8 +38,10 @@ VulkanRenderer::~VulkanRenderer()
 		DestroyBuffer(ubo);
 	for (auto& ubo : _lightUBOs)
 		DestroyBuffer(ubo);
-	for (auto& ubo : _objectSSBOs)
-		DestroyBuffer(ubo);
+	for (auto& ssbo : _objectSSBOs)
+		DestroyBuffer(ssbo);
+	for (auto& ssbo : _materialSSBOs)
+		DestroyBuffer(ssbo);
 }
 
 void VulkanRenderer::Initialize()
@@ -53,7 +55,8 @@ void VulkanRenderer::Initialize()
 	CreateImageViews();
 
 	CreateDescriptorSetLayout();
-	CreateGraphicsPipeline();
+	CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv");
+	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv");
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -65,6 +68,7 @@ void VulkanRenderer::Initialize()
 
 	_meshManager.Initialize(this);
 	_meshManager.ImportMesh("models/viking_room.obj");
+	_meshManager.ImportMesh("models/utah_teapot.obj");
 
 	CreateUniformBuffers();
 	CreateDescriptorPool();
@@ -74,6 +78,22 @@ void VulkanRenderer::Initialize()
 	CreateSyncObjects();
 
 	InitImGUI();
+
+	std::vector<uint32_t> texIndices;
+	texIndices.push_back(0);
+	_materialManager.CreateBlinnPhongMaterial(0, texIndices, glm::vec4(0.0f));
+	_materialManager.CreateUnlitMaterial(1, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f));
+	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		MaterialSSBO* materials = static_cast<MaterialSSBO*>(_materialSSBOs[i].info.pMappedData);
+		for (size_t j = 0; j < matGPUs.size(); ++j)
+		{
+			materials[j].color = matGPUs[j].baseColor;
+			memcpy(materials[j].texIndices, matGPUs[j].texIndices, sizeof(uint32_t) * 4);
+		}
+	}
 }
 
 void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>&& list)
@@ -390,17 +410,22 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 				.binding = 2, .descriptorType = vk::DescriptorType::eStorageBuffer,
 				.descriptorCount = 1,
 				.stageFlags = vk::ShaderStageFlagBits::eVertex },
-			// 3: combined-image-sampler array (fragment) - bindless texture slot
+			// 3: MaterialBuffer SSBO (fragment)
 			vk::DescriptorSetLayoutBinding{
-				.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.binding = 3, .descriptorType = vk::DescriptorType::eStorageBuffer,
+				.descriptorCount = 1,
+				.stageFlags = vk::ShaderStageFlagBits::eFragment },
+			// 4: combined-image-sampler array (fragment) - bindless texture slot
+			vk::DescriptorSetLayoutBinding{
+				.binding = 4, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
 				.descriptorCount = MAX_TEXTURES,
 				.stageFlags = vk::ShaderStageFlagBits::eFragment },
 	};
 
-	// Per-binding flags so binding 3 can be partially-bound + update-after-bind
-	std::array<vk::DescriptorBindingFlags, 4> bindingFlags = {
+	// Per-binding flags so binding 4 can be partially-bound + update-after-bind
+	std::array<vk::DescriptorBindingFlags, 5> bindingFlags = {
 	{
-		{}, {}, {},
+		{}, {}, {}, {},
 		vk::DescriptorBindingFlagBits::ePartiallyBound |
 		vk::DescriptorBindingFlagBits::eUpdateAfterBind
 	}
@@ -425,7 +450,7 @@ void VulkanRenderer::CreateDescriptorPool()
 {
 	std::array poolSize{
 						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 2),
-						vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * 1),
+						vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * 2),
 						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES) };
 
 	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -462,6 +487,10 @@ void VulkanRenderer::CreateDescriptorSets()
 		vk::DescriptorBufferInfo objectBufferInfo{ .buffer = _objectSSBOs[i].buffer,
 											.offset = 0,
 											.range = sizeof(ObjectSSBO) * MAX_OBJECTS };
+
+		vk::DescriptorBufferInfo materialBufferInfo{ .buffer = _materialSSBOs[i].buffer,
+											.offset = 0,
+											.range = sizeof(MaterialSSBO) * MAX_OBJECTS }; //TODO: Need of a MAX_MATERIALS?
 
 			// Slot 0 of the bindless texture array -- partially-bound, so we only
 			// write the slots actually accessed by the shader.
@@ -500,6 +529,12 @@ void VulkanRenderer::CreateDescriptorSets()
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 									.dstBinding = 3,
 									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eStorageBuffer,
+									.pBufferInfo = &materialBufferInfo},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 4,
+									.dstArrayElement = 0,
 									.descriptorCount = static_cast<uint32_t>(texCount),
 									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
 									.pImageInfo = textureInfos.data()}};
@@ -510,10 +545,10 @@ void VulkanRenderer::CreateDescriptorSets()
 	}
 }
 
-void VulkanRenderer::CreateGraphicsPipeline()
+uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath)
 {
-	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile("shaderBin/HelloTri_vert.spv"));
-	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile("shaderBin/HelloTri_frag.spv"));
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
 
 
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
@@ -602,8 +637,9 @@ void VulkanRenderer::CreateGraphicsPipeline()
 		 .pColorAttachmentFormats = &_swapChainSurfaceFormat.format,
 		 .depthAttachmentFormat = depthFormat} };
 
-	_graphicsPipeline =
-		vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+	_pipelines.emplace_back(vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
+	return _pipelines.size() - 1;
 }
 
 void VulkanRenderer::CreateCommandPool()
@@ -675,44 +711,52 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 									   .pDepthAttachment = &depthAttachment };
 
 	_commandBuffers[_currentFrame].beginRendering(renderingInfo);
-	_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_graphicsPipeline);
-
-	_commandBuffers[_currentFrame].setViewport(0,
-		vk::Viewport(
-			0.0f, 0.0f, 
-			static_cast<float>(_swapChainExtent.width),
-			static_cast<float>(_swapChainExtent.height), 
-			0.0f, 1.0f));
-
-	_commandBuffers[_currentFrame].setScissor(0, 
-		vk::Rect2D(
-			vk::Offset2D(0, 0),
-			_swapChainExtent));
-
-	_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
-	_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
-	_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
-	_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
-	// Reverse Z, use Greater instead
-	_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
-	_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-	Mesh mesh = _meshManager.GetMesh(0);
-
-	_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), {0});
-
-	_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-	_commandBuffers[_currentFrame].bindDescriptorSets(
-		vk::PipelineBindPoint::eGraphics,
-		_pipelineLayout,
-		0,
-		*_globalDescriptorSets[_currentFrame],
-		nullptr);
+	
 
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
-		PerDrawPC pc{ i, i % 2 };
+		uint32_t j = i % 2;
+
+		Material mat = _materialManager.GetMaterial(j);
+
+		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+
+		_commandBuffers[_currentFrame].setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(_swapChainExtent.width),
+				static_cast<float>(_swapChainExtent.height),
+				0.0f, 1.0f));
+
+		_commandBuffers[_currentFrame].setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				_swapChainExtent));
+
+		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
+		_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+
+		PerDrawPC pc{ i, j };
+
+		Mesh mesh = _meshManager.GetMesh(j);
+
+		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		_commandBuffers[_currentFrame].bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			0,
+			*_globalDescriptorSets[_currentFrame],
+			nullptr);
+
 		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
 			_pipelineLayout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -1068,6 +1112,8 @@ void VulkanRenderer::CreateUniformBuffers()
 	makePersistentMapped(sizeof(CameraUBO), vk::BufferUsageFlagBits::eUniformBuffer, _cameraUBOs);
 	makePersistentMapped(sizeof(LightUBO), vk::BufferUsageFlagBits::eUniformBuffer, _lightUBOs);
 	makePersistentMapped(sizeof(ObjectSSBO) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _objectSSBOs);
+	makePersistentMapped(sizeof(MaterialSSBO) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _materialSSBOs);
+
 }
 
 void VulkanRenderer::CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size)

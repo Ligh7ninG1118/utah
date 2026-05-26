@@ -11,25 +11,19 @@ layout(set = 0, binding = 2) readonly buffer ObjectBuffer {
 } objBuf;
 
 layout(push_constant) uniform PushConstants {
-    uint objectIndex;
-    uint textureIndex;
+    uint objIndex;
+    uint matIndex;
 } pc;
 
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 
-layout(location = 0) out vec3 outWorldPos;
-layout(location = 1) out vec3 outNormal;
-layout(location = 2) out vec2 outUV;
-layout(location = 3) flat out uint outTextureIndex;
+layout(location = 0) flat out uint outMatIndex;
 
 void main() {
-    mat4 model      = objBuf.objects[pc.objectIndex].model;
+    mat4 model      = objBuf.objects[pc.objIndex].model;
     vec4 worldPos   = model * vec4(inPos, 1.0);
     gl_Position     = cam.proj * cam.view * worldPos;
-    outWorldPos     = worldPos.xyz;
-    outNormal       = normalize(mat3(model) * inNormal);
-    outUV           = inUV;
-    outTextureIndex = pc.textureIndex;
+    outMatIndex = pc.matIndex;
 }
