@@ -715,9 +715,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
-		uint32_t j = i % 2;
-
-		Material mat = _materialManager.GetMaterial(j);
+		Material mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
 
 		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
 
@@ -742,9 +740,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 
-		PerDrawPC pc{ i, j };
+		PerDrawPC pc{ i, _drawList[i]._renderComp->_material};
 
-		Mesh mesh = _meshManager.GetMesh(j);
+		Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
 
 		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 

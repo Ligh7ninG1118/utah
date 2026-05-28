@@ -12,10 +12,6 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
-
-constexpr uint32_t WINDOW_WIDTH = 1920;
-constexpr uint32_t WINDOW_HEIGHT = 1080;
-
 UtahCtx* UtahCtx::_pInstance = nullptr;
 
 
@@ -87,18 +83,23 @@ void UtahCtx::InitDemo()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
+		RenderComponent r;
 		t._pos.x = -4.0f + i * 2.0f;
-		if (i % 2 == 0)
+		if (i % 2 == 0) // Viking room
 		{
 			t._rot.x = -90.0f;
+			r._mesh = 0;
+			r._material = 0;
 		}
-		else
+		else // Teapot
 		{
 			t._scale = glm::vec3(0.3f);
+			r._mesh = 1;
+			r._material = 1;
 		}
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e);
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
 
 	// Fly camera

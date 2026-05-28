@@ -1,12 +1,10 @@
 #pragma once
 #include <cstdint>
-
-using MeshHandle = uint32_t;
-using MaterialHandle = uint32_t;
+#include "RenderCommons.h"
 
 
 struct RenderComponent
 {
-	MeshHandle _mesh = 0;
-	MaterialHandle _material = 0;
+	uint32_t _mesh = INVALID_HANDLE;
+	uint32_t _material = INVALID_HANDLE;
 };
