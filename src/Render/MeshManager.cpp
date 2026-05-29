@@ -43,6 +43,9 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
 
+	glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+	glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::min(), std::numeric_limits<float>::min(), std::numeric_limits<float>::min());
+
 	for (const auto& shape : shapes)
 	{
 		for (const auto& index : shape.mesh.indices)
@@ -59,6 +62,10 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 
 			vertex.texCoord = { attrib.texcoords[2 * index.texcoord_index + 0],
 							   1.0f - attrib.texcoords[2 * index.texcoord_index + 1] };
+
+			// this works per component wise
+			minAABB = glm::min(vertex.pos, minAABB);
+			maxAABB = glm::max(vertex.pos, maxAABB);
 
 			if (!uniqueVertices.contains(vertex))
 			{
@@ -108,6 +115,6 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 
 
 	// Add & return index
-	_meshes.emplace_back(vertexBuffer, indexBuffer, static_cast<uint32_t>(indices.size()));
+	_meshes.emplace_back(vertexBuffer, indexBuffer, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
 	return _meshes.size() - 1;
 }

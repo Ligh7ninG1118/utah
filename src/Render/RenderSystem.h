@@ -4,10 +4,12 @@
 #include "Render/CPUTypes.h"
 #include "Gameplay/TransformComponent.h"
 #include "Gameplay/CameraComponent.h"
+#include "RenderCommons.h"
 
 
 class VulkanRenderer;
 struct DrawJob;
+
 
 class RenderSystem : public System
 {
@@ -28,6 +30,10 @@ private:
 
 	void GatherLights();
 
+	void FrustumCulling(std::vector<DrawJob>& drawList, const std::vector<Plane>& frustum);
+
+	std::vector<Plane> GenerateFrustum(const CameraComponent& cam) const;
+
 	VulkanRenderer* _pRenderer;
 
 	ComponentPool<TransformComponent>* _pTransformPool;
@@ -35,5 +41,5 @@ private:
 	ComponentPool<CameraComponent>* _pCameraPool;
 	ComponentPool<PointLightCPU>* _pPointLightPool;
 
-	std::vector<DrawJob> _drawListScratch;
+	std::vector<DrawJob> _rawDrawList;
 };

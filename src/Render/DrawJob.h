@@ -10,6 +10,8 @@ struct RenderComponent;
 struct DrawJob
 {
 	glm::mat4 _model;
+	glm::vec3 _minAABB;
+	glm::vec3 _maxAABB;
 	RenderComponent* _renderComp;
 
 	void SetModelMatrix(const TransformComponent& transform)

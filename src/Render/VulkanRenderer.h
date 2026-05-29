@@ -114,6 +114,8 @@ public:
 	void CreateUniformBuffers();
 	void CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 
+	MeshManager* GetMeshManager() { return &_meshManager; }
+
 private:
 	// ImGUI stuff
 	void InitImGUI();

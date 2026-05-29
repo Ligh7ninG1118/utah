@@ -1,5 +1,6 @@
 #pragma once
 #include "VulkanContext.h"
+#include <glm/glm.hpp>
 #include <vector>
 
 class VulkanRenderer;
@@ -8,6 +9,8 @@ struct Mesh
 {
 	AllocatedBuffer vertexBuffer{};
 	AllocatedBuffer indexBuffer{};
+	glm::vec3 maxAABB{};
+	glm::vec3 minAABB{};
 	uint32_t indexCount = 0;
 };
 
