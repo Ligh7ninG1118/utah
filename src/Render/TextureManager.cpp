@@ -26,6 +26,7 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	_pVkCtxRef = vkCtx;
 
 	CreateTextureSampler();
+	CreateWhiteTexture();
 }
 
 uint32_t TextureManager::ImportTexture(const std::string& texPath)
@@ -82,6 +83,31 @@ uint32_t TextureManager::ImportTexture(const std::string& texPath)
     return _textures.size() - 1;
 }
 
+uint32_t TextureManager::CreateWhiteTexture()
+{
+	uint32_t white = 0xFFFFFFFF;            // RGBA 255,255,255,255
+	vk::DeviceSize imageSize = 4;
+
+	AllocatedBuffer staging = _pRenderer->CreateBuffer(
+		imageSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+	memcpy(staging.info.pMappedData, &white, imageSize);
+
+	AllocatedImage img = _pRenderer->CreateImage(
+		1, 1, 1, vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc — no mip blits
+
+	_pRenderer->TransitionImageLayout(img.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1);
+	_pRenderer->CopyBufferToImage(staging.buffer, img.image, 1, 1);
+	_pRenderer->TransitionImageLayout(img.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 1);
+	_pRenderer->DestroyBuffer(staging);
+
+	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1);
+	_textures.emplace_back(img, std::move(view), 0);
+	return _textures.size() - 1;
+}
+
 // Only create one sampler (linear repeat) for now
 void TextureManager::CreateTextureSampler()
 {
@@ -96,7 +122,8 @@ void TextureManager::CreateTextureSampler()
 											 .anisotropyEnable = vk::True,
 											 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
 											 .compareEnable = vk::False,
-											 .compareOp = vk::CompareOp::eAlways };
+											 .compareOp = vk::CompareOp::eAlways,
+											 .maxLod = vk::LodClampNone};
 
 	_samplers.emplace_back(_pVkCtxRef->GetDevice(), samplerInfo);
 }

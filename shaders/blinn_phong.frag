@@ -70,13 +70,16 @@ vec3 CalculatePointLightTex(PointLight light, vec3 normal, vec3 fragPos, vec3 vi
 void main()
 {
     uint texIndex = matBuf.materials[inMatIndex].texIndices[0];
+    vec4 baseColor = matBuf.materials[inMatIndex].color;
     vec4 tex     = texture(textures[nonuniformEXT(texIndex)], inTexCoord);
-    vec3 viewDir = normalize(lightUBO.eyePos - inWorldPos);
 
+    vec3 albedo = tex.rgb * baseColor.rgb;
+
+    vec3 viewDir = normalize(lightUBO.eyePos - inWorldPos);
     vec3 result = vec3(0.0);
     for (uint i = 0; i < lightUBO.lightNum; i++)
     {
-        result += CalculatePointLightTex(lightUBO.pointLights[i], inNormal, inWorldPos, viewDir, tex.rgb);
+        result += CalculatePointLightTex(lightUBO.pointLights[i], inNormal, inWorldPos, viewDir, albedo);
     }
 
     outColor = vec4(result, tex.a);

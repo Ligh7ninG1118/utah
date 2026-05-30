@@ -85,18 +85,18 @@ void UtahCtx::InitDemo()
 		TransformComponent t;
 		RenderComponent r;
 		t._pos.x = -4.0f + i * 2.0f;
-		if (true)//i % 2 == 0) // Viking room
+		if (i % 2 == 0) // Viking room
 		{
 			t._rot.x = -90.0f;
 			r._mesh = 0;
 			r._material = 0;
 		}
-		//else // Teapot
-		//{
-		//	t._scale = glm::vec3(0.3f);
-		//	r._mesh = 1;
-		//	r._material = 1;
-		//}
+		else // Teapot
+		{
+			t._scale = glm::vec3(0.3f);
+			r._mesh = 1;
+			r._material = 1;
+		}
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));

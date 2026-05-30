@@ -24,6 +24,7 @@ public:
 	void Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx);
 
 	uint32_t ImportTexture(const std::string& texPath);
+	uint32_t CreateWhiteTexture();
 
 	vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[_textures[index].samplerIndex]; }

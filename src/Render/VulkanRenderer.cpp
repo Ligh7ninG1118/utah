@@ -80,10 +80,8 @@ void VulkanRenderer::Initialize()
 
 	InitImGUI();
 
-	std::vector<uint32_t> texIndices;
-	texIndices.push_back(0);
-	_materialManager.CreateBlinnPhongMaterial(0, texIndices, glm::vec4(0.0f));
-	_materialManager.CreateUnlitMaterial(1, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Debug
+	_materialManager.CreateBlinnPhongMaterial(0, { 1 }, glm::vec4(1.0f));
+	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f));
 	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, AABB
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 

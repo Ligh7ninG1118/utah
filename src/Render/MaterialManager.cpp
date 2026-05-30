@@ -29,7 +29,7 @@ uint32_t MaterialManager::CreateBlinnPhongMaterial(uint32_t pipelineIndex, std::
     {
         newMat.texIndices[i] = texIndices[i];
     }
-    newMat.baseColor = newMat.baseColor;
+    newMat.baseColor = color;
 
     _materials.push_back(newMat);
     return _materials.size()-1;
