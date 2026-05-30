@@ -69,6 +69,15 @@ struct std::hash<Vertex>
 };
 
 
+//TODO: temp solution to have different pipeline configuration, need a better one
+enum class PipelineType
+{
+	Default = 0,			// Pos/Normal/UV, triangle list, fill
+	Debug,					// Position only, triangle list, fill
+	DebugWireframe,			// Position only, line list, no fill
+};
+
+
 class VulkanRenderer
 {
 public:
@@ -77,11 +86,13 @@ public:
 
 	void Initialize();
 
-	void UpdateDrawList(std::vector<struct DrawJob>&& list);
+	void SetDrawList(std::vector<struct DrawJob>&& list);
 
-	void UpdateCamera(const CameraComponent& camera);
+	void SetDebugAABBDrawList(std::vector<glm::mat4>&& list);
 
-	void UpdateLights(std::vector<PointLightGPU>&& lights);
+	void SetCameraComponent(const CameraComponent& camera);
+
+	void SetPointLights(std::vector<PointLightGPU>&& lights);
 
 	void DrawFrame();
 
@@ -154,7 +165,7 @@ private:
 	void CreateDescriptorSets();
 
 	// Graphics Pipeline
-	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath);
+	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type = PipelineType::Default);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -235,6 +246,7 @@ private:
 	vk::SampleCountFlagBits _msaaSamples = vk::SampleCountFlagBits::e1;
 
 	std::vector<struct DrawJob> _drawList;
+	std::vector<glm::mat4> _debugAABBDrawList;
 
 	struct CameraComponent _mainCam;
 

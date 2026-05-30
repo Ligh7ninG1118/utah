@@ -41,5 +41,6 @@ private:
 	ComponentPool<CameraComponent>* _pCameraPool;
 	ComponentPool<PointLightCPU>* _pPointLightPool;
 
-	std::vector<DrawJob> _rawDrawList;
+	std::vector<DrawJob> _drawList;
+	std::vector<glm::mat4> _debugAABBDrawList;
 };

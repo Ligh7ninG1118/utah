@@ -22,13 +22,16 @@ public:
 
 	void Initialize(VulkanRenderer* rendererRef);
 
+	void CreateAABBMesh();
 	uint32_t ImportMesh(const std::string& meshPath);
 
 	const Mesh& GetMesh(uint32_t index) const { return _meshes[index]; }
-
+	const Mesh& GetAABBMesh() const { return _aabbMesh; }
 private:
 	VulkanRenderer* _pRenderer;
 
 	std::vector<Mesh> _meshes;
+
+	Mesh _aabbMesh;
 };
 

@@ -165,6 +165,7 @@ void VulkanContext::PickPhysicalDevice()
 			vk::PhysicalDeviceVulkan12Features,
 			vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
 		bool supportsRequiredFeatures =
+			features.template get<vk::PhysicalDeviceFeatures2>().features.fillModeNonSolid &&
 			features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy &&
 			features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
 			features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
@@ -212,9 +213,9 @@ void VulkanContext::CreateLogicalDevice()
 		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
 		featureChain = {
-			{.features = {.samplerAnisotropy = true}},                   // vk::PhysicalDeviceFeatures2
-			{.synchronization2 = true, .dynamicRendering = true},        // vk::PhysicalDeviceVulkan13Features
-			{.descriptorIndexing = true,								 // vk::PhysicalDeviceVulkan12Features
+			{.features = {.fillModeNonSolid = true, .samplerAnisotropy = true}},	// vk::PhysicalDeviceFeatures2
+			{.synchronization2 = true, .dynamicRendering = true},					// vk::PhysicalDeviceVulkan13Features
+			{.descriptorIndexing = true,											// vk::PhysicalDeviceVulkan12Features
 			  .shaderSampledImageArrayNonUniformIndexing = true,
 			  .descriptorBindingSampledImageUpdateAfterBind = true,
 			  .descriptorBindingPartiallyBound = true,

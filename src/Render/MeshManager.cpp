@@ -18,11 +18,78 @@ MeshManager::~MeshManager()
 		_pRenderer->DestroyBuffer(mesh.vertexBuffer);
 		_pRenderer->DestroyBuffer(mesh.indexBuffer);
 	}
+
+	_pRenderer->DestroyBuffer(_aabbMesh.vertexBuffer);
+	_pRenderer->DestroyBuffer(_aabbMesh.indexBuffer);
 }
 
 void MeshManager::Initialize(VulkanRenderer* renderer)
 {
 	_pRenderer = renderer;
+
+	CreateAABBMesh();
+}
+
+void MeshManager::CreateAABBMesh()
+{
+	std::vector<glm::vec3> aabbVertices = {
+				{-0.5f, -0.5f, -0.5f}, // 0
+				{ 0.5f, -0.5f, -0.5f}, // 1
+				{ 0.5f,  0.5f, -0.5f}, // 2
+				{-0.5f,  0.5f, -0.5f}, // 3
+				{-0.5f, -0.5f,  0.5f}, // 4
+				{ 0.5f, -0.5f,  0.5f}, // 5
+				{ 0.5f,  0.5f,  0.5f}, // 6
+				{-0.5f,  0.5f,  0.5f}, // 7
+	};
+
+	std::vector<uint32_t> aabbIndices = {
+		// bottom face (z = -0.5)
+		0,1, 1,2, 2,3, 3,0,
+		// top face (z = +0.5)
+		4,5, 5,6, 6,7, 7,4,
+		// vertical edges connecting bottom to top
+		0,4, 1,5, 2,6, 3,7,
+	};
+
+	//TODO: Replace with a function, for both this and ImportMesh function
+
+	// Create Vertex Buffer
+	vk::DeviceSize bufferSize = sizeof(aabbVertices[0]) * aabbVertices.size();
+
+	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, aabbVertices.data(), bufferSize);
+
+	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+
+	// Create Index Buffer
+	bufferSize = sizeof(aabbIndices[0]) * aabbIndices.size();
+
+	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, aabbIndices.data(), bufferSize);
+
+	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+	_aabbMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size())};
 }
 
 uint32_t MeshManager::ImportMesh(const std::string& meshPath)

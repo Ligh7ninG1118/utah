@@ -33,7 +33,7 @@ void RenderSystem::Update(double deltaTime)
 
 	GatherLights();
 
-	_pRenderer->UpdateCamera(_pCameraPool->GetPool()[0]);
+	_pRenderer->SetCameraComponent(_pCameraPool->GetPool()[0]);
 
 	_pRenderer->DrawFrame();
 }
@@ -50,8 +50,8 @@ void RenderSystem::GatherDrawList()
 	auto* meshManager = _pRenderer->GetMeshManager();
 
 
-	_rawDrawList.clear();
-	_rawDrawList.reserve(renderPool.size());
+	_drawList.clear();
+	_drawList.reserve(renderPool.size());
 
 	for (size_t i = 0; i < renderPool.size(); i++)
 	{
@@ -63,12 +63,13 @@ void RenderSystem::GatherDrawList()
 		job._minAABB = mesh.minAABB;
 		job._maxAABB = mesh.maxAABB;
 
-		_rawDrawList.push_back(job);
+		_drawList.push_back(job);
 	}
 
-	FrustumCulling(_rawDrawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
+	FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
 
-	_pRenderer->UpdateDrawList(std::move(_rawDrawList));
+	_pRenderer->SetDrawList(std::move(_drawList));
+	_pRenderer->SetDebugAABBDrawList(std::move(_debugAABBDrawList));
 }
 
 void RenderSystem::GatherLights()
@@ -85,7 +86,7 @@ void RenderSystem::GatherLights()
 		lights.push_back(pointLightPool[i].ToGPU(pos));
 	}
 
-	_pRenderer->UpdateLights(std::move(lights));
+	_pRenderer->SetPointLights(std::move(lights));
 }
 
 std::vector<Plane> RenderSystem::GenerateFrustum(const CameraComponent& cam) const
@@ -138,10 +139,14 @@ std::vector<Plane> RenderSystem::GenerateFrustum(const CameraComponent& cam) con
 
 void RenderSystem::FrustumCulling(std::vector<DrawJob>& drawList, const std::vector<Plane>& frustum)
 {
-	printf("Before culled: %d\n", drawList.size());
+	//printf("Before culled: %d\n", drawList.size());
 
 	std::vector<DrawJob> culledDrawList;
+
 	culledDrawList.reserve(drawList.size());
+
+	_debugAABBDrawList.clear();
+	_debugAABBDrawList.reserve(drawList.size());
 
 	for (uint32_t i = 0; i < drawList.size(); i++)
 	{
@@ -174,12 +179,18 @@ void RenderSystem::FrustumCulling(std::vector<DrawJob>& drawList, const std::vec
 		}
 
 		if (isWithin)
+		{
 			culledDrawList.push_back(drawList[i]);
+			glm::mat4 aabbModel = glm::mat4(1.0f);
+			aabbModel = glm::translate(aabbModel, centerWorld);
+			aabbModel = glm::scale(aabbModel, halfExtentWorld * 2.0f);
+			_debugAABBDrawList.push_back(aabbModel);
+		}
 	}
 
 	drawList = std::move(culledDrawList);
 
-	printf("After culled: %d\n", drawList.size());
+	//printf("After culled: %d\n", drawList.size());
 }
 
 void RenderSystem::NotifyResized()

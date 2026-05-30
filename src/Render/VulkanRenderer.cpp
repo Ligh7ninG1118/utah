@@ -56,7 +56,8 @@ void VulkanRenderer::Initialize()
 
 	CreateDescriptorSetLayout();
 	CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv");
-	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv");
+	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", PipelineType::Debug);
+	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", PipelineType::DebugWireframe);
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -82,7 +83,8 @@ void VulkanRenderer::Initialize()
 	std::vector<uint32_t> texIndices;
 	texIndices.push_back(0);
 	_materialManager.CreateBlinnPhongMaterial(0, texIndices, glm::vec4(0.0f));
-	_materialManager.CreateUnlitMaterial(1, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f));
+	_materialManager.CreateUnlitMaterial(1, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Debug
+	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, AABB
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -96,17 +98,22 @@ void VulkanRenderer::Initialize()
 	}
 }
 
-void VulkanRenderer::UpdateDrawList(std::vector<struct DrawJob>&& list)
+void VulkanRenderer::SetDrawList(std::vector<struct DrawJob>&& list)
 {
 	_drawList = std::move(list);
 }
 
-void VulkanRenderer::UpdateCamera(const CameraComponent& camera)
+void VulkanRenderer::SetDebugAABBDrawList(std::vector<glm::mat4>&& list)
+{
+	_debugAABBDrawList = std::move(list);
+}
+
+void VulkanRenderer::SetCameraComponent(const CameraComponent& camera)
 {
 	_mainCam = camera;
 }
 
-void VulkanRenderer::UpdateLights(std::vector<PointLightGPU>&& lights)
+void VulkanRenderer::SetPointLights(std::vector<PointLightGPU>&& lights)
 {
 	_pointLights = std::move(lights);
 }
@@ -252,9 +259,14 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	memcpy(_lightUBOs[currentImage].info.pMappedData, &lightUBO, sizeof(lightUBO));
 
 	ObjectSSBO* objects = static_cast<ObjectSSBO*>(_objectSSBOs[currentImage].info.pMappedData);
-	for (size_t i = 0; i < _drawList.size(); ++i)
+	size_t drawListSize = _drawList.size();
+	for (size_t i = 0; i < drawListSize; ++i)
 	{
 		objects[i].model = _drawList[i]._model;
+	}
+	for (size_t i = 0; i < _debugAABBDrawList.size(); ++i)
+	{
+		objects[i + drawListSize].model = _debugAABBDrawList[i];
 	}
 }
 
@@ -545,7 +557,7 @@ void VulkanRenderer::CreateDescriptorSets()
 	}
 }
 
-uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath)
+uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
 	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
@@ -558,7 +570,22 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
 	auto bindingDescription = Vertex::GetBindingDescription();
-	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+	std::vector< vk::VertexInputAttributeDescription> attributeDescriptions;
+
+	// Position only
+	if (type == PipelineType::Debug || type == PipelineType::DebugWireframe)
+	{
+		bindingDescription = vk::VertexInputBindingDescription{0, sizeof(glm::vec3), vk::VertexInputRate::eVertex };
+		attributeDescriptions = {
+			vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0)
+		};
+	}
+	else
+	{
+		auto arr = Vertex::GetAttributeDescriptions();
+		attributeDescriptions.assign(arr.begin(), arr.end());
+	}
+
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
 		.vertexBindingDescriptionCount = 1,
 		.pVertexBindingDescriptions = &bindingDescription,
@@ -572,8 +599,15 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 														.polygonMode = vk::PolygonMode::eFill,
 														.cullMode = vk::CullModeFlagBits::eBack,
 														.frontFace = vk::FrontFace::eCounterClockwise,
-														.depthBiasEnable = vk::False };
-	rasterizer.lineWidth = 1.0f;
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f};
+
+	if (type == PipelineType::DebugWireframe)
+	{
+		inputAssembly.topology = vk::PrimitiveTopology::eLineList;
+		rasterizer.polygonMode = vk::PolygonMode::eLine;
+	}
+
 	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = _msaaSamples,
 														  .sampleShadingEnable = vk::False };
 	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
@@ -591,15 +625,14 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 														.attachmentCount = 1,
 														.pAttachments = &colorBlendAttachment };
 
-	std::vector dynamicStates = { 
+	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor,
 		vk::DynamicState::eCullMode,
 		vk::DynamicState::eFrontFace,
 		vk::DynamicState::eDepthTestEnable,
 		vk::DynamicState::eDepthWriteEnable,
-		vk::DynamicState::eDepthCompareOp,
-		vk::DynamicState::ePrimitiveTopology };
+		vk::DynamicState::eDepthCompareOp };
 
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
@@ -711,7 +744,6 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 									   .pDepthAttachment = &depthAttachment };
 
 	_commandBuffers[_currentFrame].beginRendering(renderingInfo);
-	
 
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
@@ -737,7 +769,10 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
 		// Reverse Z, use Greater instead
 		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
-		_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 
 		PerDrawPC pc{ i, _drawList[i]._renderComp->_material};
@@ -763,7 +798,63 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		);
 
 		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
 
+	// Draw debug AABB boxs
+	for (uint32_t i = 0; i < _debugAABBDrawList.size(); i++)
+	{
+		//TODO: Designated debug wireframe material
+		Material mat = _materialManager.GetMaterial(2);
+
+		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+
+		_commandBuffers[_currentFrame].setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(_swapChainExtent.width),
+				static_cast<float>(_swapChainExtent.height),
+				0.0f, 1.0f));
+
+		_commandBuffers[_currentFrame].setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				_swapChainExtent));
+
+		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		//TODO: offset feels pretty bad
+		PerDrawPC pc{ i + _drawList.size(), 2 };
+
+		Mesh mesh = _meshManager.GetAABBMesh();
+
+		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		_commandBuffers[_currentFrame].bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			0,
+			*_globalDescriptorSets[_currentFrame],
+			nullptr);
+
+		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
+			_pipelineLayout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 	}
 
 	ImGui::Render();
