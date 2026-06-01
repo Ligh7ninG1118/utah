@@ -23,6 +23,8 @@ void RenderSystem::Init(Registry& registry)
 	_pRenderPool = registry.GetPool<RenderComponent>();
 	_pCameraPool = registry.GetPool<CameraComponent>();
 	_pPointLightPool = registry.GetPool<PointLightCPU>();
+	_pDirLightPool = registry.GetPool<DirectionalLightCPU>();
+	_pSpotLightPool = registry.GetPool<SpotLightCPU>();
 	
 	_pRenderer->Initialize();
 }
@@ -75,18 +77,40 @@ void RenderSystem::GatherDrawList()
 void RenderSystem::GatherLights()
 {
 	auto& pointLightPool = _pPointLightPool->GetPool();
-	auto& owners = _pPointLightPool->GetEntities();
+	auto& pointLightOwners = _pPointLightPool->GetEntities();
 
-	std::vector<PointLightGPU> lights;
-	lights.reserve(pointLightPool.size());
+	std::vector<PointLightGPU> pointLights;
+	pointLights.reserve(pointLightPool.size());
 
 	for (size_t i = 0; i < pointLightPool.size(); i++)
 	{
-		const glm::vec3& pos = _pTransformPool->Get(owners[i])._pos;
-		lights.push_back(pointLightPool[i].ToGPU(pos));
+		const glm::vec3& pos = _pTransformPool->Get(pointLightOwners[i])._pos;
+		pointLights.push_back(pointLightPool[i].ToGPU(pos));
 	}
 
-	_pRenderer->SetPointLights(std::move(lights));
+	auto& dirLightsPool = _pDirLightPool->GetPool();
+
+	std::vector<DirectionalLightGPU> dirLights;
+	dirLights.reserve(dirLightsPool.size());
+
+	for (size_t i = 0; i < dirLightsPool.size(); i++)
+	{
+		dirLights.push_back(dirLightsPool[i].ToGPU());
+	}
+
+	auto& spotLightsPool = _pSpotLightPool->GetPool();
+	auto& spotLightOwners = _pSpotLightPool->GetEntities();
+
+	std::vector<SpotLightGPU> spotLights;
+	spotLights.reserve(spotLightsPool.size());
+
+	for (size_t i = 0; i < spotLightsPool.size(); i++)
+	{
+		const glm::vec3& pos = _pTransformPool->Get(spotLightOwners[i])._pos;
+		spotLights.push_back(spotLightsPool[i].ToGPU(pos));
+	}
+
+	_pRenderer->SetLights(std::move(pointLights), std::move(dirLights), std::move(spotLights));
 }
 
 std::vector<Plane> RenderSystem::GenerateFrustum(const CameraComponent& cam) const

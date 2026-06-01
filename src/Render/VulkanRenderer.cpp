@@ -111,9 +111,12 @@ void VulkanRenderer::SetCameraComponent(const CameraComponent& camera)
 	_mainCam = camera;
 }
 
-void VulkanRenderer::SetPointLights(std::vector<PointLightGPU>&& lights)
+void VulkanRenderer::SetLights(std::vector<PointLightGPU>&& pointLights, std::vector<DirectionalLightGPU>&& dirLights
+	, std::vector<SpotLightGPU>&& spotLights)
 {
-	_pointLights = std::move(lights);
+	_pointLights = std::move(pointLights);
+	_dirLights = std::move(dirLights);
+	_spotLights = std::move(spotLights);
 }
 
 void VulkanRenderer::DrawFrame()
@@ -253,8 +256,19 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	lightUBO.eyePos = _mainCam._pos;
 	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
 	std::memcpy(lightUBO.pointLights, _pointLights.data(),
-		std::min(_pointLights.size(), size_t(32)) * sizeof(PointLightGPU));
+		std::min(_pointLights.size(), size_t(MAX_POINT_LIGHTS)) * sizeof(PointLightGPU));
+
+	lightUBO.dirLightNum = static_cast<uint32_t>(_dirLights.size());
+	std::memcpy(lightUBO.dirLights, _dirLights.data(), 
+		std::min(_dirLights.size(), size_t(MAX_DIR_LIGHTS)) * sizeof(DirectionalLightGPU));
+
+	lightUBO.spotLightNum = static_cast<uint32_t>(_spotLights.size());
+	std::memcpy(lightUBO.spotLights, _spotLights.data(),
+		std::min(_spotLights.size(), size_t(MAX_SPOT_LIGHTS)) * sizeof(SpotLightGPU));
+
 	memcpy(_lightUBOs[currentImage].info.pMappedData, &lightUBO, sizeof(lightUBO));
+
+
 
 	ObjectSSBO* objects = static_cast<ObjectSSBO*>(_objectSSBOs[currentImage].info.pMappedData);
 	size_t drawListSize = _drawList.size();

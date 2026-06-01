@@ -92,7 +92,8 @@ public:
 
 	void SetCameraComponent(const CameraComponent& camera);
 
-	void SetPointLights(std::vector<PointLightGPU>&& lights);
+	void SetLights(std::vector<PointLightGPU>&& pointLights, std::vector<DirectionalLightGPU>&& dirLights, 
+		std::vector<SpotLightGPU>&& spotLights);
 
 	void DrawFrame();
 
@@ -251,5 +252,8 @@ private:
 	struct CameraComponent _mainCam;
 
 	std::vector<PointLightGPU> _pointLights;
+	std::vector<DirectionalLightGPU> _dirLights;
+	std::vector<SpotLightGPU> _spotLights;
+
 };
 

@@ -40,6 +40,8 @@ private:
 	ComponentPool<RenderComponent>* _pRenderPool;
 	ComponentPool<CameraComponent>* _pCameraPool;
 	ComponentPool<PointLightCPU>* _pPointLightPool;
+	ComponentPool<DirectionalLightCPU>* _pDirLightPool;
+	ComponentPool<SpotLightCPU>* _pSpotLightPool;
 
 	std::vector<DrawJob> _drawList;
 	std::vector<glm::mat4> _debugAABBDrawList;

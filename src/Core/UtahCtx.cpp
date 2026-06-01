@@ -120,6 +120,7 @@ void UtahCtx::InitDemo()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
+		t._pos.x = i * 5.0f;
 		t._pos.y = 5.0f;
 
 		PointLightCPU p;
@@ -134,6 +135,40 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
+
+	// Directional Light
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t; //No need to change position for directional light
+
+		DirectionalLightCPU p;
+		p.direction = glm::vec3(0.0f, -45.0f, 135.0f);
+
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	}
+
+	// SpotLight
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+
+		SpotLightCPU p;
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+	}
 }
 
 void UtahCtx::MainLoop()
@@ -141,7 +176,7 @@ void UtahCtx::MainLoop()
 	while (!glfwWindowShouldClose(_pWindow))
 	{
 		glfwPollEvents();
-		
+
 		double currentTimestamp = glfwGetTime();
 		double deltaTime = currentTimestamp - _lastFrameTimestamp;
 		_lastFrameTimestamp = currentTimestamp;
@@ -196,7 +231,7 @@ void UtahCtx::CleanUp()
 void UtahCtx::ToggleCursorMode()
 {
 	_isCursorMode = !_isCursorMode;
-	if(_isCursorMode)
+	if (_isCursorMode)
 		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	else
 		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -208,7 +243,7 @@ void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos
 	if (!ctx)
 		return;
 
-	if(!ctx->_isCursorMode)
+	if (!ctx->_isCursorMode)
 		ctx->_pFlyCamera->HandleMouseInput(xpos, ypos);
 }
 
