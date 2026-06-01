@@ -55,7 +55,7 @@ struct SpotLightCPU
 	float linear = 0.07f;
 	float quadratic = 0.017f;
 
-	float cutOff = 12.5f;
+	float cutoff = 12.5f;
 	float outerCutoff = 17.5f;
 
 	// Build struct for GPU layout
@@ -65,8 +65,8 @@ struct SpotLightCPU
 			position, constant,
 			direction, linear,
 			ambient, quadratic,
-			diffuse, cutOff,
-			specular, outerCutoff
+			diffuse, glm::cos(glm::radians(cutoff)),
+			specular, glm::cos(glm::radians(outerCutoff))
 		};
 	}
 };

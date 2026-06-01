@@ -68,6 +68,7 @@ struct alignas(16) MaterialSSBO
 {
 	uint32_t texIndices[4];
 	glm::vec4 color;
+	float shininess;
 };
 
 struct PerDrawPC

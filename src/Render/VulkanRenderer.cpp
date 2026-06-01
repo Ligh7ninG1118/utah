@@ -91,6 +91,7 @@ void VulkanRenderer::Initialize()
 		for (size_t j = 0; j < matGPUs.size(); ++j)
 		{
 			materials[j].color = matGPUs[j].baseColor;
+			materials[j].shininess = matGPUs[j].shininess;
 			memcpy(materials[j].texIndices, matGPUs[j].texIndices, sizeof(uint32_t) * 4);
 		}
 	}
