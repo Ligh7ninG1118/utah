@@ -6,6 +6,7 @@ struct MatData
 { 
     uint texIndices[4];
     vec4 color;
+    float shininess;
 };
 
 layout(set = 0, binding = 3) readonly buffer MaterialBuffer {

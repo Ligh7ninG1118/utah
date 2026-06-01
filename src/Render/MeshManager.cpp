@@ -21,6 +21,12 @@ MeshManager::~MeshManager()
 
 	_pRenderer->DestroyBuffer(_aabbMesh.vertexBuffer);
 	_pRenderer->DestroyBuffer(_aabbMesh.indexBuffer);
+
+	_pRenderer->DestroyBuffer(_pyramidMesh.vertexBuffer);
+	_pRenderer->DestroyBuffer(_pyramidMesh.indexBuffer);
+
+	_pRenderer->DestroyBuffer(_sphereMesh.vertexBuffer);
+	_pRenderer->DestroyBuffer(_sphereMesh.indexBuffer);
 }
 
 void MeshManager::Initialize(VulkanRenderer* renderer)
@@ -28,6 +34,8 @@ void MeshManager::Initialize(VulkanRenderer* renderer)
 	_pRenderer = renderer;
 
 	CreateAABBMesh();
+	CreateIcosphereMesh(1);
+	CreatePyramidMesh();
 }
 
 void MeshManager::CreateAABBMesh()
@@ -89,7 +97,150 @@ void MeshManager::CreateAABBMesh()
 
 	_pRenderer->DestroyBuffer(stagingBuffer);
 
-	_aabbMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size())};
+	_aabbMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size()) };
+}
+
+void MeshManager::CreatePyramidMesh(float baseSize, float height)
+{
+	const float h = baseSize * 0.5f;
+
+	std::vector<glm::vec3> positions = {
+		{ -h, 0.0f, -h }, // 0 bl
+		{  h, 0.0f, -h }, // 1 br
+		{  h, 0.0f,  h }, // 2 fr
+		{ -h, 0.0f,  h }, // 3 fl
+		{ 0.0f, height, 0.0f }, // 4 apex
+	};;
+	std::vector<uint32_t> indices = {
+		0, 1,  1, 2,  2, 3,  3, 0,  // base square
+		0, 4,  1, 4,  2, 4,  3, 4,  // spokes to apex
+	};
+
+	vk::DeviceSize bufferSize = sizeof(positions[0]) * positions.size();
+
+	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, positions.data(), bufferSize);
+
+	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+
+	// Create Index Buffer
+	bufferSize = sizeof(indices[0]) * indices.size();
+
+	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, indices.data(), bufferSize);
+
+	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+	_pyramidMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+}
+
+void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
+{
+	const float t = (1.0f + std::sqrt(5.0f)) * 0.5f; // golden ratio
+
+	std::vector<glm::vec3> positions = {
+		{-1,  t,  0}, { 1,  t,  0}, {-1, -t,  0}, { 1, -t,  0},
+		{ 0, -1,  t}, { 0,  1,  t}, { 0, -1, -t}, { 0,  1, -t},
+		{ t,  0, -1}, { t,  0,  1}, {-t,  0, -1}, {-t,  0,  1},
+	};
+	for (auto& p : positions)
+		p = glm::normalize(p);
+
+	std::vector<uint32_t> indices = {
+		0,11,5,  0,5,1,   0,1,7,   0,7,10,  0,10,11,
+		1,5,9,   5,11,4,  11,10,2, 10,7,6,  7,1,8,
+		3,9,4,   3,4,2,   3,2,6,   3,6,8,   3,8,9,
+		4,9,5,   2,4,11,  6,2,10,  8,6,7,   9,8,1
+	};
+
+	// midpoint cache keyed by ordered edge (a,b)
+	std::unordered_map<uint64_t, uint32_t> midCache;
+	auto midpoint = [&](uint32_t a, uint32_t b) -> uint32_t
+		{
+			uint64_t key = a < b ? (uint64_t(a) << 32 | b) : (uint64_t(b) << 32 | a);
+			auto it = midCache.find(key);
+			if (it != midCache.end()) return it->second;
+
+			glm::vec3 m = glm::normalize((positions[a] + positions[b]) * 0.5f);
+			uint32_t idx = uint32_t(positions.size());
+			positions.push_back(m);
+			midCache.emplace(key, idx);
+			return idx;
+		};
+
+	for (uint32_t s = 0; s < subdivisions; ++s) {
+		std::vector<uint32_t> next;
+		next.reserve(indices.size() * 4);
+		for (size_t i = 0; i < indices.size(); i += 3)
+		{
+			uint32_t v0 = indices[i], v1 = indices[i + 1], v2 = indices[i + 2];
+			uint32_t a = midpoint(v0, v1);
+			uint32_t b = midpoint(v1, v2);
+			uint32_t c = midpoint(v2, v0);
+			next.insert(next.end(), { v0,a,c,  v1,b,a,  v2,c,b,  a,b,c });
+		}
+		indices = std::move(next);
+	}
+
+	if (radius != 1.0f)
+		for (auto& p : positions)
+			p *= radius;
+
+
+	vk::DeviceSize bufferSize = sizeof(positions[0]) * positions.size();
+
+	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, positions.data(), bufferSize);
+
+	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+
+	// Create Index Buffer
+	bufferSize = sizeof(indices[0]) * indices.size();
+
+	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	memcpy(stagingBuffer.info.pMappedData, indices.data(), bufferSize);
+
+	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
+		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+		VMA_MEMORY_USAGE_AUTO);
+
+	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+	_sphereMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
 }
 
 uint32_t MeshManager::ImportMesh(const std::string& meshPath)
