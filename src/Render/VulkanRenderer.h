@@ -121,6 +121,9 @@ public:
 	// Buffer Creation and Data Transfer
 	[[nodiscard]] AllocatedBuffer CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 		VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocFlags = 0);
+
+	[[nodiscard]] AllocatedBuffer CreateDeviceLocalBuffer(const void* data, vk::DeviceSize size, vk::BufferUsageFlags usage);
+
 	void DestroyBuffer(AllocatedBuffer& buffer);
 	void DestroyImage(AllocatedImage& image);
 	void CreateUniformBuffers();

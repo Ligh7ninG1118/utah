@@ -847,7 +847,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//TODO: offset feels pretty bad
 		PerDrawPC pc{ i + _drawList.size(), 2 };
 
-		Mesh mesh = _meshManager.GetAABBMesh();
+		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
 
 		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -1174,6 +1174,20 @@ AllocatedBuffer VulkanRenderer::CreateBuffer(vk::DeviceSize size, vk::BufferUsag
 	{
 		throw std::runtime_error("vmaCreateBuffer failed");
 	}
+	return result;
+}
+
+AllocatedBuffer VulkanRenderer::CreateDeviceLocalBuffer(const void* data, vk::DeviceSize size, vk::BufferUsageFlags usage)
+{
+	AllocatedBuffer staging = CreateBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+	memcpy(staging.info.pMappedData, data, size);
+
+	AllocatedBuffer result = CreateBuffer(size,
+		vk::BufferUsageFlagBits::eTransferDst | usage, VMA_MEMORY_USAGE_AUTO);
+	CopyBuffer(staging.buffer, result.buffer, size);
+	DestroyBuffer(staging);
 	return result;
 }
 

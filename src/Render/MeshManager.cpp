@@ -19,14 +19,11 @@ MeshManager::~MeshManager()
 		_pRenderer->DestroyBuffer(mesh.indexBuffer);
 	}
 
-	_pRenderer->DestroyBuffer(_aabbMesh.vertexBuffer);
-	_pRenderer->DestroyBuffer(_aabbMesh.indexBuffer);
-
-	_pRenderer->DestroyBuffer(_pyramidMesh.vertexBuffer);
-	_pRenderer->DestroyBuffer(_pyramidMesh.indexBuffer);
-
-	_pRenderer->DestroyBuffer(_sphereMesh.vertexBuffer);
-	_pRenderer->DestroyBuffer(_sphereMesh.indexBuffer);
+	for (auto& mesh : _debugMeshes)
+	{
+		_pRenderer->DestroyBuffer(mesh.vertexBuffer);
+		_pRenderer->DestroyBuffer(mesh.indexBuffer);
+	}
 }
 
 void MeshManager::Initialize(VulkanRenderer* renderer)
@@ -60,44 +57,14 @@ void MeshManager::CreateAABBMesh()
 		0,4, 1,5, 2,6, 3,7,
 	};
 
-	//TODO: Replace with a function, for both this and ImportMesh function
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(aabbVertices.data(),
+		sizeof(glm::vec3) * aabbVertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
 
-	// Create Vertex Buffer
-	vk::DeviceSize bufferSize = sizeof(aabbVertices[0]) * aabbVertices.size();
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(aabbIndices.data(),
+		sizeof(uint32_t) * aabbIndices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
-	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, aabbVertices.data(), bufferSize);
-
-	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-
-	// Create Index Buffer
-	bufferSize = sizeof(aabbIndices[0]) * aabbIndices.size();
-
-	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, aabbIndices.data(), bufferSize);
-
-	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-	_aabbMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size()) };
+	_debugMeshes[static_cast<uint32_t>(DebugMeshType::AABB)] = 
+		Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size()) };
 }
 
 void MeshManager::CreatePyramidMesh(float baseSize, float height)
@@ -116,41 +83,14 @@ void MeshManager::CreatePyramidMesh(float baseSize, float height)
 		0, 4,  1, 4,  2, 4,  3, 4,  // spokes to apex
 	};
 
-	vk::DeviceSize bufferSize = sizeof(positions[0]) * positions.size();
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(positions.data(),
+		sizeof(glm::vec3) * positions.size(), vk::BufferUsageFlagBits::eVertexBuffer);
 
-	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
-	memcpy(stagingBuffer.info.pMappedData, positions.data(), bufferSize);
-
-	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-
-	// Create Index Buffer
-	bufferSize = sizeof(indices[0]) * indices.size();
-
-	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, indices.data(), bufferSize);
-
-	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-	_pyramidMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Pyramid)] 
+		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
 }
 
 void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
@@ -205,42 +145,15 @@ void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
 		for (auto& p : positions)
 			p *= radius;
 
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(positions.data(),
+		sizeof(glm::vec3) * positions.size(), vk::BufferUsageFlagBits::eVertexBuffer);
 
-	vk::DeviceSize bufferSize = sizeof(positions[0]) * positions.size();
-
-	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, positions.data(), bufferSize);
-
-	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
 
-	// Create Index Buffer
-	bufferSize = sizeof(indices[0]) * indices.size();
-
-	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, indices.data(), bufferSize);
-
-	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-	_sphereMesh = Mesh{ vertexBuffer, indexBuffer, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Icosphere)] 
+		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
 }
 
 uint32_t MeshManager::ImportMesh(const std::string& meshPath)
@@ -295,44 +208,13 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 		}
 	}
 
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(vertices.data(),
+		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
 
-	// Create Vertex Buffer
-	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, vertices.data(), bufferSize);
-
-	AllocatedBuffer vertexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, vertexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-
-	// Create Index Buffer
-	bufferSize = sizeof(indices[0]) * indices.size();
-
-	stagingBuffer = _pRenderer->CreateBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	memcpy(stagingBuffer.info.pMappedData, indices.data(), bufferSize);
-
-	AllocatedBuffer indexBuffer = _pRenderer->CreateBuffer(bufferSize,
-		vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-		VMA_MEMORY_USAGE_AUTO);
-
-	_pRenderer->CopyBuffer(stagingBuffer.buffer, indexBuffer.buffer, bufferSize);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
 	// Add & return index
-	_meshes.emplace_back(vertexBuffer, indexBuffer, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
+	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
 	return _meshes.size() - 1;
 }
