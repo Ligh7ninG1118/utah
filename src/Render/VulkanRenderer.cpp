@@ -82,7 +82,9 @@ void VulkanRenderer::Initialize()
 
 	_materialManager.CreateBlinnPhongMaterial(0, { 1 }, glm::vec4(1.0f));
 	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f));
-	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, AABB
+	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
+	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
+
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -277,9 +279,21 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	{
 		objects[i].model = _drawList[i]._model;
 	}
-	for (size_t i = 0; i < _debugAABBDrawList.size(); ++i)
+
+	//TODO: Group this with a DebugDraw struct
+
+	// AABB Bounding boxes
+	size_t debugDrawListSize = _debugAABBDrawList.size();
+	for (size_t i = 0; i < debugDrawListSize; ++i)
 	{
 		objects[i + drawListSize].model = _debugAABBDrawList[i];
+	}
+
+	for (size_t i = 0; i < _pointLights.size(); i++)
+	{
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, _pointLights[i].position);
+		objects[i + drawListSize + debugDrawListSize].model = model;
 	}
 }
 
@@ -722,8 +736,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::ImageAspectFlagBits::eColor);
 	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(
-		_depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+	TransitionImageLayout(_depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
@@ -848,6 +861,63 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		PerDrawPC pc{ i + _drawList.size(), 2 };
 
 		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+
+		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		_commandBuffers[_currentFrame].bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			0,
+			*_globalDescriptorSets[_currentFrame],
+			nullptr);
+
+		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
+			_pipelineLayout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+	// Point lights
+	for (uint32_t i = 0; i < _pointLights.size(); i++)
+	{
+		//TODO: Designated debug wireframe material
+		Material mat = _materialManager.GetMaterial(3);
+
+		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+
+		_commandBuffers[_currentFrame].setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(_swapChainExtent.width),
+				static_cast<float>(_swapChainExtent.height),
+				0.0f, 1.0f));
+
+		_commandBuffers[_currentFrame].setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				_swapChainExtent));
+
+		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		//TODO: offset feels pretty bad
+		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), 3};
+
+		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::Icosphere);
 
 		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 

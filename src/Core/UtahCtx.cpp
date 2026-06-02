@@ -136,39 +136,39 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
 
-	// Directional Light
-	{
-		Entity e = _registry.CreateEntity();
+	//// Directional Light
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t; //No need to change position for directional light
+	//	TransformComponent t; //No need to change position for directional light
 
-		DirectionalLightCPU p;
-		p.direction = glm::vec3(0.0f, -45.0f, 135.0f);
+	//	DirectionalLightCPU p;
+	//	p.direction = glm::vec3(0.0f, -45.0f, 135.0f);
 
-		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-		p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
-		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	}
-
-	// SpotLight
-	{
-		Entity e = _registry.CreateEntity();
-
-		TransformComponent t;
-
-		SpotLightCPU p;
-		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-		p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
-		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	//	p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
+	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<SpotLightCPU>(e, std::move(p));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	//}
+
+	//// SpotLight
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+
+	//	SpotLightCPU p;
+	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	//	p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
+	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+	//}
 }
 
 void UtahCtx::MainLoop()
@@ -196,11 +196,16 @@ void UtahCtx::MainLoop()
 		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
 		ImGui::End();
 
-		/*auto& pool = _registry.GetPool<TransformComponent>()->GetPool();
-		for (auto& obj : pool)
+		auto& poolOwner = _registry.GetPool<PointLightCPU>()->GetEntities();
+		auto* tfPool = _registry.GetPool<TransformComponent>();
+		for (auto& owner : poolOwner)
 		{
-			obj._rot.z += 10.0f * deltaTime;
-		}*/
+			static float timeCount = 0.0f;
+			timeCount += deltaTime * 100.0f;
+			auto& tf = tfPool->Get(owner);
+			tf._pos.x = glm::cos(glm::radians(timeCount)) * 2.0f;
+			tf._pos.z = glm::sin(glm::radians(timeCount)) * 2.0f;
+		}
 
 		_pFlyCamera->Update(deltaTime);
 
