@@ -196,6 +196,7 @@
     <None Include="shaders\blinn_phong.frag" />
     <None Include="shaders\HelloTri.slang" />
     <None Include="shaders\blinn_phong.vert" />
+    <None Include="shaders\shadow.vert" />
     <None Include="shaders\slangCompile.bat" />
     <None Include="shaders\unlit.frag" />
     <None Include="shaders\unlit.vert" />

@@ -170,6 +170,7 @@ private:
 
 	// Graphics Pipeline
 	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type = PipelineType::Default);
+	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -196,6 +197,9 @@ private:
 	vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
 	void CreateColorResources();
 
+	// Shadow Map
+	void CreateShadowMapResources();
+
 	// Variables
 	// Ref to windows and program context
 	UtahCtx& _programCtx;
@@ -219,6 +223,9 @@ private:
 
 	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;
+
+	AllocatedImage _shadowMapImage{};
+	vk::raii::ImageView _shadowMapImageView = nullptr;
 
 	TextureManager _textureManger;
 	MeshManager _meshManager;

@@ -30,9 +30,11 @@ VulkanRenderer::~VulkanRenderer()
 
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
+	_shadowMapImageView = nullptr;
 
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
+	DestroyImage(_shadowMapImage);
 
 	for (auto& ubo : _cameraUBOs)
 		DestroyBuffer(ubo);
@@ -414,8 +416,10 @@ void VulkanRenderer::CleanupSwapChain()
 	// Image views must be destroyed before the underlying VMA-allocated images.
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
+	_shadowMapImageView = nullptr;
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
+	DestroyImage(_shadowMapImage);
 
 	_swapChainImageViews.clear();
 	_swapChain = nullptr;
@@ -692,6 +696,104 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
 		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = _pipelineLayout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &_swapChainSurfaceFormat.format,
+		 .depthAttachmentFormat = depthFormat} };
+
+
+	_pipelines.emplace_back(vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
+	return _pipelines.size() - 1;
+}
+
+uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vertPath)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo};
+
+	auto bindingDescription = Vertex::GetBindingDescription();
+	std::vector< vk::VertexInputAttributeDescription> attributeDescriptions;
+
+	auto arr = Vertex::GetAttributeDescriptions();
+	attributeDescriptions.assign(arr.begin(), arr.end());
+	
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+		.pVertexAttributeDescriptions = attributeDescriptions.data() };
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eBack,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = _msaaSamples,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
+														 .depthWriteEnable = vk::True,
+														 .depthCompareOp = vk::CompareOp::eLess,
+														 .depthBoundsTestEnable = vk::False,
+														 .stencilTestEnable = vk::False };
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	vk::PushConstantRange pushRange{
+		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+		.offset = 0,
+		.size = sizeof(uint32_t) * 2   // objectIndex, textureIndex
+	};
+
+	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+		.setLayoutCount = 1,
+		.pSetLayouts = &*_globalDescriptorSetLayout,
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &pushRange };
+
+	_pipelineLayout = vk::raii::PipelineLayout(_vkCtx.GetDevice(), pipelineLayoutInfo);
+
+	vk::Format depthFormat = FindDepthFormat();
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 1,
 		 .pStages = shaderStages,
 		 .pVertexInputState = &vertexInputInfo,
 		 .pInputAssemblyState = &inputAssembly,
@@ -1404,4 +1506,14 @@ void VulkanRenderer::CreateColorResources()
 		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment);
 
 	_colorImageView = CreateImageView(_colorImage.image, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
+}
+
+void VulkanRenderer::CreateShadowMapResources()
+{
+	//TODO: shadow map resolution (vary based on setting & light type)
+	_shadowMapImage = CreateImage(1920, 1080, 1, _msaaSamples, vk::Format::eD32Sfloat,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
+
+	_shadowMapImageView = CreateImageView(_shadowMapImage.image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1);
 }

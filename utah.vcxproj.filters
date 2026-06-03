@@ -159,9 +159,12 @@
     <None Include="shaders\glslCompile.bat">
       <Filter>Source Files</Filter>
     </None>
-    <None Include="shaders\*.frag" />
-    <None Include="shaders\*.vert" />
+    <None Include="shaders\unlit.frag" />
+    <None Include="shaders\unlit.vert" />
     <None Include="shaders\unlit.vert" />
     <None Include="shaders\unlit.frag" />
+    <None Include="shaders\blinn_phong.frag" />
+    <None Include="shaders\blinn_phong.vert" />
+    <None Include="shaders\shadow.vert" />
   </ItemGroup>
 </Project>
