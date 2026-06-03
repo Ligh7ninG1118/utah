@@ -114,45 +114,46 @@ void UtahCtx::InitDemo()
 
 	_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 
-	// Point lights
-	for (int i = 0; i < 1; i++)
+	//// Point lights
+	//for (int i = 0; i < 1; i++)
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+	//	t._pos.x = i * 5.0f;
+	//	t._pos.y = 5.0f;
+
+	//	PointLightCPU p;
+	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+	//	p.constant = 1.0f;
+	//	p.linear = 0.07f;
+	//	p.quadratic = 0.017f;
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<PointLightCPU>(e, std::move(p));
+	//}
+
+	// Directional Light
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = i * 5.0f;
-		t._pos.y = 5.0f;
+		t._pos.y = 3.0f;
 
-		PointLightCPU p;
+		DirectionalLightCPU p;
+		p.direction = glm::vec3(0.0f, -90.0f, 0.0f);
+
 		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
 		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
 		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
-		p.constant = 1.0f;
-		p.linear = 0.07f;
-		p.quadratic = 0.017f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<PointLightCPU>(e, std::move(p));
+		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
 	}
-
-	//// Directional Light
-	//{
-	//	Entity e = _registry.CreateEntity();
-
-	//	TransformComponent t; //No need to change position for directional light
-
-	//	DirectionalLightCPU p;
-	//	p.direction = glm::vec3(0.0f, -45.0f, 135.0f);
-
-	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-	//	p.diffuse = glm::vec3(0.9f, 0.5f, 0.5f);
-	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-
-	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	//}
 
 	//// SpotLight
 	//{
@@ -196,7 +197,7 @@ void UtahCtx::MainLoop()
 		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
 		ImGui::End();
 
-		auto& poolOwner = _registry.GetPool<PointLightCPU>()->GetEntities();
+		/*auto& poolOwner = _registry.GetPool<PointLightCPU>()->GetEntities();
 		auto* tfPool = _registry.GetPool<TransformComponent>();
 		for (auto& owner : poolOwner)
 		{
@@ -205,7 +206,7 @@ void UtahCtx::MainLoop()
 			auto& tf = tfPool->Get(owner);
 			tf._pos.x = glm::cos(glm::radians(timeCount)) * 2.0f;
 			tf._pos.z = glm::sin(glm::radians(timeCount)) * 2.0f;
-		}
+		}*/
 
 		_pFlyCamera->Update(deltaTime);
 

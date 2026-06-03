@@ -289,10 +289,20 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		objects[i + drawListSize].model = _debugAABBDrawList[i];
 	}
 
-	for (size_t i = 0; i < _pointLights.size(); i++)
+	/*for (size_t i = 0; i < _pointLights.size(); i++)
 	{
 		glm::mat4 model = glm::mat4(1.0f);
 		model = glm::translate(model, _pointLights[i].position);
+		objects[i + drawListSize + debugDrawListSize].model = model;
+	}*/
+
+	for (size_t i = 0; i < _dirLights.size(); i++)
+	{
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, glm::vec3(0.0f, 3.0f, 0.0f));
+
+		model = glm::rotate(model, glm::radians(_dirLights[i].direction.y + 90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
 		objects[i + drawListSize + debugDrawListSize].model = model;
 	}
 }
@@ -883,8 +893,8 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 	}
 
-	// Point lights
-	for (uint32_t i = 0; i < _pointLights.size(); i++)
+	// lights
+	for (uint32_t i = 0; i < _dirLights.size(); i++)
 	{
 		//TODO: Designated debug wireframe material
 		Material mat = _materialManager.GetMaterial(3);
@@ -917,7 +927,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//TODO: offset feels pretty bad
 		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), 3};
 
-		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::Icosphere);
+		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::Pyramid);
 
 		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
