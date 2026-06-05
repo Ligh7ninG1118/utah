@@ -144,7 +144,7 @@ void UtahCtx::InitDemo()
 		t._pos.y = 3.0f;
 
 		DirectionalLightCPU p;
-		p.direction = glm::vec3(0.0f, -90.0f, 0.0f);
+		p.direction = glm::vec3(15.0f, -90.0f, 15.0f);
 
 		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
 		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);

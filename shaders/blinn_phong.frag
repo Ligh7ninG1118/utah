@@ -1,7 +1,6 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
 
-
 struct PointLight
 {
     vec3  position;
@@ -68,11 +67,15 @@ layout(set = 0, binding = 3) readonly buffer MaterialBuffer {
 // --------------- Texture ---------------
 layout(set = 0, binding = 4) uniform sampler2D textures[];
 
+layout(set = 0, binding = 6) uniform sampler2D shadowMap;
+
+
 // --------------- Fragment Input ---------------
 layout(location = 0) in vec3 inWorldPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) flat in uint inMatIndex;   //Need for this? PC can also reach frag shader(?)
+layout(location = 3) in vec4 inWorldPosLightSpace;
+layout(location = 4) flat in uint inMatIndex;   //Need for this? PC can also reach frag shader(?)
 
 // --------------- Fragment Output ---------------
 layout(location = 0) out vec4 outColor;
@@ -138,6 +141,18 @@ vec3 CalculateSpotLight(SpotLight light, vec3 normal, vec3 fragPos, vec3 viewDir
     return (ambient + diffuse + specular) * atten;
 }
 
+float ShadowCalculation(vec4 worldPosLightSpace)
+{
+    vec3 projCoords = inWorldPosLightSpace.xyz / inWorldPosLightSpace.w;
+    vec2 uv = projCoords.xy * 0.5f + 0.5f;
+    float currentDepth = projCoords.z;
+
+    float closestDepth = texture(shadowMap, uv).r;
+    float bias = 0.0f;
+    float shadow = currentDepth < (closestDepth - bias) ? 0.5f : 0.0f; //reverse z
+    return shadow;
+}
+
 void main()
 {
     uint albedoIdx = matBuf.materials[inMatIndex].texIndices[0];
@@ -161,6 +176,10 @@ void main()
 
     for (uint i = 0; i < lightUBO.spotLightNum; i++)
         result += CalculateSpotLight(lightUBO.spotLights[i], normal, inWorldPos, viewDir, albedo, specStrength, shininess);
+
+    float shadow = ShadowCalculation(inWorldPosLightSpace);
+
+    result *= (1.0f - shadow);
 
     outColor = vec4(result, texSample.a);
 }

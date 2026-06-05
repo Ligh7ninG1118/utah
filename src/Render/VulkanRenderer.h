@@ -175,6 +175,7 @@ private:
 	// Command Pool & Buffers
 	void CreateCommandPool();
 	void CreateCommandBuffers();
+	void RecordCommandBufferShadowMapView(uint32_t imageIndex);
 	void RecordCommandBuffer(uint32_t imageIndex);
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -226,6 +227,7 @@ private:
 
 	AllocatedImage _shadowMapImage{};
 	vk::raii::ImageView _shadowMapImageView = nullptr;
+	vk::raii::Sampler _shadowMapSampler = nullptr;
 
 	TextureManager _textureManger;
 	MeshManager _meshManager;
@@ -235,12 +237,14 @@ private:
 	std::vector<AllocatedBuffer> _lightUBOs;
 	std::vector<AllocatedBuffer> _objectSSBOs;
 	std::vector<AllocatedBuffer> _materialSSBOs;
-
+	std::vector<AllocatedBuffer> _shadowMapUBOs;
 
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
 
 	vk::raii::DescriptorPool			 _imguiDescriptorPool = nullptr;
+	//Temp, drawing shadow map on imgui window
+	VkDescriptorSet _shadowMapImGuiDS = VK_NULL_HANDLE;
 
 	vk::raii::CommandPool                _commandPool = nullptr;
 	std::vector<vk::raii::CommandBuffer> _commandBuffers;

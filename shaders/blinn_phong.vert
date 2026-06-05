@@ -13,6 +13,11 @@ layout(set = 0, binding = 2) readonly buffer ObjectBuffer {
     ObjectData objects[];
 } objBuf;
 
+layout(set = 0, binding = 5) uniform ShadowMapUBO
+{
+    mat4 lightViewProj;
+} shadowMapUBO;
+
 layout(push_constant) uniform PushConstants {
     uint objIndex;
     uint matIndex;
@@ -25,11 +30,13 @@ layout(location = 2) in vec2 inUV;
 layout(location = 0) out vec3 outWorldPos;
 layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV;
-layout(location = 3) flat out uint outMatIndex;
+layout(location = 3) out vec4 outWorldPosLightSpace;
+layout(location = 4) flat out uint outMatIndex;
 
 void main() {
     mat4 model      = objBuf.objects[pc.objIndex].model;
     vec4 worldPos   = model * vec4(inPos, 1.0);
+    outWorldPosLightSpace = shadowMapUBO.lightViewProj * worldPos;
     gl_Position     = cam.proj * cam.view * worldPos;
     outWorldPos     = worldPos.xyz;
     outNormal       = normalize(mat3(model) * inNormal);
