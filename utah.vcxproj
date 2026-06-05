@@ -87,6 +87,9 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PreBuildEvent>
+      <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -101,6 +104,9 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PreBuildEvent>
+      <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -118,7 +124,7 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)shaders\glslCompile.bat"</Command>
+      <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -139,7 +145,7 @@
       <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>call "$(ProjectDir)shaders\glslCompile.bat"</Command>
+      <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -196,10 +202,18 @@
     <None Include="shaders\blinn_phong.frag" />
     <None Include="shaders\HelloTri.slang" />
     <None Include="shaders\blinn_phong.vert" />
+    <None Include="shaders\hlslCompile.bat" />
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\slangCompile.bat" />
     <None Include="shaders\unlit.frag" />
     <None Include="shaders\unlit.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\blinn_phong_frag.hlsl" />
+    <FxCompile Include="shaders\blinn_phong_vert.hlsl" />
+    <FxCompile Include="shaders\shadow_vert.hlsl" />
+    <FxCompile Include="shaders\unlit_frag.hlsl" />
+    <FxCompile Include="shaders\unlit_vert.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -496,7 +496,7 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 				.stageFlags = vk::ShaderStageFlagBits::eFragment },
 			// 4: combined-image-sampler array (fragment) - bindless texture slot
 			vk::DescriptorSetLayoutBinding{
-				.binding = 4, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.binding = 4, .descriptorType = vk::DescriptorType::eSampledImage,
 				.descriptorCount = MAX_TEXTURES,
 				.stageFlags = vk::ShaderStageFlagBits::eFragment },
 			// 5: shadow map
@@ -508,11 +508,16 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 			vk::DescriptorSetLayoutBinding{
 				.binding = 6, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
 				.descriptorCount = 1,
+				.stageFlags = vk::ShaderStageFlagBits::eFragment },
+			// 7: sample array pairs with binding 4 
+			vk::DescriptorSetLayoutBinding{
+				.binding = 7, .descriptorType = vk::DescriptorType::eSampler, //TODO
+				.descriptorCount = MAX_TEXTURES,
 				.stageFlags = vk::ShaderStageFlagBits::eFragment }
 	};
 
 	// Per-binding flags so binding 4 can be partially-bound + update-after-bind
-	std::array<vk::DescriptorBindingFlags, 7> bindingFlags = {
+	std::array<vk::DescriptorBindingFlags, 8> bindingFlags = {
 	{
 		{},		// 0 Camera UBO
 		{},		// 1 Light UBO
@@ -520,7 +525,8 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 		{},		// 3 Material SSBO
 		vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind,	// 4 Texture Array
 		{},		// 5 Shadow Map UBO
-		vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind	// 6 Shadow Map Texture
+		vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind,	// 6 Shadow Map Texture
+		vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind	// 8 sampler array
 	}
 	};
 	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
@@ -544,7 +550,9 @@ void VulkanRenderer::CreateDescriptorPool()
 	std::array poolSize{
 						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 3),
 						vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * 2),
-						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * (MAX_TEXTURES + 1)) }; // Should be + MAX SHADOW CASTER LIGHTS
+						vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES),
+						vk::DescriptorPoolSize(vk::DescriptorType::eSampler, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES),
+						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 1) }; // Should be + MAX SHADOW CASTER LIGHTS
 
 	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 										  .maxSets = MAX_FRAMES_IN_FLIGHT,
@@ -637,7 +645,7 @@ void VulkanRenderer::CreateDescriptorSets()
 									.dstBinding = 4,
 									.dstArrayElement = 0,
 									.descriptorCount = static_cast<uint32_t>(texCount),
-									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+									.descriptorType = vk::DescriptorType::eSampledImage,
 									.pImageInfo = textureInfos.data()},
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 									.dstBinding = 5,
@@ -651,13 +659,17 @@ void VulkanRenderer::CreateDescriptorSets()
 									.descriptorCount = 1, //TODO: SHADOW CASTER LIGHT
 									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
 									.pImageInfo = &shadowMapInfo},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 7,
+									.dstArrayElement = 0,
+									.descriptorCount = static_cast<uint32_t>(texCount),
+									.descriptorType = vk::DescriptorType::eSampler,
+									.pImageInfo = textureInfos.data()},
 		
 		};
 			
 
 		_vkCtx.GetDevice().updateDescriptorSets(descriptorWrites, {});
-
-
 	}
 }
 
