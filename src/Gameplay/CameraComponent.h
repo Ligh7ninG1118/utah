@@ -8,7 +8,7 @@ struct CameraComponent
 	glm::vec3 _rot = { 0.0f, 0.0f, 0.0f };
 
 	float _verticalFOV = 80.0f;
-	float _nearPlane = 0.1f;
+	float _nearPlane = 0.01f;
 	float _farPlane = 1000.0f;
 
 	//TODO: add this to transform too

@@ -140,12 +140,13 @@ float3 CalculateSpotLight(SpotLight light, float3 normal, float3 fragPos, float3
     return (ambient + (diffuse + specular) * (1.0f - shadow)) * atten;
 }
 
-float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L, PSInput input)
+float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
 {
     float3 projCoords = worldPosLightSpace.xyz / worldPosLightSpace.w;
     float currentDepth = projCoords.z;
     float2 uv = projCoords.xy * 0.5f + 0.5f;
     
+    // Bias to solve shadow acne, depends on angle
     float NdotL = max(dot(N, L), 0.0f);
     float minBias = 0.000005f;
     float maxBias = 0.0001f;
@@ -154,11 +155,7 @@ float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L, PSInput i
     uint width, height;
     shadowMap.GetDimensions(width, height);
     float2 texelSize = 1.0f / float2(width, height);
-    
-    if (all(uint2(input.position.xy) == uint2(640, 360)))
-        printf("w=%f z=%f ndotl=%f bias=%f uv=%f,%f texel=%f,%f\n",
-           input.worldPosLightSpace.w, projCoords.z, NdotL, bias, uv.x, uv.y, texelSize.x, texelSize.y);
-    
+   
     // PCF
     float refDepth = currentDepth + bias;
     float sum = 0.0f;
@@ -196,10 +193,11 @@ float4 main(PSInput input) : SV_Target
     float3 normal = normalize(input.normal);
     float3 viewDir = normalize(lightUBO.eyePos - input.worldPos);
     float3 result = float3(0.0, 0.0, 0.0);
-    float3 lightDir = normalize(-lightUBO.dirLights[0].direction);
+   
+    float3 lightDir = normalize(-float3(0.3f, -1.0f, 0.3f));
+    //float3 lightDir = normalize(-lightUBO.dirLights[0].direction);
     
-    
-    float shadow = ShadowCalculation(input.worldPosLightSpace, normal, lightDir, input);
+    float shadow = ShadowCalculation(input.worldPosLightSpace, normal, lightDir);
 
     for (uint i = 0; i < lightUBO.pointLightNum; i++)
         result += CalculatePointLight(lightUBO.pointLights[i], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
@@ -209,6 +207,6 @@ float4 main(PSInput input) : SV_Target
 
     for (uint k = 0; k < lightUBO.spotLightNum; k++)
         result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
-
+    
     return float4(result, texSample.a);
 }
