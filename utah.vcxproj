@@ -115,13 +115,13 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;C:\env\NVIDIA_Nsight_Aftermath_SDK_2025.5.0.25317-windows_x64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\env\glfw-3.4\build\src\Debug;C:\env\VulkanSDK\1.4.321.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\env\glfw-3.4\build\src\Debug;C:\env\VulkanSDK\1.4.321.1\Lib;C:\env\NVIDIA_Nsight_Aftermath_SDK_2025.5.0.25317-windows_x64\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;vulkan-1.lib;GFSDK_Aftermath_Lib.x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
@@ -136,13 +136,13 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\env\VulkanMemoryAllocator-3.3.0\include;C:\env\glfw-3.4\include;C:\env\VulkanSDK\1.4.321.1\Include;C:\env\glm-1.0.2;C:\env\stb_image;C:\env\tiny_obj_loader;C:\env\imgui-1.92.7;C:\env\imgui-1.92.7\backends;C:\env\NVIDIA_Nsight_Aftermath_SDK_2025.5.0.25317-windows_x64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\env\glfw-3.4\build\src\Debug;C:\env\VulkanSDK\1.4.321.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\env\glfw-3.4\build\src\Debug;C:\env\VulkanSDK\1.4.321.1\Lib;C:\env\NVIDIA_Nsight_Aftermath_SDK_2025.5.0.25317-windows_x64\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glfw3.lib;vulkan-1.lib;GFSDK_Aftermath_Lib.x64;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>call "$(ProjectDir)shaders\hlslCompile.bat"</Command>
@@ -156,6 +156,8 @@
     <ClCompile Include="imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="imgui\imgui_tables.cpp" />
     <ClCompile Include="imgui\imgui_widgets.cpp" />
+    <ClCompile Include="src\Render\Aftermath\NsightAftermathGpuCrashTracker.cpp" />
+    <ClCompile Include="src\Render\Aftermath\NsightAftermathShaderDatabase.cpp" />
     <ClCompile Include="src\Render\MeshManager.cpp" />
     <ClCompile Include="src\Gameplay\FlyCameraSystem.cpp" />
     <ClCompile Include="src\Render\RenderSystem.cpp" />
@@ -175,6 +177,9 @@
     <ClInclude Include="imgui\imstb_rectpack.h" />
     <ClInclude Include="imgui\imstb_textedit.h" />
     <ClInclude Include="imgui\imstb_truetype.h" />
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathGpuCrashTracker.h" />
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathHelpers.h" />
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathShaderDatabase.h" />
     <ClInclude Include="src\Render\MeshManager.h" />
     <ClInclude Include="src\Gameplay\FlyCameraSystem.h" />
     <ClInclude Include="src\Core\ComponentPool.h" />

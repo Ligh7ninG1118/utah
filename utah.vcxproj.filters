@@ -63,6 +63,12 @@
     <ClCompile Include="src\Render\MeshManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\Render\Aftermath\NsightAftermathGpuCrashTracker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Render\Aftermath\NsightAftermathShaderDatabase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Core\UtahCtx.h">
@@ -149,6 +155,15 @@
     <ClInclude Include="src\Render\RenderCommons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathGpuCrashTracker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathHelpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Render\Aftermath\NsightAftermathShaderDatabase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\HelloTri.slang" />
@@ -166,5 +181,15 @@
     <None Include="shaders\blinn_phong.frag" />
     <None Include="shaders\blinn_phong.vert" />
     <None Include="shaders\shadow.vert" />
+    <None Include="shaders\hlslCompile.bat">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\blinn_phong_frag.hlsl" />
+    <FxCompile Include="shaders\blinn_phong_vert.hlsl" />
+    <FxCompile Include="shaders\shadow_vert.hlsl" />
+    <FxCompile Include="shaders\unlit_frag.hlsl" />
+    <FxCompile Include="shaders\unlit_vert.hlsl" />
   </ItemGroup>
 </Project>

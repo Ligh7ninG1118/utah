@@ -38,6 +38,9 @@ VulkanContext::~VulkanContext()
 
 void VulkanContext::Initialize(GLFWwindow* pWindow)
 {
+#if USE_NSIGHT_AFTERMATH
+	_gpuCrashTrakcer.Initialize(false);
+#endif
 	CreateInstance();
 	SetupDebugMessenger();
 	CreateSurface(pWindow);
@@ -238,6 +241,17 @@ void VulkanContext::CreateLogicalDevice()
 		.enabledExtensionCount = static_cast<uint32_t>(_requiredDeviceExtension.size()),
 		.ppEnabledExtensionNames = _requiredDeviceExtension.data() };
 
+#if USE_NSIGHT_AFTERMATH
+	vk::DeviceDiagnosticsConfigCreateInfoNV diagnosticsConfig{
+	.flags = vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking
+		   | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints
+		   | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo
+		   | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderErrorReporting
+	};
+	diagnosticsConfig.pNext = const_cast<void*>(deviceCreateInfo.pNext);
+	deviceCreateInfo.pNext = &diagnosticsConfig;
+#endif
+
 	_device = vk::raii::Device(_physicalDevice, deviceCreateInfo);
 	_queue = vk::raii::Queue(_device, _queueIndex, 0);
 }
@@ -270,3 +284,20 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanContext::DebugCallback(vk::DebugUtilsMess
 	}
 	return vk::False;
 }
+
+#if USE_NSIGHT_AFTERMATH
+void VulkanContext::WaitForCrashDump()
+{
+	using namespace std::chrono;
+	auto tStart = steady_clock::now();
+	GFSDK_Aftermath_CrashDump_Status status = GFSDK_Aftermath_CrashDump_Status_Unknown;
+	AFTERMATH_CHECK_ERROR(GFSDK_Aftermath_GetCrashDumpStatus(&status));
+	while (status != GFSDK_Aftermath_CrashDump_Status_CollectingDataFailed &&
+		status != GFSDK_Aftermath_CrashDump_Status_Finished &&
+		duration_cast<seconds>(steady_clock::now() - tStart).count() < 5)
+	{
+		std::this_thread::sleep_for(milliseconds(50));
+		AFTERMATH_CHECK_ERROR(GFSDK_Aftermath_GetCrashDumpStatus(&status));
+	}
+}
+#endif

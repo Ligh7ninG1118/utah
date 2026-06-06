@@ -8,6 +8,11 @@
 #include <cstdint>
 #include <vector>
 
+#define USE_NSIGHT_AFTERMATH 1
+
+#if USE_NSIGHT_AFTERMATH 
+#include "Aftermath/NsightAftermathGpuCrashTracker.h"
+#endif
 
 struct GLFWwindow;
 
@@ -43,6 +48,10 @@ public:
 
 	VmaAllocator GetAllocator() const { return _allocator; }
 
+#if USE_NSIGHT_AFTERMATH
+	void WaitForCrashDump();
+#endif
+
 private:
 	void CreateAllocator();
 
@@ -76,8 +85,18 @@ private:
 		vk::KHRSwapchainExtensionName, 
 		vk::KHRSpirv14ExtensionName,
 		vk::KHRSynchronization2ExtensionName,
-		vk::KHRCreateRenderpass2ExtensionName };
+		vk::KHRCreateRenderpass2ExtensionName,
+#if USE_NSIGHT_AFTERMATH
+		vk::NVDeviceDiagnosticsConfigExtensionName,
+		vk::NVDeviceDiagnosticCheckpointsExtensionName,
+#endif
+	};
 
 	VmaAllocator _allocator = VK_NULL_HANDLE;
+
+#if USE_NSIGHT_AFTERMATH
+	GpuCrashTracker::MarkerMap _markerMap;
+	GpuCrashTracker _gpuCrashTrakcer{ _markerMap };
+#endif
 };
 

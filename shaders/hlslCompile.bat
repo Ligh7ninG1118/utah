@@ -7,7 +7,7 @@ set "SCRIPT_DIR=%~dp0"
 set "OUT_DIR=%SCRIPT_DIR%..\shaderBin"
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
  
-set "DXC_FLAGS=-spirv -fspv-target-env=vulkan1.3 -fvk-use-gl-layout -E main"
+set "DXC_FLAGS=-spirv -fspv-target-env=vulkan1.3 -fvk-use-gl-layout -E main -Zi"
  
 echo Compiling *_vert.hlsl (vertex stage)...
 for %%F in ("%SCRIPT_DIR%*_vert.hlsl") do (
