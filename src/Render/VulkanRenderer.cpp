@@ -1090,7 +1090,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 					vk::Offset2D(0, 0),
 					vk::Extent2D(4096, 4096)));
 
-			_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+			_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eNone);
 			_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
 			_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
 			_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
@@ -1844,8 +1844,8 @@ void VulkanRenderer::CreateShadowMapResources()
 										.addressModeW = vk::SamplerAddressMode::eClampToBorder,
 										.mipLodBias = 0.0f,
 										.anisotropyEnable = vk::False,
-										.compareEnable = vk::False,
-										//.compareOp = vk::CompareOp::eGreaterOrEqual,  // Reverse Z
+										.compareEnable = vk::True,
+										.compareOp = vk::CompareOp::eGreaterOrEqual,  // Reverse Z
 										.maxLod = vk::LodClampNone };
 
 	_shadowMapSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
