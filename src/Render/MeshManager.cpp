@@ -33,6 +33,7 @@ void MeshManager::Initialize(VulkanRenderer* renderer)
 	CreateAABBMesh();
 	CreateIcosphereMesh(1);
 	CreatePyramidMesh();
+	CreatePlane();
 }
 
 void MeshManager::CreateAABBMesh()
@@ -154,6 +155,31 @@ void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
 
 	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Icosphere)] 
 		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+}
+
+void MeshManager::CreatePlane()
+{
+	std::vector<Vertex> vertices = {
+		// pos                    normal               texCoord
+		{{-0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}, // 0
+		{{ 0.5f, 0.0f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}, // 1
+		{{ 0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}}, // 2
+		{{-0.5f, 0.0f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}, // 3
+	};
+
+	std::vector<uint32_t> indices = {
+		0, 3, 2,
+		0, 2, 1,
+	};
+
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(vertices.data(),
+		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
+
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
+
+
+	_meshes.emplace_back(vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()));
 }
 
 uint32_t MeshManager::ImportMesh(const std::string& meshPath)

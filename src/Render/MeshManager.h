@@ -33,6 +33,7 @@ public:
 	void CreateAABBMesh();
 	void CreatePyramidMesh(float baseSize = 1.0f, float height = 1.0f);
 	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 1.0f);
+	void CreatePlane();
 
 	uint32_t ImportMesh(const std::string& meshPath);
 
@@ -40,8 +41,6 @@ public:
 	const Mesh& GetDebugMesh(DebugMeshType type) { return _debugMeshes[static_cast<size_t>(type)]; }
 
 private:
-
-
 	VulkanRenderer* _pRenderer;
 
 	std::vector<Mesh> _meshes;

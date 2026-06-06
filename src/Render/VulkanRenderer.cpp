@@ -76,8 +76,6 @@ void VulkanRenderer::Initialize()
 	_textureManger.ImportTexture("models/viking_room.png");
 	_textureManger.ImportTexture("models/viking_room_2.png");
 
-
-
 	_meshManager.Initialize(this);
 	_meshManager.ImportMesh("models/viking_room.obj");
 	_meshManager.ImportMesh("models/utah_teapot.obj");
@@ -92,10 +90,9 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	
-
-	_materialManager.CreateBlinnPhongMaterial(0, { 1 }, glm::vec4(1.0f));
-	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f));
+	_materialManager.CreateBlinnPhongMaterial(0, { 1 }, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
+	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
+	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
 	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
@@ -662,7 +659,7 @@ void VulkanRenderer::CreateDescriptorSets()
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 									.dstBinding = 7,
 									.dstArrayElement = 0,
-									.descriptorCount = static_cast<uint32_t>(texCount),
+									.descriptorCount = static_cast<uint32_t>(texCount), //TODO: Reduced to what's needed
 									.descriptorType = vk::DescriptorType::eSampler,
 									.pImageInfo = textureInfos.data()},
 		
@@ -1069,7 +1066,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 													   .storeOp = vk::AttachmentStoreOp::eStore,
 													   .clearValue = clearDepth };
 
-		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(2048, 2048)},
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(4096, 4096)},
 										   .layerCount = 1,
 										   .colorAttachmentCount = 0,
 										   .pColorAttachments = nullptr,
@@ -1084,14 +1081,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			_commandBuffers[_currentFrame].setViewport(0,
 				vk::Viewport(
 					0.0f, 0.0f,
-					static_cast<float>(2048),
-					static_cast<float>(2048),
+					static_cast<float>(4096),
+					static_cast<float>(4096),
 					0.0f, 1.0f));
 
 			_commandBuffers[_currentFrame].setScissor(0,
 				vk::Rect2D(
 					vk::Offset2D(0, 0),
-					vk::Extent2D(2048, 2048)));
+					vk::Extent2D(4096, 4096)));
 
 			_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
 			_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1256,63 +1253,6 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	for (uint32_t i = 0; i < _debugAABBDrawList.size(); i++)
 	{
 		//TODO: Designated debug wireframe material
-		Material mat = _materialManager.GetMaterial(2);
-
-		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
-
-		_commandBuffers[_currentFrame].setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
-				0.0f, 1.0f));
-
-		_commandBuffers[_currentFrame].setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				_swapChainExtent));
-
-		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
-		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
-		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
-		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
-		// Reverse Z, use Greater instead
-		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
-
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size(), 2 };
-
-		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
-
-		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-
-		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-		_commandBuffers[_currentFrame].bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			_pipelineLayout,
-			0,
-			*_globalDescriptorSets[_currentFrame],
-			nullptr);
-
-		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
-			_pipelineLayout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
-
-		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
-	}
-
-	// lights
-	for (uint32_t i = 0; i < _dirLights.size(); i++)
-	{
-		//TODO: Designated debug wireframe material
 		Material mat = _materialManager.GetMaterial(3);
 
 		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
@@ -1341,7 +1281,64 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), 3 };
+		PerDrawPC pc{ i + _drawList.size(), 3 };
+
+		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+
+		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		_commandBuffers[_currentFrame].bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			_pipelineLayout,
+			0,
+			*_globalDescriptorSets[_currentFrame],
+			nullptr);
+
+		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
+			_pipelineLayout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+	// lights
+	for (uint32_t i = 0; i < _dirLights.size(); i++)
+	{
+		//TODO: Designated debug wireframe material
+		Material mat = _materialManager.GetMaterial(4);
+
+		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+
+		_commandBuffers[_currentFrame].setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(_swapChainExtent.width),
+				static_cast<float>(_swapChainExtent.height),
+				0.0f, 1.0f));
+
+		_commandBuffers[_currentFrame].setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				_swapChainExtent));
+
+		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		//TODO: offset feels pretty bad
+		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), 4 };
 
 		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::Pyramid);
 
@@ -1828,7 +1825,7 @@ void VulkanRenderer::CreateColorResources()
 void VulkanRenderer::CreateShadowMapResources()
 {
 	//TODO: shadow map resolution (vary based on setting & light type). For now using screen resolution for view test
-	_shadowMapImage = CreateImage(2048, 2048, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
+	_shadowMapImage = CreateImage(4096, 4096, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
 

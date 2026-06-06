@@ -85,18 +85,35 @@ void UtahCtx::InitDemo()
 		TransformComponent t;
 		RenderComponent r;
 		t._pos.x = -4.0f + i * 2.0f;
+		t._pos.y = 0.5f;
 		if (i % 2 == 0) // Viking room
 		{
 			t._rot.x = -90.0f;
-			r._mesh = 0;
+			r._mesh = 1;
 			r._material = 0;
 		}
 		else // Teapot
 		{
 			t._scale = glm::vec3(0.3f);
-			r._mesh = 1;
+			r._mesh = 2;
 			r._material = 1;
 		}
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+
+	// Floor Plane
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		RenderComponent r;
+
+		t._scale = glm::vec3(10.0f, 1.0f, 10.0f);
+
+		r._mesh = 0;
+		r._material = 2;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
