@@ -104,7 +104,19 @@ void VulkanContext::CreateInstance()
 		}
 	}
 
-	vk::InstanceCreateInfo createInfo{ .pApplicationInfo = &appInfo,
+	std::vector<vk::ValidationFeatureEnableEXT> enabledValidationFeatures =
+	{
+		vk::ValidationFeatureEnableEXT::eDebugPrintf
+	};
+
+	vk::ValidationFeaturesEXT validationFeatures{
+		.enabledValidationFeatureCount = static_cast<uint32_t>(enabledValidationFeatures.size()),
+		.pEnabledValidationFeatures = enabledValidationFeatures.data()
+	};
+
+	vk::InstanceCreateInfo createInfo{ 
+									.pNext = enableValidationLayers ? &validationFeatures : nullptr, 
+									.pApplicationInfo = &appInfo,
 									  .enabledLayerCount = static_cast<uint32_t>(requiredLayers.size()),
 									  .ppEnabledLayerNames = requiredLayers.data(),
 									  .enabledExtensionCount = static_cast<uint32_t>(requiredExtensions.size()),
@@ -118,7 +130,9 @@ void VulkanContext::SetupDebugMessenger()
 	if (!enableValidationLayers)
 		return;
 
-	vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+	vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(
+		vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+		vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo    |
 		vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
 		vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
 	vk::DebugUtilsMessageTypeFlagsEXT     messageTypeFlags(vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
@@ -216,15 +230,29 @@ void VulkanContext::CreateLogicalDevice()
 		vk::PhysicalDeviceVulkan12Features,
 		vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
 		featureChain = {
-			{.features = {.fillModeNonSolid = true, .samplerAnisotropy = true}},	// vk::PhysicalDeviceFeatures2
-			{.synchronization2 = true, .dynamicRendering = true},					// vk::PhysicalDeviceVulkan13Features
-			{.descriptorIndexing = true,											// vk::PhysicalDeviceVulkan12Features
+			{.features = 
+			{ // vk::PhysicalDeviceFeatures2
+				.fillModeNonSolid = true, 
+				.samplerAnisotropy = true,
+				.vertexPipelineStoresAndAtomics = true,
+				.fragmentStoresAndAtomics = true}
+			},
+			{ // vk::PhysicalDeviceVulkan13Features
+				.synchronization2 = true, 
+				.dynamicRendering = true
+			},
+			{ // vk::PhysicalDeviceVulkan12Features
+				.descriptorIndexing = true,
 			  .shaderSampledImageArrayNonUniformIndexing = true,
 			  .descriptorBindingSampledImageUpdateAfterBind = true,
 			  .descriptorBindingPartiallyBound = true,
 			  .runtimeDescriptorArray = true,
-			  .bufferDeviceAddress = false},
-			{.extendedDynamicState = true}                               // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+			  .timelineSemaphore = true,
+			  .bufferDeviceAddress = false
+			},
+			{ // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+				.extendedDynamicState = true
+			}
 	};
 
 	// create a Device
@@ -277,6 +305,16 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanContext::DebugCallback(vk::DebugUtilsMess
 	const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData)
 {
+	// Debug Printf output: INFO severity, known magic id 0x4fe1fef9
+	const bool isShaderPrintf = pCallbackData->messageIdNumber == 0x4fe1fef9 ||
+		(pCallbackData->pMessageIdName && std::strstr(pCallbackData->pMessageIdName, "DEBUG-PRINTF"));
+
+	if (isShaderPrintf)
+	{
+		std::cout << "[shader] " << pCallbackData->pMessage << std::endl;
+		return vk::False;
+	}
+
 	if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ||
 		severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 	{

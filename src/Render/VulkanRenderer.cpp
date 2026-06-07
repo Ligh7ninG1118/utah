@@ -135,74 +135,84 @@ void VulkanRenderer::SetLights(std::vector<PointLightGPU>&& pointLights, std::ve
 
 void VulkanRenderer::DrawFrame()
 {
-	// Wait previous frame to finish (block execution)
-	while (vk::Result::eTimeout == _vkCtx.GetDevice().waitForFences(*_inFlightFences[_currentFrame], vk::True, UINT64_MAX))
-		;
-
-	// Acquire image from the swap chain
-	auto [result, imageIndex] =
-		_swapChain.acquireNextImage(UINT64_MAX, *_presentCompleteSemaphores[_semaphoreIndex], nullptr);
-
-	if (result == vk::Result::eErrorOutOfDateKHR)
-	{
-		RecreateSwapChain();
-		return;
-	}
-	if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
-	{
-		throw std::runtime_error("Failed to acquire swapchain image");
-	}
-	UpdateUniformBuffer(_currentFrame);
-
-	_vkCtx.GetDevice().resetFences(*_inFlightFences[_currentFrame]);
-
-	_commandBuffers[_currentFrame].reset();
-	//RecordCommandBufferShadowMapView(imageIndex);
-	RecordCommandBuffer(imageIndex);
-
-	vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-	const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
-									  .pWaitSemaphores = &*_presentCompleteSemaphores[_semaphoreIndex],
-									  .pWaitDstStageMask = &waitDestinationStageMask,
-									  .commandBufferCount = 1,
-									  .pCommandBuffers = &*_commandBuffers[_currentFrame],
-									  .signalSemaphoreCount = 1,
-									  .pSignalSemaphores = &*_renderFinishedSemaphores[imageIndex] };
-	_vkCtx.GetQueue().submit(submitInfo, *_inFlightFences[_currentFrame]);
-
 	try
 	{
-		const vk::PresentInfoKHR presentInfo{ .waitSemaphoreCount = 1,
-											 .pWaitSemaphores = &*_renderFinishedSemaphores[imageIndex],
-											 .swapchainCount = 1,
-											 .pSwapchains = &*_swapChain,
-											 .pImageIndices = &imageIndex };
+		// Wait previous frame to finish (block execution)
+		while (vk::Result::eTimeout == _vkCtx.GetDevice().waitForFences(*_inFlightFences[_currentFrame], vk::True, UINT64_MAX))
+			;
 
-		result = _vkCtx.GetQueue().presentKHR(presentInfo);
-		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || _framebufferResized)
-		{
-			_framebufferResized = false;
-			RecreateSwapChain();
-		}
-		else if (result != vk::Result::eSuccess)
-		{
-			throw std::runtime_error("Failed to present swap chain image");
-		}
-	}
-	catch (const vk::SystemError& e)
-	{
-		if (e.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
+		// Acquire image from the swap chain
+		auto [result, imageIndex] =
+			_swapChain.acquireNextImage(UINT64_MAX, *_presentCompleteSemaphores[_semaphoreIndex], nullptr);
+
+		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
 			RecreateSwapChain();
 			return;
 		}
-		else
+		if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
 		{
-			throw;
+			throw std::runtime_error("Failed to acquire swapchain image");
 		}
+		UpdateUniformBuffer(_currentFrame);
+
+		_vkCtx.GetDevice().resetFences(*_inFlightFences[_currentFrame]);
+
+		_commandBuffers[_currentFrame].reset();
+		//RecordCommandBufferShadowMapView(imageIndex);
+		RecordCommandBuffer(imageIndex);
+
+		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
+										  .pWaitSemaphores = &*_presentCompleteSemaphores[_semaphoreIndex],
+										  .pWaitDstStageMask = &waitDestinationStageMask,
+										  .commandBufferCount = 1,
+										  .pCommandBuffers = &*_commandBuffers[_currentFrame],
+										  .signalSemaphoreCount = 1,
+										  .pSignalSemaphores = &*_renderFinishedSemaphores[imageIndex] };
+		_vkCtx.GetQueue().submit(submitInfo, *_inFlightFences[_currentFrame]);
+
+		try
+		{
+			const vk::PresentInfoKHR presentInfo{ .waitSemaphoreCount = 1,
+												 .pWaitSemaphores = &*_renderFinishedSemaphores[imageIndex],
+												 .swapchainCount = 1,
+												 .pSwapchains = &*_swapChain,
+												 .pImageIndices = &imageIndex };
+
+			result = _vkCtx.GetQueue().presentKHR(presentInfo);
+			if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || _framebufferResized)
+			{
+				_framebufferResized = false;
+				RecreateSwapChain();
+			}
+			else if (result != vk::Result::eSuccess)
+			{
+				throw std::runtime_error("Failed to present swap chain image");
+			}
+		}
+		catch (const vk::SystemError& e)
+		{
+			if (e.code().value() == static_cast<int>(vk::Result::eErrorOutOfDateKHR))
+			{
+				RecreateSwapChain();
+				return;
+			}
+			else
+			{
+				throw;
+			}
+		}
+		_semaphoreIndex = (_semaphoreIndex + 1) % _presentCompleteSemaphores.size();
+		_currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
-	_semaphoreIndex = (_semaphoreIndex + 1) % _presentCompleteSemaphores.size();
-	_currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+	catch (const vk::DeviceLostError&)
+	{
+#if USE_NSIGHT_AFTERMATH
+		_vkCtx.WaitForCrashDump();
+#endif
+		throw;
+	}
 }
 
 void VulkanRenderer::WaitForIdle()
@@ -1135,6 +1145,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			vk::ImageAspectFlagBits::eDepth);
 	}
 
+
 	// Shadow map END
 
 	// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
@@ -1831,7 +1842,7 @@ void VulkanRenderer::CreateShadowMapResources()
 
 	_shadowMapImageView = CreateImageView(_shadowMapImage.image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1);
 	// For viewing the shadow map in imgui window
-	_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	//_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 
 	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();

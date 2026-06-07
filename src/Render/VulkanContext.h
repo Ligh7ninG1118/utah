@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-#define USE_NSIGHT_AFTERMATH 1
+#define USE_NSIGHT_AFTERMATH 0
 
 #if USE_NSIGHT_AFTERMATH 
 #include "Aftermath/NsightAftermathGpuCrashTracker.h"
