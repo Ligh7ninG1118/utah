@@ -27,9 +27,10 @@ public:
 	uint32_t CreateWhiteTexture();
 
 	vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
-	vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[_textures[index].samplerIndex]; }
+	vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[index]; }
 
 	size_t GetTexturesCount() const { return _textures.size(); }
+	size_t GetTextureSamplersCount() const { return _samplers.size(); }
 
 private:
 	void CreateTextureSampler();

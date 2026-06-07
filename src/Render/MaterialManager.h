@@ -16,6 +16,7 @@ struct Material
 	MaterialType type;
 	uint32_t pipeline;
 	uint32_t texIndices[4];
+	uint32_t samplerIndices[4];
 	glm::vec4 baseColor;
 	float shininess = 32.0f;
 };
@@ -23,6 +24,7 @@ struct Material
 struct MaterialGPU
 {
 	uint32_t texIndices[4];
+	uint32_t samplerIndices[4];
 	glm::vec4 baseColor;
 	float shininess;
 };

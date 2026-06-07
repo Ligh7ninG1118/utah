@@ -67,6 +67,7 @@ struct alignas(16) ObjectSSBO
 struct alignas(16) MaterialSSBO
 {
 	uint32_t texIndices[4];
+	uint32_t samplerIndices[4];
 	glm::vec4 color;
 	float shininess;
 };

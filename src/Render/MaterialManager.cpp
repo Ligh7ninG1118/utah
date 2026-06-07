@@ -29,6 +29,9 @@ uint32_t MaterialManager::CreateBlinnPhongMaterial(uint32_t pipelineIndex, std::
     //TODO: Change this to something more readable
     newMat.texIndices[0] = newMat.texIndices[1] = newMat.texIndices[2] = newMat.texIndices[3] = 0; // Defaults to white 1x1 texture
 
+    //TODO: All materials default to use one sampler for now
+    newMat.samplerIndices[0] = newMat.samplerIndices[1] = newMat.samplerIndices[2] = newMat.samplerIndices[3] = 0;
+
     for (size_t i = 0; i < texIndices.size(); i++)
     {
         newMat.texIndices[i] = texIndices[i];
@@ -48,6 +51,7 @@ std::vector<MaterialGPU> MaterialManager::ConvertMaterialsToGPU()
     {
         MaterialGPU matGPU{};
         memcpy(matGPU.texIndices, mat.texIndices, sizeof(uint32_t)*4);
+        memcpy(matGPU.samplerIndices, mat.samplerIndices, sizeof(uint32_t) * 4);
         matGPU.baseColor = mat.baseColor;
         matGPU.shininess = mat.shininess;
         matGPUs.push_back(matGPU);

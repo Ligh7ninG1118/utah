@@ -58,6 +58,7 @@ struct LightUBO
 struct MatData
 {
     uint texIndices[4]; // [0] Albedo, [1] Specular
+    uint samplerIndices[4];
     float4 color;
     float shininess;
 };
@@ -68,10 +69,10 @@ struct MatData
 [[vk::binding(3, 0)]] StructuredBuffer<MatData> matBuf;
 
 [[vk::binding(4, 0)]] Texture2D textures[];
-[[vk::binding(7, 0)]] SamplerState textureSamplers[];
+[[vk::binding(5, 0)]] SamplerState textureSamplers[];
 
-[[vk::binding(6, 0)]] [[vk::combinedImageSampler]] Texture2D shadowMap;
-[[vk::binding(6, 0)]] [[vk::combinedImageSampler]] SamplerComparisonState shadowMapSampler;
+[[vk::binding(7, 0)]] [[vk::combinedImageSampler]] Texture2D shadowMap;
+[[vk::binding(7, 0)]] [[vk::combinedImageSampler]] SamplerComparisonState shadowMapSampler;
 
 struct PSInput
 {
@@ -155,11 +156,10 @@ float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
     uint width, height;
     shadowMap.GetDimensions(width, height);
     float2 texelSize = 1.0f / float2(width, height);
-   
+    
     // PCF
     float refDepth = currentDepth + bias;
     float sum = 0.0f;
-    [unroll]
     for (float x = -1.5f; x <= 1.5f; x++)
     {
         for (float y = -1.5f; y <= 1.5f; y++)
@@ -170,8 +170,8 @@ float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
         }
 
     }
+    
     return sum / 16.0f;
-
     //float closestDepth = shadowMap.Sample(shadowMapSampler, uv).r;
     //float shadow = currentDepth < (closestDepth - bias) ? 1.0f : 0.0f; //reverse z
     //return shadow;
@@ -181,23 +181,26 @@ float4 main(PSInput input) : SV_Target
 {
     uint albedoIdx = matBuf[input.matIndex].texIndices[0];
     uint specIdx = matBuf[input.matIndex].texIndices[1];
+    uint albedoSampler = matBuf[input.matIndex].samplerIndices[0];
+    uint specSampler = matBuf[input.matIndex].samplerIndices[1];
+    
     float4 baseColor = matBuf[input.matIndex].color;
     float shininess = matBuf[input.matIndex].shininess;
 
-    float4 texSample = textures[NonUniformResourceIndex(albedoIdx)].Sample(
-                                textureSamplers[NonUniformResourceIndex(albedoIdx)], input.uv);
+    float4 texSample = textures[NonUniformResourceIndex(albedoIdx)].Sample(textureSamplers[albedoSampler], input.uv);
     float3 albedo = texSample.rgb * baseColor.rgb;
-    float specStrength = textures[NonUniformResourceIndex(specIdx)].Sample(
-                                textureSamplers[NonUniformResourceIndex(specIdx)], input.uv).r;
+    float specStrength = textures[NonUniformResourceIndex(specIdx)].Sample(textureSamplers[specSampler], input.uv).r;
 
     float3 normal = normalize(input.normal);
     float3 viewDir = normalize(lightUBO.eyePos - input.worldPos);
     float3 result = float3(0.0, 0.0, 0.0);
-   
-    float3 lightDir = normalize(-float3(0.3f, -1.0f, 0.3f));
-    //float3 lightDir = normalize(-lightUBO.dirLights[0].direction);
     
-    float shadow = ShadowCalculation(input.worldPosLightSpace, normal, lightDir);
+    float shadow = 0.0f;
+        
+    for (uint j = 0; j < lightUBO.dirLightNum; j++)
+    {
+        shadow = ShadowCalculation(input.worldPosLightSpace, normal, normalize(-lightUBO.dirLights[j].direction));
+    }
 
     for (uint i = 0; i < lightUBO.pointLightNum; i++)
         result += CalculatePointLight(lightUBO.pointLights[i], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);

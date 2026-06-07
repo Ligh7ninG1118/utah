@@ -15,7 +15,7 @@ struct PushConstants
 };
 
 [[vk::binding(2,0)]] StructuredBuffer<ObjectData> objBuf;
-[[vk::binding(5,0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
+[[vk::binding(6,0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
 [[vk::push_constant]] PushConstants pc;
 
 struct VSInput
