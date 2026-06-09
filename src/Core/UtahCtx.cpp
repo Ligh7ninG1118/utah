@@ -153,7 +153,7 @@ void UtahCtx::InitDemo()
 	//	_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	//}
 
-	// Directional Light
+	// Directional Light 1
 	{
 		Entity e = _registry.CreateEntity();
 
@@ -161,7 +161,8 @@ void UtahCtx::InitDemo()
 		t._pos.y = 3.0f;
 
 		DirectionalLightCPU p;
-		p.direction = glm::vec3(15.0f, -90.0f, 15.0f);
+		p.pitch = -45.0f;
+		p.yaw = 90.0f;
 
 		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
 		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
@@ -171,6 +172,26 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
 	}
+
+	//// Directional Light 2
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+	//	t._pos.y = 3.0f;
+
+	//	DirectionalLightCPU p;
+	//	p.pitch = -45.0f;
+	//	p.yaw = -90.0f;
+
+	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	//}
 
 	//// SpotLight
 	//{
