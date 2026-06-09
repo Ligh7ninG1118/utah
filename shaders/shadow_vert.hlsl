@@ -1,3 +1,5 @@
+static const uint MAX_SHADOW_CASTER_LIGHTS = 64;
+
 struct ObjectData
 {
     float4x4 model;
@@ -5,13 +7,13 @@ struct ObjectData
 
 struct ShadowMapUBO
 {
-    float4x4 lightViewProj;
+    float4x4 lightViewProj[MAX_SHADOW_CASTER_LIGHTS];
 };
 
 struct PushConstants
 {
     uint objIndex;
-    uint matIndex;
+    uint lightIndex;
 };
 
 [[vk::binding(2,0)]] StructuredBuffer<ObjectData> objBuf;
@@ -26,5 +28,5 @@ struct VSInput
 float4 main(VSInput input) : SV_POSITION
 {
     float4x4 model = objBuf[pc.objIndex].model;
-    return mul(shadowMapUBO.lightViewProj, mul(model, float4(input.inPos, 1.0)));
+    return mul(shadowMapUBO.lightViewProj[pc.lightIndex], mul(model, float4(input.inPos, 1.0)));
 }

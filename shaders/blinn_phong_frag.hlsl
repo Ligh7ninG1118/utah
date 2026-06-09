@@ -63,6 +63,13 @@ struct MatData
     float shininess;
 };
 
+static const uint MAX_SHADOW_CASTER_LIGHTS = 64;
+
+struct ShadowMapUBO
+{
+    float4x4 lightViewProj[MAX_SHADOW_CASTER_LIGHTS];
+};
+
 
 [[vk::binding(1, 0)]] ConstantBuffer<LightUBO> lightUBO;
 
@@ -71,8 +78,10 @@ struct MatData
 [[vk::binding(4, 0)]] Texture2D textures[];
 [[vk::binding(5, 0)]] SamplerState textureSamplers[];
 
-[[vk::binding(7, 0)]] [[vk::combinedImageSampler]] Texture2D shadowMap;
-[[vk::binding(7, 0)]] [[vk::combinedImageSampler]] SamplerComparisonState shadowMapSampler;
+[[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
+
+[[vk::binding(7, 0)]] Texture2D shadowMap[];
+[[vk::binding(8, 0)]] SamplerComparisonState shadowMapSampler;
 
 struct PSInput
 {
@@ -80,8 +89,7 @@ struct PSInput
     [[vk::location(0)]] float3 worldPos : WORLDPOS;
     [[vk::location(1)]] float3 normal : NORMAL;
     [[vk::location(2)]] float2 uv : TEXCOORD0;
-    [[vk::location(3)]] float4 worldPosLightSpace : LIGHTSPACE;
-    [[vk::location(4)]] nointerpolation uint matIndex : MATINDEX;
+    [[vk::location(3)]] nointerpolation uint matIndex : MATINDEX;
 };
 
 float3 CalculatePointLight(PointLight light, float3 normal, float3 fragPos, float3 viewDir,
@@ -141,8 +149,10 @@ float3 CalculateSpotLight(SpotLight light, float3 normal, float3 fragPos, float3
     return (ambient + (diffuse + specular) * (1.0f - shadow)) * atten;
 }
 
-float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
+float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
 {
+    float4 worldPosLightSpace = mul(shadowMapUBO.lightViewProj[shadowIndex], float4(worldPos, 1.0f));
+    
     float3 projCoords = worldPosLightSpace.xyz / worldPosLightSpace.w;
     float currentDepth = projCoords.z;
     float2 uv = projCoords.xy * 0.5f + 0.5f;
@@ -154,7 +164,7 @@ float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
     float bias = max(maxBias * (1.0f - NdotL), minBias);
     
     uint width, height;
-    shadowMap.GetDimensions(width, height);
+    shadowMap[shadowIndex].GetDimensions(width, height);
     float2 texelSize = 1.0f / float2(width, height);
     
     // PCF
@@ -165,7 +175,7 @@ float ShadowCalculation(float4 worldPosLightSpace, float3 N, float3 L)
         for (float y = -1.5f; y <= 1.5f; y++)
         {
             float2 tempUV = uv + float2(x, y) * texelSize;
-            float shadow = shadowMap.SampleCmpLevelZero(shadowMapSampler, tempUV, refDepth);
+            float shadow = shadowMap[shadowIndex].SampleCmpLevelZero(shadowMapSampler, tempUV, refDepth);
             sum += (1.0f - shadow);
         }
 
@@ -195,21 +205,19 @@ float4 main(PSInput input) : SV_Target
     float3 viewDir = normalize(lightUBO.eyePos - input.worldPos);
     float3 result = float3(0.0, 0.0, 0.0);
     
-    float shadow = 0.0f;
-        
+    
+    for (uint i = 0; i < lightUBO.pointLightNum; i++)
+        result += CalculatePointLight(lightUBO.pointLights[i], normal, input.worldPos, viewDir, albedo, specStrength, shininess, 0.0);
+
     for (uint j = 0; j < lightUBO.dirLightNum; j++)
     {
-        shadow = ShadowCalculation(input.worldPosLightSpace, normal, normalize(-lightUBO.dirLights[j].direction));
+        float shadow = ShadowCalculation(j, input.worldPos, normal, normalize(-lightUBO.dirLights[j].direction));
+        
+        result += CalculateDirectionalLight(lightUBO.dirLights[j], normal, viewDir, albedo, specStrength, shininess, shadow);
     }
 
-    for (uint i = 0; i < lightUBO.pointLightNum; i++)
-        result += CalculatePointLight(lightUBO.pointLights[i], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
-
-    for (uint j = 0; j < lightUBO.dirLightNum; j++)
-        result += CalculateDirectionalLight(lightUBO.dirLights[j], normal, viewDir, albedo, specStrength, shininess, shadow);
-
     for (uint k = 0; k < lightUBO.spotLightNum; k++)
-        result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
+        result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, 0.0);
     
     return float4(result, texSample.a);
 }

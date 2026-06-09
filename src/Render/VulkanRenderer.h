@@ -225,8 +225,10 @@ private:
 	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;
 
-	AllocatedImage _shadowMapImage{};
-	vk::raii::ImageView _shadowMapImageView = nullptr;
+	uint32_t SHADOW_MAP_RESOLUTION = 4096;
+
+	std::vector<AllocatedImage> _shadowMapImages;
+	std::vector<vk::raii::ImageView> _shadowMapImageViews;
 	vk::raii::Sampler _shadowMapSampler = nullptr;
 
 	TextureManager _textureManger;

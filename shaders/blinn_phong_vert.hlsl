@@ -9,11 +9,6 @@ struct ObjectData
     float4x4 model;
 };
 
-struct ShadowMapUBO
-{
-    float4x4 lightViewProj;
-};
-
 struct PushConstants
 {
     uint objIndex;
@@ -24,8 +19,6 @@ struct PushConstants
 [[vk::binding(0, 0)]] ConstantBuffer<CameraUBO> cam;
 
 [[vk::binding(2, 0)]] StructuredBuffer<ObjectData> objBuf;
-
-[[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
 
 [[vk::push_constant]] PushConstants pc;
 
@@ -42,8 +35,7 @@ struct VSOutput
     [[vk::location(0)]] float3 worldPos          : WORLDPOS;
     [[vk::location(1)]] float3 normal            : NORMAL;
     [[vk::location(2)]] float2 uv                : TEXCOORD0;
-    [[vk::location(3)]] float4 worldPosLightSpace: LIGHTSPACE;
-    [[vk::location(4)]] nointerpolation uint matIndex : MATINDEX;
+    [[vk::location(3)]] nointerpolation uint matIndex : MATINDEX;
 };
 
 VSOutput main(VSInput input)
@@ -52,7 +44,6 @@ VSOutput main(VSInput input)
     float4 worldPos = mul(model, float4(input.inPos, 1.0));
     
     VSOutput o;
-    o.worldPosLightSpace = mul(shadowMapUBO.lightViewProj, worldPos);
     o.position = mul(cam.proj, mul(cam.view, worldPos));
     o.worldPos = worldPos.xyz;
     o.normal   = normalize(mul((float3x3)model, input.inNormal));

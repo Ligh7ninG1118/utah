@@ -30,13 +30,16 @@ VulkanRenderer::~VulkanRenderer()
 
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
-	_shadowMapImageView = nullptr;
+	for (int i = 0; i < _shadowMapImages.size(); i++)
+	{
+		_shadowMapImageViews[i] = nullptr;
+		DestroyImage(_shadowMapImages[i]);
+	}
 
 	//TODO: and a way to unify all image/imageview? also ID by enum type
 
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
-	DestroyImage(_shadowMapImage);
 
 
 	//TODO: A way to unify all buffers? identify by enum type?
@@ -321,10 +324,10 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
-		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, glm::vec3(0.0f, 3.0f, 0.0f));
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
+		glm::vec3 dir = glm::normalize(_dirLights[i].direction);
 
-		model = glm::rotate(model, glm::radians(_dirLights[i].direction.y + 90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
 
 		objects[i + drawListSize + debugDrawListSize].model = model;
 	}
@@ -332,13 +335,18 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	// Shadow Map
 	// Reverse Z, flip near and far plane
-	glm::mat4 orthoProj = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, _mainCam._farPlane, _mainCam._nearPlane);
-	glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[0].direction) * 2.0f;
-	glm::mat4 view = glm::lookAt(lightEye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-	glm::mat4 viewProj = orthoProj * view;
+	std::vector<glm::mat4> viewProjMatrices;
+	for (size_t i = 0; i < _shadowMapImages.size(); i++)
+	{
+		glm::mat4 orthoProj = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, _mainCam._farPlane, _mainCam._nearPlane);
+ 		glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[i].direction) * 2.0f;
+		glm::mat4 view = glm::lookAt(lightEye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-	memcpy(_shadowMapUBOs[currentImage].info.pMappedData, &viewProj, sizeof(viewProj));
+		viewProjMatrices.emplace_back(orthoProj * view);
+	}
+
+	memcpy(_shadowMapUBOs[currentImage].info.pMappedData, viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
 
 }
 
@@ -449,10 +457,14 @@ void VulkanRenderer::CleanupSwapChain()
 	// Image views must be destroyed before the underlying VMA-allocated images.
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
-	_shadowMapImageView = nullptr;
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
-	DestroyImage(_shadowMapImage);
+
+	for (int i = 0; i < _shadowMapImages.size(); i++)
+	{
+		_shadowMapImageViews[i] = nullptr;
+		DestroyImage(_shadowMapImages[i]);
+	}
 
 	_swapChainImageViews.clear();
 	_swapChain = nullptr;
@@ -516,16 +528,21 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 			vk::DescriptorSetLayoutBinding{
 				.binding = 6, .descriptorType = vk::DescriptorType::eUniformBuffer,
 				.descriptorCount = 1,
-				.stageFlags = vk::ShaderStageFlagBits::eVertex },
+				.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 			// 7: shadow map texture
 			vk::DescriptorSetLayoutBinding{
-				.binding = 7, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.binding = 7, .descriptorType = vk::DescriptorType::eSampledImage,
+				.descriptorCount = MAX_SHADOW_CASTER_LIGHTS,
+				.stageFlags = vk::ShaderStageFlagBits::eFragment },
+			// 8: shadow map sampler
+			vk::DescriptorSetLayoutBinding{
+				.binding = 8, .descriptorType = vk::DescriptorType::eSampler,
 				.descriptorCount = 1,
 				.stageFlags = vk::ShaderStageFlagBits::eFragment },
 	};
 
 	// Per-binding flags so binding 4 can be partially-bound + update-after-bind
-	std::array<vk::DescriptorBindingFlags, 8> bindingFlags = {
+	std::array<vk::DescriptorBindingFlags, 9> bindingFlags = {
 	{
 		{},		// 0 Camera UBO
 		{},		// 1 Light UBO
@@ -535,6 +552,7 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 		vk::DescriptorBindingFlagBits::ePartiallyBound,		// 5 sampler array
 		{},		// 6 Shadow Map UBO
 		vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind,	// 7 Shadow Map Texture
+		{},		// 9 shadow map sampler
 	}
 	};
 	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
@@ -558,9 +576,9 @@ void VulkanRenderer::CreateDescriptorPool()
 	std::array poolSize{
 						vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 3),
 						vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * 2),
-						vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURES),
-						vk::DescriptorPoolSize(vk::DescriptorType::eSampler, MAX_FRAMES_IN_FLIGHT * MAX_TEXTURE_SAMPLERS),
-						vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 1) }; // Should be + MAX SHADOW CASTER LIGHTS
+						vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage, MAX_FRAMES_IN_FLIGHT * (MAX_TEXTURES + MAX_SHADOW_CASTER_LIGHTS)),
+						vk::DescriptorPoolSize(vk::DescriptorType::eSampler, MAX_FRAMES_IN_FLIGHT * (MAX_TEXTURE_SAMPLERS + 1))
+	};
 
 	vk::DescriptorPoolCreateInfo poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 										  .maxSets = MAX_FRAMES_IN_FLIGHT,
@@ -603,7 +621,7 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		vk::DescriptorBufferInfo shadowMapBufferInfo{ .buffer = _shadowMapUBOs[i].buffer,
 											.offset = 0,
-											.range = sizeof(glm::mat4)};
+											.range = sizeof(glm::mat4) * MAX_SHADOW_CASTER_LIGHTS};
 
 			// Slot 0 of the bindless texture array -- partially-bound, so we only
 			// write the slots actually accessed by the shader.
@@ -628,9 +646,18 @@ void VulkanRenderer::CreateDescriptorSets()
 														});
 		}
 
-		vk::DescriptorImageInfo shadowMapInfo = vk::DescriptorImageInfo{ .sampler = _shadowMapSampler,
-											.imageView = _shadowMapImageView,
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		size_t shadowMapCount = _shadowMapImages.size();
+		std::vector<vk::DescriptorImageInfo> shadowMapInfos;
+		shadowMapInfos.reserve(shadowMapCount);
+		for (size_t i = 0; i < shadowMapCount; i++)
+		{
+			shadowMapInfos.push_back(vk::DescriptorImageInfo{
+											.imageView = _shadowMapImageViews[i],
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+		}
+
+		vk::DescriptorImageInfo shadowMapSamplerInfo = vk::DescriptorImageInfo{
+										.sampler = _shadowMapSampler,};
 
 
 		std::array descriptorWrites{
@@ -679,9 +706,15 @@ void VulkanRenderer::CreateDescriptorSets()
 			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
 									.dstBinding = 7,
 									.dstArrayElement = 0,
-									.descriptorCount = 1, //TODO: SHADOW CASTER LIGHT
-									.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-									.pImageInfo = &shadowMapInfo},
+									.descriptorCount = static_cast<uint32_t>(shadowMapCount),
+									.descriptorType = vk::DescriptorType::eSampledImage,
+									.pImageInfo = shadowMapInfos.data()},
+			vk::WriteDescriptorSet{.dstSet = _globalDescriptorSets[i],
+									.dstBinding = 8,
+									.dstArrayElement = 0,
+									.descriptorCount = 1,
+									.descriptorType = vk::DescriptorType::eSampler,
+									.pImageInfo = &shadowMapSamplerInfo},
 		};
 			
 
@@ -920,153 +953,153 @@ void VulkanRenderer::CreateCommandBuffers()
 	_commandBuffers = vk::raii::CommandBuffers(_vkCtx.GetDevice(), allocInfo);
 }
 
-void VulkanRenderer::RecordCommandBufferShadowMapView(uint32_t imageIndex)
-{
-	_commandBuffers[_currentFrame].begin({});
-	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(_shadowMapImage.image, 
-		vk::ImageLayout::eUndefined, 
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		{},
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
-	// Reverse Z, cleared 0.0f instead
-	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
-
-	// Depth attachment
-	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageView,
-												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eClear,
-												   .storeOp = vk::AttachmentStoreOp::eStore,
-												   .clearValue = clearDepth };
-
-	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = _swapChainExtent},
-									   .layerCount = 1,
-									   .colorAttachmentCount = 0,
-									   .pColorAttachments = nullptr,
-									   .pDepthAttachment = &depthAttachment };
-
-	_commandBuffers[_currentFrame].beginRendering(renderingInfo);
-
-	for (uint32_t i = 0; i < _drawList.size(); i++)
-	{
-		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[3]);
-
-		_commandBuffers[_currentFrame].setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
-				0.0f, 1.0f));
-
-		_commandBuffers[_currentFrame].setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				_swapChainExtent));
-
-		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
-		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
-		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
-		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
-		// Reverse Z, use Greater instead
-		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
-
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-
-		PerDrawPC pc{ i, 0};
-
-		Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
-
-		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-
-		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-		_commandBuffers[_currentFrame].bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			_pipelineLayout,
-			0,
-			*_globalDescriptorSets[_currentFrame],
-			nullptr);
-
-		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
-			_pipelineLayout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
-
-		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
-	}
-
-	_commandBuffers[_currentFrame].endRendering();
-
-	// Make the depth readable (sampling / ImGui display). Harmless if you only inspect in RenderDoc.
-	TransitionImageLayout(_shadowMapImage.image, 
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eDepth);
-
-
-	// --- Color pass: put ImGui (with the shadow-map image) on the swapchain ---
-	TransitionImageLayout(_colorImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		{}, vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
-	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		{}, vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
-
-	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
-	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _colorImageView,
-		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.resolveMode = vk::ResolveModeFlagBits::eAverage,
-		.resolveImageView = _swapChainImageViews[imageIndex],
-		.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = clearColor };
-	vk::RenderingInfo colorPass = { .renderArea = {.offset = {0,0}, .extent = _swapChainExtent},
-		.layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment };
-
-	_commandBuffers[_currentFrame].beginRendering(colorPass);
-
-	ImGui::Begin("Shadow Map");
-	ImGui::Image((ImTextureID)_shadowMapImGuiDS, ImVec2(1920, 1080));
-	ImGui::End();
-
-	ImGui::Render();
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *_commandBuffers[_currentFrame]);
-	_commandBuffers[_currentFrame].endRendering();
-
-	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::ePresentSrcKHR,
-		vk::AccessFlagBits2::eColorAttachmentWrite, {},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eBottomOfPipe,
-		vk::ImageAspectFlagBits::eColor);
-	_commandBuffers[_currentFrame].end();
-
-}
+//void VulkanRenderer::RecordCommandBufferShadowMapView(uint32_t imageIndex)
+//{
+//	_commandBuffers[_currentFrame].begin({});
+//	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+//	TransitionImageLayout(_shadowMapImage.image, 
+//		vk::ImageLayout::eUndefined, 
+//		vk::ImageLayout::eDepthAttachmentOptimal,
+//		{},
+//		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+//		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+//		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+//		vk::ImageAspectFlagBits::eDepth);
+//
+//	// Reverse Z, cleared 0.0f instead
+//	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
+//
+//	// Depth attachment
+//	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageView,
+//												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+//												   .loadOp = vk::AttachmentLoadOp::eClear,
+//												   .storeOp = vk::AttachmentStoreOp::eStore,
+//												   .clearValue = clearDepth };
+//
+//	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = _swapChainExtent},
+//									   .layerCount = 1,
+//									   .colorAttachmentCount = 0,
+//									   .pColorAttachments = nullptr,
+//									   .pDepthAttachment = &depthAttachment };
+//
+//	_commandBuffers[_currentFrame].beginRendering(renderingInfo);
+//
+//	for (uint32_t i = 0; i < _drawList.size(); i++)
+//	{
+//		_commandBuffers[_currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[3]);
+//
+//		_commandBuffers[_currentFrame].setViewport(0,
+//			vk::Viewport(
+//				0.0f, 0.0f,
+//				static_cast<float>(_swapChainExtent.width),
+//				static_cast<float>(_swapChainExtent.height),
+//				0.0f, 1.0f));
+//
+//		_commandBuffers[_currentFrame].setScissor(0,
+//			vk::Rect2D(
+//				vk::Offset2D(0, 0),
+//				_swapChainExtent));
+//
+//		_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eBack);
+//		_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
+//		_commandBuffers[_currentFrame].setDepthTestEnable(vk::True);
+//		_commandBuffers[_currentFrame].setDepthWriteEnable(vk::True);
+//		// Reverse Z, use Greater instead
+//		_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
+//
+//		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+//		// And topology removed from dynamic states
+//		//_commandBuffers[_currentFrame].setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+//
+//
+//		PerDrawPC pc{ i, 0};
+//
+//		Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+//
+//		_commandBuffers[_currentFrame].bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+//
+//		_commandBuffers[_currentFrame].bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+//
+//		_commandBuffers[_currentFrame].bindDescriptorSets(
+//			vk::PipelineBindPoint::eGraphics,
+//			_pipelineLayout,
+//			0,
+//			*_globalDescriptorSets[_currentFrame],
+//			nullptr);
+//
+//		_commandBuffers[_currentFrame].pushConstants<PerDrawPC>(
+//			_pipelineLayout,
+//			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+//			0,
+//			pc
+//		);
+//
+//		_commandBuffers[_currentFrame].drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+//	}
+//
+//	_commandBuffers[_currentFrame].endRendering();
+//
+//	// Make the depth readable (sampling / ImGui display). Harmless if you only inspect in RenderDoc.
+//	TransitionImageLayout(_shadowMapImage.image, 
+//		vk::ImageLayout::eDepthAttachmentOptimal,
+//		vk::ImageLayout::eShaderReadOnlyOptimal,
+//		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+//		vk::AccessFlagBits2::eShaderRead,
+//		vk::PipelineStageFlagBits2::eLateFragmentTests,
+//		vk::PipelineStageFlagBits2::eFragmentShader,
+//		vk::ImageAspectFlagBits::eDepth);
+//
+//
+//	// --- Color pass: put ImGui (with the shadow-map image) on the swapchain ---
+//	TransitionImageLayout(_colorImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+//		{}, vk::AccessFlagBits2::eColorAttachmentWrite,
+//		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+//		vk::ImageAspectFlagBits::eColor);
+//	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+//		{}, vk::AccessFlagBits2::eColorAttachmentWrite,
+//		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+//		vk::ImageAspectFlagBits::eColor);
+//
+//	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
+//	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _colorImageView,
+//		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+//		.resolveMode = vk::ResolveModeFlagBits::eAverage,
+//		.resolveImageView = _swapChainImageViews[imageIndex],
+//		.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+//		.loadOp = vk::AttachmentLoadOp::eClear,
+//		.storeOp = vk::AttachmentStoreOp::eStore,
+//		.clearValue = clearColor };
+//	vk::RenderingInfo colorPass = { .renderArea = {.offset = {0,0}, .extent = _swapChainExtent},
+//		.layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment };
+//
+//	_commandBuffers[_currentFrame].beginRendering(colorPass);
+//
+//	ImGui::Begin("Shadow Map");
+//	ImGui::Image((ImTextureID)_shadowMapImGuiDS, ImVec2(1920, 1080));
+//	ImGui::End();
+//
+//	ImGui::Render();
+//	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *_commandBuffers[_currentFrame]);
+//	_commandBuffers[_currentFrame].endRendering();
+//
+//	TransitionImageLayout(_swapChainImages[imageIndex], vk::ImageLayout::eColorAttachmentOptimal,
+//		vk::ImageLayout::ePresentSrcKHR,
+//		vk::AccessFlagBits2::eColorAttachmentWrite, {},
+//		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eBottomOfPipe,
+//		vk::ImageAspectFlagBits::eColor);
+//	_commandBuffers[_currentFrame].end();
+//
+//}
 
 void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 {
 	_commandBuffers[_currentFrame].begin({});
 
 	// Shadow map BEGIN
-
+	for(size_t j = 0;j<_shadowMapImages.size();j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowMapImage.image,
+		TransitionImageLayout(_shadowMapImages[j].image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			{},
@@ -1079,13 +1112,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 
 		// Depth attachment
-		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageView,
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageViews[j],
 													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 													   .loadOp = vk::AttachmentLoadOp::eClear,
 													   .storeOp = vk::AttachmentStoreOp::eStore,
 													   .clearValue = clearDepth };
 
-		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(4096, 4096)},
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
 										   .layerCount = 1,
 										   .colorAttachmentCount = 0,
 										   .pColorAttachments = nullptr,
@@ -1100,14 +1133,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			_commandBuffers[_currentFrame].setViewport(0,
 				vk::Viewport(
 					0.0f, 0.0f,
-					static_cast<float>(4096),
-					static_cast<float>(4096),
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
 					0.0f, 1.0f));
 
 			_commandBuffers[_currentFrame].setScissor(0,
 				vk::Rect2D(
 					vk::Offset2D(0, 0),
-					vk::Extent2D(4096, 4096)));
+					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
 
 			_commandBuffers[_currentFrame].setCullMode(vk::CullModeFlagBits::eNone);
 			_commandBuffers[_currentFrame].setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1116,7 +1149,8 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			// Reverse Z, use Greater instead
 			_commandBuffers[_currentFrame].setDepthCompareOp(vk::CompareOp::eGreater);
 
-			PerDrawPC pc{ i, 0 };
+			// Reuse second slot (uint index) to indicate which view proj matrix to use
+			PerDrawPC pc{ i, j };
 
 			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
 
@@ -1144,7 +1178,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		_commandBuffers[_currentFrame].endRendering();
 
 		// Make the depth readable (sampling / ImGui display). Harmless if you only inspect in RenderDoc.
-		TransitionImageLayout(_shadowMapImage.image,
+		TransitionImageLayout(_shadowMapImages[j].image,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -1744,7 +1778,7 @@ void VulkanRenderer::CreateUniformBuffers()
 	makePersistentMapped(sizeof(ObjectSSBO) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _objectSSBOs);
 	makePersistentMapped(sizeof(MaterialSSBO) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, _materialSSBOs);
 	//TODO: Separate struct?
-	makePersistentMapped(sizeof(glm::mat4), vk::BufferUsageFlagBits::eUniformBuffer, _shadowMapUBOs);
+	makePersistentMapped(sizeof(glm::mat4) * MAX_SHADOW_CASTER_LIGHTS, vk::BufferUsageFlagBits::eUniformBuffer, _shadowMapUBOs);
 	
 }
 
@@ -1844,12 +1878,19 @@ void VulkanRenderer::CreateColorResources()
 
 void VulkanRenderer::CreateShadowMapResources()
 {
-	//TODO: shadow map resolution (vary based on setting & light type). For now using screen resolution for view test
-	_shadowMapImage = CreateImage(4096, 4096, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
-		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled);
 
-	_shadowMapImageView = CreateImageView(_shadowMapImage.image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1);
+
+	//TODO: Calculate shadow caster count
+	for (size_t i = 0; i < 2; i++)
+	{
+		//TODO: shadow map resolution (vary based on setting & light type). For now using screen resolution for view test
+		_shadowMapImages.emplace_back(CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled));
+
+		_shadowMapImageViews.emplace_back(CreateImageView(_shadowMapImages[i].image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1));
+	}
+
 	// For viewing the shadow map in imgui window
 	//_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
