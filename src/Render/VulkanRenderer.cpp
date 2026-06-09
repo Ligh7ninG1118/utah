@@ -332,18 +332,43 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		objects[i + drawListSize + debugDrawListSize].model = model;
 	}
 
+	for (size_t i = 0; i < _spotLights.size(); i++)
+	{
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
+		glm::vec3 dir = glm::normalize(_spotLights[i].direction);
+
+		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
+
+		objects[i + drawListSize + debugDrawListSize + _dirLights.size()].model = model;
+	}
+
 
 	// Shadow Map
 	// Reverse Z, flip near and far plane
 
 	std::vector<glm::mat4> viewProjMatrices;
-	for (size_t i = 0; i < _shadowMapImages.size(); i++)
+	viewProjMatrices.reserve(_dirLights.size() + _spotLights.size());
+
+	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
 		glm::mat4 orthoProj = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, _mainCam._farPlane, _mainCam._nearPlane);
  		glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[i].direction) * 2.0f;
 		glm::mat4 view = glm::lookAt(lightEye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 		viewProjMatrices.emplace_back(orthoProj * view);
+	}
+
+	for (size_t i = 0; i < _spotLights.size(); i++)
+	{
+		float cosOuter = _spotLights[i].outerCutoff;          // GPU struct stores cos(radians(outerCutoff))
+		float fov = 2.0f * acosf(glm::clamp(cosOuter, -1.f, 1.f)) * 1.1f;  // full cone + slight pad
+		glm::mat4 proj = glm::perspective(fov, 1.0f, _mainCam._farPlane, _mainCam._nearPlane); // reverse-Z (near/far swapped), aspect 1
+		glm::vec3 eye = _spotLights[i].position;
+		glm::vec3 dir = glm::normalize(_spotLights[i].direction);
+		glm::vec3 up = (fabs(dir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+		glm::mat4 view = glm::lookAt(eye, eye + dir, up);
+
+		viewProjMatrices.emplace_back(proj * view);
 	}
 
 	memcpy(_shadowMapUBOs[currentImage].info.pMappedData, viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
@@ -1095,8 +1120,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 {
 	_commandBuffers[_currentFrame].begin({});
 
+	size_t casterCount = _dirLights.size() + _spotLights.size();
 	// Shadow map BEGIN
-	for(size_t j = 0;j<_shadowMapImages.size();j++)
+	for(size_t j = 0;j<casterCount;j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_shadowMapImages[j].image,
@@ -1878,10 +1904,8 @@ void VulkanRenderer::CreateColorResources()
 
 void VulkanRenderer::CreateShadowMapResources()
 {
-
-
 	//TODO: Calculate shadow caster count
-	for (size_t i = 0; i < 2; i++)
+	for (size_t i = 0; i < 3; i++)
 	{
 		//TODO: shadow map resolution (vary based on setting & light type). For now using screen resolution for view test
 		_shadowMapImages.emplace_back(CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,

@@ -64,4 +64,6 @@ private:
 
 	// Using cursor to interact with ImGUI, and block camera input
 	bool _isCursorMode = false;
+
+	bool _holdMode = false;
 };

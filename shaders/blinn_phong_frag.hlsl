@@ -217,7 +217,12 @@ float4 main(PSInput input) : SV_Target
     }
 
     for (uint k = 0; k < lightUBO.spotLightNum; k++)
-        result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, 0.0);
+    {
+        uint shadowIndex = lightUBO.dirLightNum + k;
+        float3 L = normalize(lightUBO.spotLights[k].position - input.worldPos);
+        float shadow = ShadowCalculation(shadowIndex, input.worldPos, normal, L);
+        result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
+    }
     
     return float4(result, texSample.a);
 }
