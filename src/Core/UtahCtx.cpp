@@ -153,65 +153,65 @@ void UtahCtx::InitDemo()
 	//	_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	//}
 
-	//// Directional Light 1
-	//{
-	//	Entity e = _registry.CreateEntity();
-
-	//	TransformComponent t;
-	//	t._pos.y = 3.0f;
-
-	//	DirectionalLightCPU p;
-	//	p.pitch = -45.0f;
-	//	p.yaw = 90.0f;
-
-	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
-	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-
-	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	//}
-
-	//// Directional Light 2
-	//{
-	//	Entity e = _registry.CreateEntity();
-
-	//	TransformComponent t;
-	//	t._pos.y = 3.0f;
-
-	//	DirectionalLightCPU p;
-	//	p.pitch = -45.0f;
-	//	p.yaw = -90.0f;
-
-	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
-	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-
-	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	//}
-
-	// SpotLight (flashlight)
+	// Directional Light 1
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
+		t._pos.y = 3.0f;
 
-		SpotLightCPU p;
-		p.ambient = glm::vec3(0.01f);
-		p.diffuse = glm::vec3(1.0f);
-		p.specular = glm::vec3(1.0f);
-		p.constant = 1.0f;
-		p.linear = 0.07f;
-		p.quadratic = 0.017f;
-		p.cutoff = 12.5f;
-		p.outerCutoff = 17.5f;
+		DirectionalLightCPU p;
+		p.pitch = -45.0f;
+		p.yaw = 90.0f;
+
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
 	}
+
+	// Directional Light 2
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.y = 3.0f;
+
+		DirectionalLightCPU p;
+		p.pitch = -45.0f;
+		p.yaw = -90.0f;
+
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	}
+
+	//// SpotLight (flashlight)
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+
+	//	SpotLightCPU p;
+	//	p.ambient = glm::vec3(0.01f);
+	//	p.diffuse = glm::vec3(1.0f);
+	//	p.specular = glm::vec3(1.0f);
+	//	p.constant = 1.0f;
+	//	p.linear = 0.07f;
+	//	p.quadratic = 0.017f;
+	//	p.cutoff = 12.5f;
+	//	p.outerCutoff = 17.5f;
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+	//}
 }
 
 void UtahCtx::MainLoop()
@@ -252,20 +252,20 @@ void UtahCtx::MainLoop()
 
 		_pFlyCamera->Update(deltaTime);
 
-		// Flashlight: slave the spot light to the camera before lights are gathered
-		if(!_holdMode)
-		{
-			CameraComponent& cam = _registry.GetPool<CameraComponent>()->GetPool()[0];
-			auto* spotPool = _registry.GetPool<SpotLightCPU>();
-			auto* tfPool = _registry.GetPool<TransformComponent>();
+		//// Flashlight: slave the spot light to the camera before lights are gathered
+		//if(!_holdMode)
+		//{
+		//	CameraComponent& cam = _registry.GetPool<CameraComponent>()->GetPool()[0];
+		//	auto* spotPool = _registry.GetPool<SpotLightCPU>();
+		//	auto* tfPool = _registry.GetPool<TransformComponent>();
 
-			for (Entity owner : spotPool->GetEntities())
-			{
-				tfPool->Get(owner)._pos = cam._pos;
-				spotPool->Get(owner).pitch = cam._rot.z;   // camera pitch
-				spotPool->Get(owner).yaw = cam._rot.y;   // camera yaw
-			}
-		}
+		//	for (Entity owner : spotPool->GetEntities())
+		//	{
+		//		tfPool->Get(owner)._pos = cam._pos;
+		//		spotPool->Get(owner).pitch = cam._rot.z;   // camera pitch
+		//		spotPool->Get(owner).yaw = cam._rot.y;   // camera yaw
+		//	}
+		//}
 
 		_pRenderSystem->Update(deltaTime);
 	}

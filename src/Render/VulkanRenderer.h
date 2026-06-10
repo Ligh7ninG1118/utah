@@ -30,6 +30,8 @@
 #include "MeshManager.h"
 #include "Gameplay/CameraComponent.h"
 #include "Render/GPUTypes.h"
+#include "RenderCommons.h"
+
 
 struct Vertex
 {
@@ -77,6 +79,56 @@ enum class PipelineType
 	DebugWireframe,			// Position only, line list, no fill
 };
 
+enum class GlobalBinding : uint32_t
+{
+	CameraUBO = 0,
+	LightUBO = 1,
+	ObjectSSBO = 2,
+	MaterialSSBO = 3,
+	Textures = 4,
+	TextureSamplers = 5,
+	ShadowMapUBO = 6,
+	ShadowMaps = 7,
+	ShadowMapSampler = 8,
+
+	Count // keep last
+};
+
+inline constexpr uint32_t ToIdx(GlobalBinding b) { return static_cast<uint32_t>(b); }
+inline constexpr size_t kGlobalBindingCount = static_cast<size_t>(GlobalBinding::Count);
+
+struct BindingDesc
+{
+	uint32_t bindingIndex;
+	vk::DescriptorType type;
+	uint32_t count;
+	size_t bufferSize = 0; // Defaults to 0 for image/sampler
+	vk::Flags<vk::ShaderStageFlagBits> stageFlags;
+	vk::Flags<vk::DescriptorBindingFlagBits> bindingFlags;
+};
+
+// Everything that must exist once per frame in flight: resources the CPU writes or records
+// while the GPU may still be consuming the previous frame's copy.
+//
+// Excludes:
+//  - render-finished semaphores: per swapchain IMAGE (present consumes them), kept outside
+//  - color/depth/shadow images: GPU-written persistents, synchronized by barriers
+//  - swapchain images/views: count tied to the swapchain, not to frames in flight
+struct FrameData
+{
+	// CPU-written, persistent-mapped buffers created from the BindingDesc table
+	std::array<AllocatedBuffer, kGlobalBindingCount> globalBuffers{};
+
+	vk::raii::DescriptorSet globalDescriptorSet = nullptr;
+	vk::raii::CommandBuffer commandBuffer = nullptr;
+
+	vk::raii::Fence     inFlightFence = nullptr;
+	vk::raii::Semaphore presentCompleteSemaphore = nullptr; // image-acquire semaphore
+
+	AllocatedBuffer& Buffer(GlobalBinding b) { return globalBuffers[ToIdx(b)]; }
+	[[nodiscard]] const AllocatedBuffer& Buffer(GlobalBinding b) const { return globalBuffers[ToIdx(b)]; }
+	[[nodiscard]] void* Mapped(GlobalBinding b) const { return globalBuffers[ToIdx(b)].info.pMappedData; }
+};
 
 class VulkanRenderer
 {
@@ -164,9 +216,12 @@ private:
 	void RecreateSwapChain();
 
 	// Descriptor Creation
+	void InitBindingDescs();
 	void CreateDescriptorSetLayout();
 	void CreateDescriptorPool();
 	void CreateDescriptorSets();
+
+	std::vector<BindingDesc> bindingDescs;
 
 	// Graphics Pipeline
 	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type = PipelineType::Default);
@@ -175,7 +230,7 @@ private:
 	// Command Pool & Buffers
 	void CreateCommandPool();
 	void CreateCommandBuffers();
-	void RecordCommandBufferShadowMapView(uint32_t imageIndex);
+	//void RecordCommandBufferShadowMapView(uint32_t imageIndex);
 	void RecordCommandBuffer(uint32_t imageIndex);
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -235,27 +290,21 @@ private:
 	MeshManager _meshManager;
 	MaterialManager _materialManager;
 
-	std::vector<AllocatedBuffer> _cameraUBOs;
-	std::vector<AllocatedBuffer> _lightUBOs;
-	std::vector<AllocatedBuffer> _objectSSBOs;
-	std::vector<AllocatedBuffer> _materialSSBOs;
-	std::vector<AllocatedBuffer> _shadowMapUBOs;
-
 	vk::raii::DescriptorPool             _descriptorPool = nullptr;
-	std::vector<vk::raii::DescriptorSet> _globalDescriptorSets;
 
 	vk::raii::DescriptorPool			 _imguiDescriptorPool = nullptr;
 	//Temp, drawing shadow map on imgui window
 	VkDescriptorSet _shadowMapImGuiDS = VK_NULL_HANDLE;
 
 	vk::raii::CommandPool                _commandPool = nullptr;
-	std::vector<vk::raii::CommandBuffer> _commandBuffers;
+	// IMPORTANT: _frames is declared AFTER _descriptorPool and _commandPool on purpose.
+	// Members destruct in reverse declaration order, so the raii descriptor set and
+	// command buffer inside each FrameData are freed while their pools still exist.
+	std::array<FrameData, MAX_FRAMES_IN_FLIGHT> _frames;
 
-	std::vector<vk::raii::Semaphore> _presentCompleteSemaphores;
+	// Waited on by vkQueuePresentKHR; tied to swapchain images, so per-IMAGE (not per-frame)
 	std::vector<vk::raii::Semaphore> _renderFinishedSemaphores;
-	std::vector<vk::raii::Fence>     _inFlightFences;
 
-	uint32_t _semaphoreIndex = 0;
 	uint32_t _currentFrame = 0;
 
 	bool _framebufferResized = false;
@@ -270,6 +319,4 @@ private:
 	std::vector<PointLightGPU> _pointLights;
 	std::vector<DirectionalLightGPU> _dirLights;
 	std::vector<SpotLightGPU> _spotLights;
-
 };
-
