@@ -130,6 +130,12 @@ struct FrameData
 	[[nodiscard]] void* Mapped(GlobalBinding b) const { return globalBuffers[ToIdx(b)].info.pMappedData; }
 };
 
+struct PipelineEntry
+{
+	vk::raii::Pipeline pipeline = nullptr;
+	vk::PipelineLayout layout = nullptr;
+};
+
 class VulkanRenderer
 {
 public:
@@ -217,15 +223,17 @@ private:
 
 	// Descriptor Creation
 	void InitBindingDescs();
-	void CreateDescriptorSetLayout();
+	[[nodiscard]] vk::raii::DescriptorSetLayout CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs);
 	void CreateDescriptorPool();
 	void CreateDescriptorSets();
+	void CreatePipelineLayouts();
 
 	std::vector<BindingDesc> bindingDescs;
 
 	// Graphics Pipeline
-	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type = PipelineType::Default);
-	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath);
+	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, 
+		vk::PipelineLayout layout, PipelineType type = PipelineType::Default);
+	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -270,9 +278,9 @@ private:
 	std::vector<vk::raii::ImageView> _swapChainImageViews;
 
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
-	vk::raii::PipelineLayout      _pipelineLayout = nullptr;
-	std::vector<vk::raii::Pipeline> _pipelines;
-	//vk::raii::Pipeline            _graphicsPipeline = nullptr;
+	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
+	std::vector<PipelineEntry> _pipelines;
+	uint32_t _shadowPipelineIndex = 0;
 
 	AllocatedImage		   _colorImage{};
 	vk::raii::ImageView    _colorImageView = nullptr;

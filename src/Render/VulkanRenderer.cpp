@@ -54,11 +54,12 @@ void VulkanRenderer::Initialize()
 	CreateImageViews();
 
 	InitBindingDescs();
-	CreateDescriptorSetLayout();
-	CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv");
-	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", PipelineType::Debug);
-	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", PipelineType::DebugWireframe);
-	CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv");
+	_globalDescriptorSetLayout = std::move(CreateDescriptorSetLayout(bindingDescs));
+	CreatePipelineLayouts();
+	CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
+	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
+	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
+	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -573,28 +574,33 @@ void VulkanRenderer::InitBindingDescs()
 										.bindingFlags = {} });
 }
 
-void VulkanRenderer::CreateDescriptorSetLayout()
+[[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
 {
 	std::vector<vk::DescriptorSetLayoutBinding> bindings;
 	std::vector<vk::DescriptorBindingFlags> bindingFlags;
 
-	bindings.reserve(bindingDescs.size());
-	bindingFlags.reserve(bindingDescs.size());
+	bindings.reserve(descs.size());
+	bindingFlags.reserve(descs.size());
 
-	for (size_t i = 0; i < bindingDescs.size(); i++)
+	bool anyUpdateAfterBind = false;
+
+	for (size_t i = 0; i < descs.size(); i++)
 	{
 		bindings.push_back(vk::DescriptorSetLayoutBinding
 			{
-				.binding = bindingDescs[i].bindingIndex,
-				.descriptorType = bindingDescs[i].type,
-				.descriptorCount = bindingDescs[i].count,
-				.stageFlags = bindingDescs[i].stageFlags
+				.binding = descs[i].bindingIndex,
+				.descriptorType = descs[i].type,
+				.descriptorCount = descs[i].count,
+				.stageFlags = descs[i].stageFlags
 			});
 
 		bindingFlags.push_back(vk::DescriptorBindingFlags
 			{
-				bindingDescs[i].bindingFlags
+				descs[i].bindingFlags
 			});
+
+		if (descs[i].bindingFlags & vk::DescriptorBindingFlagBits::eUpdateAfterBind)
+			anyUpdateAfterBind = true;
 	}
 
 	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{
@@ -604,12 +610,13 @@ void VulkanRenderer::CreateDescriptorSetLayout()
 
 	vk::DescriptorSetLayoutCreateInfo info{
 		.pNext = &flagsInfo,
-		.flags = vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool,
+		.flags = anyUpdateAfterBind ? vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool
+									: vk::DescriptorSetLayoutCreateFlags{},
 		.bindingCount = static_cast<uint32_t>(bindings.size()),
 		.pBindings = bindings.data()
 	};
 
-	_globalDescriptorSetLayout = vk::raii::DescriptorSetLayout(_vkCtx.GetDevice(), info);
+	return vk::raii::DescriptorSetLayout(_vkCtx.GetDevice(), info);
 
 }
 
@@ -763,7 +770,24 @@ void VulkanRenderer::CreateDescriptorSets()
 	}
 }
 
-uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, PipelineType type)
+void VulkanRenderer::CreatePipelineLayouts()
+{
+	vk::PushConstantRange pushRange{
+		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+		.offset = 0,
+		.size = sizeof(uint32_t) * 2   // PerDrawPC: objectIndex, materialIndex
+	};
+
+	vk::PipelineLayoutCreateInfo info{
+		.setLayoutCount = 1,
+		.pSetLayouts = &*_globalDescriptorSetLayout,
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &pushRange };
+
+	_globalPipelineLayout = vk::raii::PipelineLayout(_vkCtx.GetDevice(), info);
+}
+
+uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
 	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
@@ -843,20 +867,6 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
-	vk::PushConstantRange pushRange{
-		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-		.offset = 0,
-		.size = sizeof(uint32_t) * 2   // objectIndex, textureIndex
-	};
-
-	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-		.setLayoutCount = 1,
-		.pSetLayouts = &*_globalDescriptorSetLayout,
-		.pushConstantRangeCount = 1,
-		.pPushConstantRanges = &pushRange};
-
-	_pipelineLayout = vk::raii::PipelineLayout(_vkCtx.GetDevice(), pipelineLayoutInfo);
-
 	vk::Format depthFormat = FindDepthFormat();
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
@@ -870,20 +880,24 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 		 .pDepthStencilState = &depthStencil,
 		 .pColorBlendState = &colorBlending,
 		 .pDynamicState = &dynamicState,
-		 .layout = _pipelineLayout,
+		 .layout = layout,
 		 .renderPass = nullptr},
 		{.colorAttachmentCount = 1,
 		 .pColorAttachmentFormats = &_swapChainSurfaceFormat.format,
 		 .depthAttachmentFormat = depthFormat} };
 
 
-	_pipelines.emplace_back(vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
-	return _pipelines.size() - 1;
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
 }
 
 
 //TODO: combine this into the default creation function, if fragPath is null -> no frag module
-uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vertPath)
+uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
 
@@ -939,20 +953,6 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
-	vk::PushConstantRange pushRange{
-		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-		.offset = 0,
-		.size = sizeof(uint32_t) * 2   // only need objectIndex, but keep it two so pipeline layout is the same. TODO for the future
-	};
-
-	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-		.setLayoutCount = 1,
-		.pSetLayouts = &*_globalDescriptorSetLayout,
-		.pushConstantRangeCount = 1,
-		.pPushConstantRanges = &pushRange };
-
-	_pipelineLayout = vk::raii::PipelineLayout(_vkCtx.GetDevice(), pipelineLayoutInfo);
-
 	vk::Format depthFormat = FindDepthFormat();
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
@@ -966,14 +966,17 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 		 .pDepthStencilState = &depthStencil,
 		 .pColorBlendState = &colorBlending,
 		 .pDynamicState = &dynamicState,
-		 .layout = _pipelineLayout,
+		 .layout = layout,
 		 .renderPass = nullptr},
 		{.colorAttachmentCount = 0,
 		 .pColorAttachmentFormats = nullptr,
 		 .depthAttachmentFormat = depthFormat} };
 
 
-	_pipelines.emplace_back(vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()));
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
 	return _pipelines.size() - 1;
 }
 
@@ -1036,7 +1039,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		for (uint32_t i = 0; i < _drawList.size(); i++)
 		{
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[3]);
+			const PipelineEntry& pso = _pipelines[_shadowPipelineIndex];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
 			cmd.setViewport(0,
 				vk::Viewport(
@@ -1068,13 +1073,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 			cmd.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
-				_pipelineLayout,
+				pso.layout,
 				0,
 				*_frames[_currentFrame].globalDescriptorSet,
 				nullptr);
 
 			cmd.pushConstants<PerDrawPC>(
-				_pipelineLayout,
+				pso.layout,
 				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 				0,
 				pc
@@ -1159,8 +1164,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
 		Material mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
+		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
 		cmd.setViewport(0,
 			vk::Viewport(
@@ -1196,13 +1202,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			_pipelineLayout,
+			pso.layout,
 			0,
 			*_frames[_currentFrame].globalDescriptorSet,
 			nullptr);
 
 		cmd.pushConstants<PerDrawPC>(
-			_pipelineLayout,
+			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 			0,
 			pc
@@ -1216,8 +1222,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	{
 		//TODO: Designated debug wireframe material
 		Material mat = _materialManager.GetMaterial(3);
+		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
 		cmd.setViewport(0,
 			vk::Viewport(
@@ -1253,13 +1260,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			_pipelineLayout,
+			pso.layout,
 			0,
 			*_frames[_currentFrame].globalDescriptorSet,
 			nullptr);
 
 		cmd.pushConstants<PerDrawPC>(
-			_pipelineLayout,
+			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 			0,
 			pc
@@ -1273,8 +1280,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	{
 		//TODO: Designated debug wireframe material
 		Material mat = _materialManager.GetMaterial(4);
+		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *_pipelines[mat.pipeline]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
 		cmd.setViewport(0,
 			vk::Viewport(
@@ -1310,13 +1318,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			_pipelineLayout,
+			pso.layout,
 			0,
 			*_frames[_currentFrame].globalDescriptorSet,
 			nullptr);
 
 		cmd.pushConstants<PerDrawPC>(
-			_pipelineLayout,
+			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 			0,
 			pc
