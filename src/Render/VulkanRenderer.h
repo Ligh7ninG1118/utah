@@ -91,11 +91,10 @@ enum class GlobalBinding : uint32_t
 	ShadowMaps = 7,
 	ShadowMapSampler = 8,
 
-	Count // keep last
+	Count
 };
 
 inline constexpr uint32_t ToIdx(GlobalBinding b) { return static_cast<uint32_t>(b); }
-inline constexpr size_t kGlobalBindingCount = static_cast<size_t>(GlobalBinding::Count);
 
 struct BindingDesc
 {
@@ -117,7 +116,7 @@ struct BindingDesc
 struct FrameData
 {
 	// CPU-written, persistent-mapped buffers created from the BindingDesc table
-	std::array<AllocatedBuffer, kGlobalBindingCount> globalBuffers{};
+	std::array<AllocatedBuffer, static_cast<size_t>(GlobalBinding::Count)> globalBuffers{};
 
 	vk::raii::DescriptorSet globalDescriptorSet = nullptr;
 	vk::raii::CommandBuffer commandBuffer = nullptr;
@@ -188,6 +187,7 @@ public:
 	void CopyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
 
 	MeshManager* GetMeshManager() { return &_meshManager; }
+	MaterialManager* GetMaterialManager() { return &_materialManager; }
 
 private:
 	// ImGUI stuff
@@ -281,6 +281,9 @@ private:
 	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
 	std::vector<PipelineEntry> _pipelines;
 	uint32_t _shadowPipelineIndex = 0;
+
+	MaterialHandle _debugAABBMaterial{};
+	MaterialHandle _debugLightMaterial{};
 
 	AllocatedImage		   _colorImage{};
 	vk::raii::ImageView    _colorImageView = nullptr;

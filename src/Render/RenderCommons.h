@@ -28,3 +28,25 @@ struct Plane
 	glm::vec3 _normal;
 	float _distance;
 };
+
+// typed handle, preventing cross use
+struct MeshHandle
+{
+	uint32_t index = INVALID_HANDLE;
+	[[nodiscard]] bool IsValid() const { return index != INVALID_HANDLE; }
+	bool operator==(const MeshHandle&) const = default;
+};
+
+struct MaterialHandle
+{
+	uint32_t index = INVALID_HANDLE;
+	[[nodiscard]] bool IsValid() const { return index != INVALID_HANDLE; }
+	bool operator==(const MaterialHandle&) const = default;
+};
+
+struct TextureHandle
+{
+	uint32_t index = INVALID_HANDLE;
+	[[nodiscard]] bool IsValid() const { return index != INVALID_HANDLE; }
+	bool operator==(const TextureHandle&) const = default;
+};

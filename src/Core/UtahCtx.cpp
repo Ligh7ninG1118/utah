@@ -4,6 +4,8 @@
 #include "Gameplay/TransformComponent.h"
 #include "Render/RenderComponent.h"
 #include "Render/CPUTypes.h"
+#include "Render/MeshManager.h"
+#include "Render/MaterialManager.h"
 #include <utility>
 #include <iostream>
 
@@ -30,8 +32,8 @@ UtahCtx::~UtahCtx()
 void UtahCtx::Run()
 {
 	InitWindow();
-	InitDemo();
 	InitSystems();
+	InitDemo();
 	MainLoop();
 	CleanUp();
 }
@@ -77,6 +79,17 @@ void UtahCtx::InitSystems()
 
 void UtahCtx::InitDemo()
 {
+	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
+	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
+
+	MeshHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
+	MeshHandle teapotMesh = meshMgr->GetHandle("utah_teapot");
+	MeshHandle planeMesh = meshMgr->GetHandle("plane");
+
+	MaterialHandle vikingRoomMat = matMgr->GetHandle("viking_room");
+	MaterialHandle greenMat = matMgr->GetHandle("green");
+	MaterialHandle whiteMat = matMgr->GetHandle("white");
+
 	// Models
 	for (int i = 0; i < 6; i++)
 	{
@@ -89,14 +102,14 @@ void UtahCtx::InitDemo()
 		if (i % 2 == 0) // Viking room
 		{
 			t._rot.x = -90.0f;
-			r._mesh = 1;
-			r._material = 0;
+			r._mesh = vikingRoomMesh;
+			r._material = vikingRoomMat;
 		}
 		else // Teapot
 		{
 			t._scale = glm::vec3(0.3f);
-			r._mesh = 2;
-			r._material = 1;
+			r._mesh = teapotMesh;
+			r._material = greenMat;
 		}
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
@@ -112,8 +125,8 @@ void UtahCtx::InitDemo()
 
 		t._scale = glm::vec3(100.0f, 1.0f, 100.0f);
 
-		r._mesh = 0;
-		r._material = 2;
+		r._mesh = planeMesh;
+		r._material = whiteMat;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));

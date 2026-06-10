@@ -1,5 +1,5 @@
 #include "MaterialManager.h"
-
+#include <stdexcept>
 
 MaterialManager::MaterialManager()
 {
@@ -9,7 +9,7 @@ MaterialManager::~MaterialManager()
 {
 }
 
-uint32_t MaterialManager::CreateUnlitMaterial(uint32_t pipelineIndex, glm::vec4 color)
+MaterialHandle MaterialManager::CreateUnlitMaterial(const std::string& name, uint32_t pipelineIndex, glm::vec4 color)
 {
     Material newMat{};
     newMat.type = MaterialType::Unlit;
@@ -17,10 +17,10 @@ uint32_t MaterialManager::CreateUnlitMaterial(uint32_t pipelineIndex, glm::vec4 
     newMat.baseColor = color;
 
     _materials.push_back(newMat);
-    return _materials.size() - 1;
+    return RegisterName(name);
 }
 
-uint32_t MaterialManager::CreateBlinnPhongMaterial(uint32_t pipelineIndex, std::vector<uint32_t> texIndices, glm::vec4 color, float shininess)
+MaterialHandle MaterialManager::CreateBlinnPhongMaterial(const std::string& name, uint32_t pipelineIndex, std::vector<TextureHandle> texIndices, glm::vec4 color, float shininess)
 {
     Material newMat{};
     newMat.type = MaterialType::BlinnPhong;
@@ -34,13 +34,13 @@ uint32_t MaterialManager::CreateBlinnPhongMaterial(uint32_t pipelineIndex, std::
 
     for (size_t i = 0; i < texIndices.size(); i++)
     {
-        newMat.texIndices[i] = texIndices[i];
+        newMat.texIndices[i] = texIndices[i].index;
     }
     newMat.baseColor = color;
     newMat.shininess = shininess;
 
     _materials.push_back(newMat);
-    return _materials.size()-1;
+    return RegisterName(name);
 }
 
 std::vector<MaterialGPU> MaterialManager::ConvertMaterialsToGPU()
@@ -58,4 +58,21 @@ std::vector<MaterialGPU> MaterialManager::ConvertMaterialsToGPU()
     }
 
     return matGPUs;
+}
+
+MaterialHandle MaterialManager::GetHandle(const std::string& name) const
+{
+    auto it = _nameMap.find(name);
+    if (it == _nameMap.end())
+        throw std::runtime_error("Unknown material name: " + name);
+    return MaterialHandle{ it->second };
+}
+
+MaterialHandle MaterialManager::RegisterName(const std::string& name)
+{
+    uint32_t idx = static_cast<uint32_t>(_materials.size() - 1);
+    auto [it, inserted] = _nameMap.emplace(name, idx);
+    if (!inserted)
+        throw std::runtime_error("Duplicate material name: " + name);
+    return MaterialHandle{ idx };
 }

@@ -5,6 +5,6 @@
 
 struct RenderComponent
 {
-	uint32_t _mesh = INVALID_HANDLE;
-	uint32_t _material = INVALID_HANDLE;
+	MeshHandle _mesh{};
+	MaterialHandle _material{};
 };

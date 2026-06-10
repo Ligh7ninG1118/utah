@@ -29,7 +29,7 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	CreateWhiteTexture();
 }
 
-uint32_t TextureManager::ImportTexture(const std::string& texPath)
+TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name)
 {
 	if (_pRenderer == nullptr)
 	{
@@ -80,10 +80,10 @@ uint32_t TextureManager::ImportTexture(const std::string& texPath)
 		std::move(textureImageView), 
 		0 /*use default linear repeat sampler*/);
 
-    return _textures.size() - 1;
+    return RegisterName(name);
 }
 
-uint32_t TextureManager::CreateWhiteTexture()
+TextureHandle TextureManager::CreateWhiteTexture()
 {
 	uint32_t white = 0xFFFFFFFF;            // RGBA 255,255,255,255
 	vk::DeviceSize imageSize = 4;
@@ -105,7 +105,7 @@ uint32_t TextureManager::CreateWhiteTexture()
 
 	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1);
 	_textures.emplace_back(img, std::move(view), 0);
-	return _textures.size() - 1;
+	return RegisterName("white");
 }
 
 // Only create one sampler (linear repeat) for now
@@ -126,4 +126,21 @@ void TextureManager::CreateTextureSampler()
 											 .maxLod = vk::LodClampNone};
 
 	_samplers.emplace_back(_pVkCtxRef->GetDevice(), samplerInfo);
+}
+
+TextureHandle TextureManager::GetHandle(const std::string& name) const
+{
+	auto it = _nameMap.find(name);
+	if (it == _nameMap.end())
+		throw std::runtime_error("Unknown texture name: " + name);
+	return TextureHandle{ it->second };
+}
+
+TextureHandle TextureManager::RegisterName(const std::string& name)
+{
+	uint32_t idx = static_cast<uint32_t>(_textures.size() - 1);
+	auto [it, inserted] = _nameMap.emplace(name, idx);
+	if (!inserted)
+		throw std::runtime_error("Duplicate texture name: " + name);
+	return TextureHandle{ idx };
 }

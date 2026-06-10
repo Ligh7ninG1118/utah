@@ -1,10 +1,8 @@
 #include "MeshManager.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
-#include <unordered_map>
 
 #include "VulkanRenderer.h"
-#include "RenderCommons.h"
 
 MeshManager::MeshManager()
 {
@@ -180,9 +178,10 @@ void MeshManager::CreatePlane()
 
 
 	_meshes.emplace_back(vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()));
+	RegisterName("plane");
 }
 
-uint32_t MeshManager::ImportMesh(const std::string& meshPath)
+MeshHandle MeshManager::ImportMesh(const std::string& meshPath, const std::string& name)
 {
 	tinyobj::attrib_t                attrib;
 	std::vector<tinyobj::shape_t>    shapes;
@@ -193,7 +192,6 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, meshPath.c_str()))
 	{
 		throw std::runtime_error(err);
-		return 0xFFFFFFFF;
 	}
 
 	std::unordered_map<Vertex, uint32_t> uniqueVertices{};
@@ -240,7 +238,25 @@ uint32_t MeshManager::ImportMesh(const std::string& meshPath)
 	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
-	// Add & return index
+	// Add & return handle
 	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
-	return _meshes.size() - 1;
+	
+	return RegisterName(name);
+}
+
+MeshHandle MeshManager::GetHandle(const std::string& name) const
+{
+	auto it = _nameMap.find(name);
+	if (it == _nameMap.end())
+		throw std::runtime_error("Unknown mesh name: " + name);
+	return MeshHandle{ it->second };
+}
+
+MeshHandle MeshManager::RegisterName(const std::string& name)
+{
+	uint32_t idx = static_cast<uint32_t>(_meshes.size() - 1);
+	auto [it, inserted] = _nameMap.emplace(name, idx);
+	if (!inserted)
+		throw std::runtime_error("Duplicate mesh name: " + name);
+	return MeshHandle{ idx };
 }

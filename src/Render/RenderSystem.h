@@ -8,6 +8,8 @@
 
 
 class VulkanRenderer;
+class MeshManager;
+class MaterialManager;
 struct DrawJob;
 
 
@@ -24,6 +26,9 @@ public:
 	void WaitForRendererIdle();
 
 	void NotifyResized();
+
+	MeshManager* GetMeshManager();
+	MaterialManager* GetMaterialManager();
 
 private:
 	void GatherDrawList();

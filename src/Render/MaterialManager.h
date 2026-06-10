@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <vector>
 #include <glm/glm.hpp>
+#include <string>
+#include <unordered_map>
+#include "RenderCommons.h"
 
 
 enum class MaterialType : uint32_t
@@ -36,15 +39,23 @@ public:
 	MaterialManager();
 	~MaterialManager();
 
-	const Material& GetMaterial(uint32_t index) const { return _materials[index]; }
+	const Material& GetMaterial(MaterialHandle handle) const { return _materials[handle.index]; }
 
-	uint32_t CreateUnlitMaterial(uint32_t pipelineIndex, glm::vec4 color);
+	MaterialHandle CreateUnlitMaterial(const std::string& name, uint32_t pipelineIndex, glm::vec4 color);
 
-	uint32_t CreateBlinnPhongMaterial(uint32_t pipelineIndex, std::vector<uint32_t> texIndices, glm::vec4 color, float shininess = 32.0f);
+	MaterialHandle CreateBlinnPhongMaterial(const std::string& name, uint32_t pipelineIndex, 
+		std::vector<TextureHandle> texIndices, glm::vec4 color, float shininess = 32.0f);
 
 	std::vector<MaterialGPU> ConvertMaterialsToGPU();
 
+	[[nodiscard]] MaterialHandle GetHandle(const std::string& name) const;
+
 private:
+	MaterialHandle RegisterName(const std::string& name);
+
 	std::vector<Material> _materials;
+
+	// string name -> index/handle
+	std::unordered_map<std::string, uint32_t> _nameMap;
 };
 

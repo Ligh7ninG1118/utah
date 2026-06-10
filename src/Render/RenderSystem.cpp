@@ -222,5 +222,14 @@ void RenderSystem::NotifyResized()
 	_pRenderer->NotifyResized();
 }
 
+MeshManager* RenderSystem::GetMeshManager()
+{
+	return _pRenderer->GetMeshManager();
+}
+
+MaterialManager* RenderSystem::GetMaterialManager()
+{
+	return _pRenderer->GetMaterialManager();
+}
 
 

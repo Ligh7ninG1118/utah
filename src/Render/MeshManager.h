@@ -1,7 +1,10 @@
 #pragma once
 #include "VulkanContext.h"
+#include "RenderCommons.h"
 #include <glm/glm.hpp>
 #include <vector>
+#include <unordered_map>
+#include <string>
 
 class VulkanRenderer;
 
@@ -35,15 +38,21 @@ public:
 	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 1.0f);
 	void CreatePlane();
 
-	uint32_t ImportMesh(const std::string& meshPath);
+	MeshHandle ImportMesh(const std::string& meshPath, const std::string& name);
 
-	const Mesh& GetMesh(uint32_t index) const { return _meshes[index]; }
-	const Mesh& GetDebugMesh(DebugMeshType type) { return _debugMeshes[static_cast<size_t>(type)]; }
+	[[nodiscard]] MeshHandle GetHandle(const std::string& name) const;
+
+	[[nodiscard]] const Mesh& GetMesh(MeshHandle handle) const { return _meshes[handle.index]; }
+	[[nodiscard]] const Mesh& GetDebugMesh(DebugMeshType type) { return _debugMeshes[static_cast<size_t>(type)]; }
 
 private:
+	MeshHandle RegisterName(const std::string& name);
+
 	VulkanRenderer* _pRenderer;
 
 	std::vector<Mesh> _meshes;
+	// string name -> index/handle
+	std::unordered_map<std::string, uint32_t> _nameMap;
 	// Pre-generated meshes for debug usages
 	std::array<Mesh, static_cast<size_t>(DebugMeshType::Count)> _debugMeshes;
 };

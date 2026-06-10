@@ -56,9 +56,9 @@ void VulkanRenderer::Initialize()
 	InitBindingDescs();
 	_globalDescriptorSetLayout = std::move(CreateDescriptorSetLayout(bindingDescs));
 	CreatePipelineLayouts();
-	CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
-	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
-	CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
+	uint32_t blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
+	uint32_t debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
+	uint32_t debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 
 	CreateCommandPool();
@@ -66,12 +66,12 @@ void VulkanRenderer::Initialize()
 	CreateDepthResources();
 
 	_textureManger.Initialize(this, &_vkCtx);
-	_textureManger.ImportTexture("models/viking_room.png");
-	_textureManger.ImportTexture("models/viking_room_2.png");
+	TextureHandle vikingRoomTex = _textureManger.ImportTexture("models/viking_room.png", "viking_room");
+	//_textureManger.ImportTexture("models/viking_room_2.png");  not used right now
 
 	_meshManager.Initialize(this);
-	_meshManager.ImportMesh("models/viking_room.obj");
-	_meshManager.ImportMesh("models/utah_teapot.obj");
+	_meshManager.ImportMesh("models/viking_room.obj", "viking_room");
+	_meshManager.ImportMesh("models/utah_teapot.obj", "teapot");
 
 	InitImGUI();
 	CreateShadowMapResources();
@@ -83,11 +83,11 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	_materialManager.CreateBlinnPhongMaterial(0, { 1 }, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
-	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
-	_materialManager.CreateBlinnPhongMaterial(0, { 0 }, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
-	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
-	_materialManager.CreateUnlitMaterial(2, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
+	_materialManager.CreateBlinnPhongMaterial("viking_room", blinnPhongPipeline, {vikingRoomTex}, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
+	_materialManager.CreateBlinnPhongMaterial("pure_green", blinnPhongPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
+	_materialManager.CreateBlinnPhongMaterial("pure_white", blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
+	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
+	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
@@ -511,7 +511,7 @@ void VulkanRenderer::RecreateSwapChain()
 
 void VulkanRenderer::InitBindingDescs()
 {
-	bindingDescs.reserve(kGlobalBindingCount);
+	bindingDescs.reserve(static_cast<size_t>(GlobalBinding::Count));
 
 	// 0: Camera UBO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::CameraUBO),
@@ -1163,7 +1163,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	for (uint32_t i = 0; i < _drawList.size(); i++)
 	{
-		Material mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
+		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
@@ -1192,9 +1192,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 
-		PerDrawPC pc{ i, _drawList[i]._renderComp->_material };
+		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
 
-		Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -1220,8 +1220,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	// Draw debug AABB boxs
 	for (uint32_t i = 0; i < _debugAABBDrawList.size(); i++)
 	{
-		//TODO: Designated debug wireframe material
-		Material mat = _materialManager.GetMaterial(3);
+		const Material& mat = _materialManager.GetMaterial(_debugAABBMaterial);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
@@ -1250,9 +1249,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size(), 3 };
+		PerDrawPC pc{ i + _drawList.size(), _debugAABBMaterial.index };
 
-		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -1278,8 +1277,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	// lights
 	for (uint32_t i = 0; i < _dirLights.size(); i++)
 	{
-		//TODO: Designated debug wireframe material
-		Material mat = _materialManager.GetMaterial(4);
+		const Material& mat = _materialManager.GetMaterial(_debugLightMaterial);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
@@ -1308,9 +1306,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
 		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), 4 };
+		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), _debugLightMaterial.index };
 
-		Mesh mesh = _meshManager.GetDebugMesh(DebugMeshType::Pyramid);
+		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::Pyramid);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
