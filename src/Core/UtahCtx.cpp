@@ -83,12 +83,12 @@ void UtahCtx::InitDemo()
 	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
 
 	MeshHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
-	MeshHandle teapotMesh = meshMgr->GetHandle("utah_teapot");
+	MeshHandle teapotMesh = meshMgr->GetHandle("teapot");
 	MeshHandle planeMesh = meshMgr->GetHandle("plane");
 
 	MaterialHandle vikingRoomMat = matMgr->GetHandle("viking_room");
-	MaterialHandle greenMat = matMgr->GetHandle("green");
-	MaterialHandle whiteMat = matMgr->GetHandle("white");
+	MaterialHandle greenMat = matMgr->GetHandle("pure_green");
+	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
 
 	// Models
 	for (int i = 0; i < 6; i++)

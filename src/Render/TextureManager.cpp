@@ -29,7 +29,7 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	CreateWhiteTexture();
 }
 
-TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name)
+TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace)
 {
 	if (_pRenderer == nullptr)
 	{
@@ -56,23 +56,26 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
 
 	stbi_image_free(pixels);
 
+	vk::Format format = (colorSpace == TextureColorSpace::sRGB)
+		? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+
 	// Create Image
 	AllocatedImage textureImage = _pRenderer->CreateImage(texWidth, texHeight, mipLevels,
 		vk::SampleCountFlagBits::e1,
-		vk::Format::eR8G8B8A8Srgb,
+		format,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
 
 	_pRenderer->TransitionImageLayout(textureImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
 	_pRenderer->CopyBufferToImage(stagingBuffer.buffer, textureImage.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 
-	_pRenderer->GenerateMipmaps(textureImage.image, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, mipLevels);
+	_pRenderer->GenerateMipmaps(textureImage.image, format, texWidth, texHeight, mipLevels);
 
 	_pRenderer->DestroyBuffer(stagingBuffer);
 
 	// Create Image View
 	vk::raii::ImageView textureImageView =
-		_pRenderer->CreateImageView(textureImage.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+		_pRenderer->CreateImageView(textureImage.image, format, vk::ImageAspectFlagBits::eColor, mipLevels);
 
 	// Add & return index
 	_textures.emplace_back(

@@ -17,6 +17,11 @@ struct Texture
 	uint32_t samplerIndex;
 };
 
+enum class TextureColorSpace
+{
+	sRGB,	//albedo, emissive
+	Linear  //normal, ao, spec, etc.
+};
 
 class TextureManager
 {
@@ -26,7 +31,7 @@ public:
 
 	void Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx);
 
-	TextureHandle ImportTexture(const std::string& texPath, const std::string& name);
+	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateWhiteTexture();
 
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
