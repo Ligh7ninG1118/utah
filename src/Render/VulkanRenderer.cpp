@@ -33,6 +33,10 @@ VulkanRenderer::~VulkanRenderer()
 		_shadowMapImageViews[i] = nullptr;
 		DestroyImage(_shadowMapImages[i]);
 	}
+
+	_shadowCubeMapImageView = nullptr;
+	DestroyImage(_shadowCubeMapImage);
+
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
 	DestroyImage(_colorImage);
@@ -60,6 +64,7 @@ void VulkanRenderer::Initialize()
 	uint32_t debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	uint32_t debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
+	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -276,10 +281,8 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	LightUBO lightUBO{};
 	lightUBO.eyePos = _mainCam._pos;
-	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
-	std::memcpy(lightUBO.pointLights, _pointLights.data(),
-		std::min(_pointLights.size(), size_t(MAX_POINT_LIGHTS)) * sizeof(PointLightGPU));
-
+	lightUBO.nearPlane = _mainCam._nearPlane;
+	lightUBO.farPlane = _mainCam._farPlane;
 	lightUBO.dirLightNum = static_cast<uint32_t>(_dirLights.size());
 	std::memcpy(lightUBO.dirLights, _dirLights.data(), 
 		std::min(_dirLights.size(), size_t(MAX_DIR_LIGHTS)) * sizeof(DirectionalLightGPU));
@@ -288,32 +291,31 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	std::memcpy(lightUBO.spotLights, _spotLights.data(),
 		std::min(_spotLights.size(), size_t(MAX_SPOT_LIGHTS)) * sizeof(SpotLightGPU));
 
+	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
+	std::memcpy(lightUBO.pointLights, _pointLights.data(),
+		std::min(_pointLights.size(), size_t(MAX_POINT_LIGHTS)) * sizeof(PointLightGPU));
+
 	memcpy(frame.Mapped(GlobalBinding::LightUBO), &lightUBO, sizeof(lightUBO));
 
 
+	size_t currentOffset = 0;
 
 	ObjectSSBO* objects = static_cast<ObjectSSBO*>(frame.Mapped(GlobalBinding::ObjectSSBO));
-	size_t drawListSize = _drawList.size();
-	for (size_t i = 0; i < drawListSize; ++i)
+	for (size_t i = 0; i < _drawList.size(); ++i)
 	{
 		objects[i].model = _drawList[i]._model;
 	}
 
+	currentOffset += _drawList.size();
 	//TODO: Group this with a DebugDraw struct
 
 	// AABB Bounding boxes
-	size_t debugDrawListSize = _debugAABBDrawList.size();
-	for (size_t i = 0; i < debugDrawListSize; ++i)
+	for (size_t i = 0; i < _debugAABBDrawList.size(); ++i)
 	{
-		objects[i + drawListSize].model = _debugAABBDrawList[i];
+		objects[i + currentOffset].model = _debugAABBDrawList[i];
 	}
 
-	/*for (size_t i = 0; i < _pointLights.size(); i++)
-	{
-		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::translate(model, _pointLights[i].position);
-		objects[i + drawListSize + debugDrawListSize].model = model;
-	}*/
+	currentOffset += _debugAABBDrawList.size();
 
 	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
@@ -322,8 +324,10 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
 
-		objects[i + drawListSize + debugDrawListSize].model = model;
+		objects[i + currentOffset].model = model;
 	}
+
+	currentOffset += _dirLights.size();
 
 	for (size_t i = 0; i < _spotLights.size(); i++)
 	{
@@ -332,9 +336,17 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
 
-		objects[i + drawListSize + debugDrawListSize + _dirLights.size()].model = model;
+		objects[i + currentOffset].model = model;
 	}
 
+	currentOffset += _spotLights.size();
+
+	for (size_t i = 0; i < _pointLights.size(); i++)
+	{
+		glm::mat4 model = glm::mat4(1.0f);
+		model = glm::translate(model, _pointLights[i].position);
+		objects[i + currentOffset].model = model;
+	}
 
 	// Shadow Map
 	// Reverse Z, flip near and far plane
@@ -356,11 +368,53 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		float cosOuter = _spotLights[i].outerCutoff;          // GPU struct stores cos(radians(outerCutoff))
 		float fov = 2.0f * acosf(glm::clamp(cosOuter, -1.f, 1.f)) * 1.1f;  // full cone + slight pad
 		glm::mat4 proj = glm::perspective(fov, 1.0f, _mainCam._farPlane, _mainCam._nearPlane); // reverse-Z (near/far swapped), aspect 1
+
 		glm::vec3 eye = _spotLights[i].position;
 		glm::vec3 dir = glm::normalize(_spotLights[i].direction);
 		glm::vec3 up = (fabs(dir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
 		glm::mat4 view = glm::lookAt(eye, eye + dir, up);
 
+		viewProjMatrices.emplace_back(proj * view);
+	}
+
+	for (size_t i = 0; i < _pointLights.size(); i++)
+	{
+		glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, _mainCam._farPlane, _mainCam._nearPlane);
+
+		// +X
+		glm::vec3 eye = _pointLights[i].position;
+		glm::vec3 dir = glm::vec3(1.0f, 0.0f, 0.0f);
+		glm::vec3 up = glm::vec3(0.0f, -1.0f, 0.0f);
+		glm::mat4 view = glm::lookAt(eye, eye + dir, up);
+		viewProjMatrices.emplace_back(proj * view);
+
+		// -X
+		dir = glm::vec3(-1.0f, 0.0f, 0.0f);
+		view = glm::lookAt(eye, eye + dir, up);
+		viewProjMatrices.emplace_back(proj * view);
+
+		// +Y
+		dir = glm::vec3(0.0f, 1.0f, 0.0f);
+		up = glm::vec3(0.0f, 0.0f, 1.0f);
+		view = glm::lookAt(eye, eye + dir, up);
+		viewProjMatrices.emplace_back(proj * view);
+
+		// -Y
+		dir = glm::vec3(0.0f, -1.0f, 0.0f);
+		up = glm::vec3(0.0f, 0.0f, -1.0f);
+		view = glm::lookAt(eye, eye + dir, up);
+		viewProjMatrices.emplace_back(proj * view);
+
+		// +Z
+		dir = glm::vec3(0.0f, 0.0f, 1.0f);
+		up = glm::vec3(0.0f, -1.0f, 0.0f);
+		view = glm::lookAt(eye, eye + dir, up);
+		viewProjMatrices.emplace_back(proj * view);
+
+		// -Z
+		dir = glm::vec3(0.0f, 0.0f, -1.0f);
+		up = glm::vec3(0.0f, -1.0f, 0.0f);
+		view = glm::lookAt(eye, eye + dir, up);
 		viewProjMatrices.emplace_back(proj * view);
 	}
 
@@ -478,6 +532,9 @@ void VulkanRenderer::CleanupSwapChain()
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
 
+	_shadowCubeMapImageView = nullptr;
+	DestroyImage(_shadowCubeMapImage);
+
 	for (int i = 0; i < _shadowMapImages.size(); i++)
 	{
 		_shadowMapImageViews[i] = nullptr;
@@ -572,6 +629,13 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} });
+
+	// 9: Shadow cube map texture
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowCubeMap),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = 1,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -730,6 +794,9 @@ void VulkanRenderer::CreateDescriptorSets()
 		vk::DescriptorImageInfo shadowMapSamplerInfo = vk::DescriptorImageInfo{
 										.sampler = _shadowMapSampler,};
 
+		vk::DescriptorImageInfo shadowCubeMapInfo = vk::DescriptorImageInfo{
+										.imageView = _shadowCubeMapImageView,
+										.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
@@ -763,7 +830,14 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampler,
 				.pImageInfo = &shadowMapSamplerInfo
 			});
-		
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::ShadowCubeMap),
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = &shadowCubeMapInfo
+			});
 			
 
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
@@ -980,6 +1054,90 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 	return _pipelines.size() - 1;
 }
 
+uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo };
+
+	auto bindingDescription = Vertex::GetBindingDescription();
+	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+		.pVertexAttributeDescriptions = attributeDescriptions.data() };
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eBack,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
+														 .depthWriteEnable = vk::True,
+														 .depthCompareOp = vk::CompareOp::eLess,
+														 .depthBoundsTestEnable = vk::False,
+														 .stencilTestEnable = vk::False };
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	vk::Format depthFormat = FindDepthFormat();
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 1,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.viewMask = 0b00111111,
+		 .colorAttachmentCount = 0,
+		 .pColorAttachmentFormats = nullptr,
+		 .depthAttachmentFormat = depthFormat} };
+
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+	return _pipelines.size() - 1;
+}
+
 void VulkanRenderer::CreateCommandPool()
 {
 	vk::CommandPoolCreateInfo poolInfo{ .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -1090,7 +1248,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		cmd.endRendering();
 
-		// Make the depth readable (sampling / ImGui display). Harmless if you only inspect in RenderDoc.
+		// Make the depth readable (sampling / ImGui display)
 		TransitionImageLayout(_shadowMapImages[j].image,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -1100,9 +1258,102 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			vk::PipelineStageFlagBits2::eFragmentShader,
 			vk::ImageAspectFlagBits::eDepth);
 	}
-
-
 	// Shadow map END
+
+	// Shadow Cube map BEGIN
+	for (size_t j = 0; j < _pointLights.size(); j++)
+	{
+		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+		TransitionImageLayout(_shadowCubeMapImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		// Reverse Z, cleared 0.0f instead
+		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
+
+		// Depth attachment
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowCubeMapImageView,
+													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+													   .loadOp = vk::AttachmentLoadOp::eClear,
+													   .storeOp = vk::AttachmentStoreOp::eStore,
+													   .clearValue = clearDepth };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
+										   .layerCount = 6,
+										   .viewMask = 0b00111111, 
+										   .colorAttachmentCount = 0,
+										   .pColorAttachments = nullptr,
+										   .pDepthAttachment = &depthAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		for (uint32_t i = 0; i < _drawList.size(); i++)
+		{
+			const PipelineEntry& pso = _pipelines[_shadowCubeMapPipelineIndex];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::True);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			PerDrawPC pc{ i, casterCount + j * 6 };
+
+			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		cmd.endRendering();
+
+		TransitionImageLayout(_shadowCubeMapImage.image,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eDepth);
+	}
+	// Shadow Cube map END
 
 	// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 	TransitionImageLayout(_swapChainImages[imageIndex], 
@@ -1161,7 +1412,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	cmd.beginRendering(renderingInfo);
 
-	for (uint32_t i = 0; i < _drawList.size(); i++)
+	size_t offset = 0;
+
+	for (size_t i = 0; i < _drawList.size(); i++)
 	{
 		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
@@ -1191,7 +1444,6 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		// And topology removed from dynamic states
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-
 		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
 
 		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
@@ -1217,8 +1469,10 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 	}
 
+	offset += _drawList.size();
+
 	// Draw debug AABB boxs
-	for (uint32_t i = 0; i < _debugAABBDrawList.size(); i++)
+	for (size_t i = 0; i < _debugAABBDrawList.size(); i++)
 	{
 		const Material& mat = _materialManager.GetMaterial(_debugAABBMaterial);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
@@ -1248,8 +1502,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		// And topology removed from dynamic states
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size(), _debugAABBMaterial.index };
+		PerDrawPC pc{ i + offset, _debugAABBMaterial.index };
 
 		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
 
@@ -1274,8 +1527,10 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 	}
 
-	// lights
-	for (uint32_t i = 0; i < _dirLights.size(); i++)
+	offset += _debugAABBDrawList.size();
+
+	// debug lights
+	for (uint32_t i = 0; i < _dirLights.size() + _spotLights.size() + _pointLights.size(); i++)
 	{
 		const Material& mat = _materialManager.GetMaterial(_debugLightMaterial);
 		const PipelineEntry& pso = _pipelines[mat.pipeline];
@@ -1305,10 +1560,12 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		// And topology removed from dynamic states
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-		//TODO: offset feels pretty bad
-		PerDrawPC pc{ i + _drawList.size() + _debugAABBDrawList.size(), _debugLightMaterial.index };
+		PerDrawPC pc{ i + offset, _debugLightMaterial.index };
 
-		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::Pyramid);
+		// For point lights, use icosphere; pyramid for spot/directional
+		DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;
+
+		const Mesh& mesh = _meshManager.GetDebugMesh(meshType);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -1413,6 +1670,7 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 									 .subresourceRange = {aspectFlags, 0, mipLevels, 0, 1} };
 	return vk::raii::ImageView(_vkCtx.GetDevice(), viewInfo);
 }
+
 
 void VulkanRenderer::TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
 	vk::ImageLayout newLayout, uint32_t mipLevels)
@@ -1813,6 +2071,8 @@ void VulkanRenderer::CreateShadowMapResources()
 	// For viewing the shadow map in imgui window
 	//_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
+	CreateCubeMapImage();
+	CreateCubeMapImageView();
 
 	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();
 	//TODO: double check this comparison creation info
@@ -1827,6 +2087,49 @@ void VulkanRenderer::CreateShadowMapResources()
 										.compareEnable = vk::True,
 										.compareOp = vk::CompareOp::eGreaterOrEqual,  // Reverse Z
 										.maxLod = vk::LodClampNone };
+	//TODO: check out border color
 
 	_shadowMapSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
+}
+
+
+void VulkanRenderer::CreateCubeMapImage()
+{
+	VkImageCreateInfo imageInfo{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+		.imageType = VK_IMAGE_TYPE_2D,
+		.format = static_cast<VkFormat>(vk::Format::eD32Sfloat),
+		.extent = { SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1 },
+		.mipLevels = 1,
+		.arrayLayers = 6,
+		.samples = static_cast<VkSampleCountFlagBits>(vk::SampleCountFlagBits::e1),
+		.tiling = static_cast<VkImageTiling>(vk::ImageTiling::eOptimal),
+		.usage = static_cast<VkImageUsageFlags>(
+			vk::ImageUsageFlagBits::eDepthStencilAttachment 
+			| vk::ImageUsageFlagBits::eSampled),
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED };
+
+	VmaAllocationCreateInfo allocCreateInfo{};
+	allocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
+
+	AllocatedImage result{};
+	if (vmaCreateImage(_vkCtx.GetAllocator(), &imageInfo, &allocCreateInfo,
+		&result.image, &result.allocation, nullptr) != VK_SUCCESS)
+	{
+		throw std::runtime_error("vmaCreateImage failed");
+	}
+
+	_shadowCubeMapImage = result;
+}
+
+void VulkanRenderer::CreateCubeMapImageView()
+{
+	vk::ImageViewCreateInfo viewInfo{ .image = _shadowCubeMapImage.image,
+									 .viewType = vk::ImageViewType::eCube,
+									 .format = vk::Format::eD32Sfloat,
+									 .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 6} };
+
+	_shadowCubeMapImageView = vk::raii::ImageView(_vkCtx.GetDevice(), viewInfo);
 }

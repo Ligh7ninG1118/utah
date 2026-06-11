@@ -90,7 +90,7 @@ enum class GlobalBinding : uint32_t
 	ShadowMapUBO = 6,
 	ShadowMaps = 7,
 	ShadowMapSampler = 8,
-
+	ShadowCubeMap = 9,
 	Count
 };
 
@@ -165,6 +165,9 @@ public:
 	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
 		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
 
+	void CreateCubeMapImage();
+	void CreateCubeMapImageView();
+
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout, uint32_t mipLevels);
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
@@ -234,6 +237,7 @@ private:
 	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, 
 		vk::PipelineLayout layout, PipelineType type = PipelineType::Default);
 	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
+	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -280,8 +284,8 @@ private:
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
 	std::vector<PipelineEntry> _pipelines;
-	uint32_t _shadowPipelineIndex = 0;
-
+	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
+	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -296,6 +300,9 @@ private:
 	std::vector<AllocatedImage> _shadowMapImages;
 	std::vector<vk::raii::ImageView> _shadowMapImageViews;
 	vk::raii::Sampler _shadowMapSampler = nullptr;
+
+	AllocatedImage _shadowCubeMapImage;
+	vk::raii::ImageView _shadowCubeMapImageView = nullptr;
 
 	TextureManager _textureManger;
 	MeshManager _meshManager;

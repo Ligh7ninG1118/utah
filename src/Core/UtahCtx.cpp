@@ -90,18 +90,29 @@ void UtahCtx::InitDemo()
 	MaterialHandle greenMat = matMgr->GetHandle("pure_green");
 	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
 
+	std::array<glm::vec3, 5> definedPos
+	{
+		glm::vec3(0.0f, 0.5f, 0.0f),
+		glm::vec3(2.0f, 0.5f, 0.0f),
+		glm::vec3(4.0f, 0.5f, 0.0f),
+
+		glm::vec3(0.0f, 0.5f, 2.0f),
+		glm::vec3(0.0f, 0.5f, 4.0f),
+
+	};
+
 	// Models
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < 5; i++)
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
 		RenderComponent r;
-		t._pos.x = -4.0f + i * 2.0f;
-		t._pos.y = 0.5f;
-		if (i % 2 == 0) // Viking room
+		t._pos = definedPos[i];
+		if (i < 3) // Viking room
 		{
 			t._rot.x = -90.0f;
+			t._rot.z = 180.0f;
 			r._mesh = vikingRoomMesh;
 			r._material = vikingRoomMat;
 		}
@@ -132,79 +143,95 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
 
+	// Ceiling Plane
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		RenderComponent r;
+		t._pos.y = 5.0f;
+		t._rot = glm::vec3(180.0f, 0.0f, 0.0f);
+		t._scale = glm::vec3(100.0f, 1.0f, 100.0f);
+
+		r._mesh = planeMesh;
+		r._material = whiteMat;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+
 	// Fly camera
 	Entity flyCam = _registry.CreateEntity();
 
 	CameraComponent c;
-	c._pos.x = 4.0f;
+	c._pos.x = -2.0f;
 	c._pos.y = 2.0f;
-	c._pos.z = -2.5f;
-	c._rot.y = 130.0f;
+	c._pos.z = 3.5f;
+	c._rot.y = -70.0f;
 	c._rot.z = -30.f;
 
 	_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 
-	//// Point lights
-	//for (int i = 0; i < 1; i++)
+	// Point lights
+	for (int i = 0; i < 1; i++)
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.y = 2.0f;
+
+		PointLightCPU p;
+		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+
+		p.constant = 1.0f;
+		p.linear = 0.07f;
+		p.quadratic = 0.017f;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<PointLightCPU>(e, std::move(p));
+	}
+
+	//// Directional Light 1
 	//{
 	//	Entity e = _registry.CreateEntity();
 
 	//	TransformComponent t;
-	//	t._pos.x = i * 5.0f;
-	//	t._pos.y = 5.0f;
+	//	t._pos.y = 3.0f;
 
-	//	PointLightCPU p;
+	//	DirectionalLightCPU p;
+	//	p.pitch = -45.0f;
+	//	p.yaw = 90.0f;
+
 	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
 	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
 	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
-	//	p.constant = 1.0f;
-	//	p.linear = 0.07f;
-	//	p.quadratic = 0.017f;
 
 	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//	_registry.AddComponent<PointLightCPU>(e, std::move(p));
+	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
 	//}
 
-	// Directional Light 1
-	{
-		Entity e = _registry.CreateEntity();
+	//// Directional Light 2
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		t._pos.y = 3.0f;
+	//	TransformComponent t;
+	//	t._pos.y = 3.0f;
 
-		DirectionalLightCPU p;
-		p.pitch = -45.0f;
-		p.yaw = 90.0f;
+	//	DirectionalLightCPU p;
+	//	p.pitch = -45.0f;
+	//	p.yaw = -90.0f;
 
-		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
-		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
-
-
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	}
-
-	// Directional Light 2
-	{
-		Entity e = _registry.CreateEntity();
-
-		TransformComponent t;
-		t._pos.y = 3.0f;
-
-		DirectionalLightCPU p;
-		p.pitch = -45.0f;
-		p.yaw = -90.0f;
-
-		p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-		p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
-		p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
+	//	p.ambient = glm::vec3(0.1f, 0.1f, 0.1f);
+	//	p.diffuse = glm::vec3(0.5f, 0.5f, 0.5f);
+	//	p.specular = glm::vec3(1.0f, 1.0f, 1.0f);
 
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	//}
 
 	//// SpotLight (flashlight)
 	//{

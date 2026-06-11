@@ -35,7 +35,7 @@ public:
 
 	void CreateAABBMesh();
 	void CreatePyramidMesh(float baseSize = 1.0f, float height = 1.0f);
-	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 1.0f);
+	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 0.2f);
 	void CreatePlane();
 
 	MeshHandle ImportMesh(const std::string& meshPath, const std::string& name);

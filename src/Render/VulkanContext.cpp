@@ -228,6 +228,7 @@ void VulkanContext::CreateLogicalDevice()
 		vk::PhysicalDeviceFeatures2,
 		vk::PhysicalDeviceVulkan13Features,
 		vk::PhysicalDeviceVulkan12Features,
+		vk::PhysicalDeviceVulkan11Features,
 		vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
 		featureChain = {
 			{.features = 
@@ -249,6 +250,9 @@ void VulkanContext::CreateLogicalDevice()
 			  .runtimeDescriptorArray = true,
 			  .timelineSemaphore = true,
 			  .bufferDeviceAddress = false
+			},
+			{
+				.multiview = true,
 			},
 			{ // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
 				.extendedDynamicState = true

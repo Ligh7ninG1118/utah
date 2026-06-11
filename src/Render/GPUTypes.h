@@ -49,6 +49,8 @@ struct alignas(16) CameraUBO
 struct alignas(16) LightUBO
 {
 	glm::vec3 eyePos;
+	float nearPlane;	// for linearizing depth
+	float farPlane;
 	unsigned int pointLightNum;
 	unsigned int dirLightNum;
 	unsigned int spotLightNum;

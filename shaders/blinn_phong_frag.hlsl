@@ -46,6 +46,8 @@ static const uint MAX_SPOT_LIGHTS = 32;
 struct LightUBO
 {
     float3 eyePos;
+    float nearPlane;
+    float farPlane;
     uint pointLightNum;
     uint dirLightNum;
     uint spotLightNum;
@@ -81,7 +83,9 @@ struct ShadowMapUBO
 [[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
 
 [[vk::binding(7, 0)]] Texture2D shadowMap[];
-[[vk::binding(8, 0)]] SamplerComparisonState shadowMapSampler;
+[[vk::binding(8, 0)]] SamplerComparisonState shadowMapCmpSampler;
+[[vk::binding(8, 0)]] SamplerState shadowMapSampler;
+[[vk::binding(9, 0)]] TextureCube shadowCubeMap;
 
 struct PSInput
 {
@@ -175,7 +179,7 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
         for (float y = -1.5f; y <= 1.5f; y++)
         {
             float2 tempUV = uv + float2(x, y) * texelSize;
-            float shadow = shadowMap[shadowIndex].SampleCmpLevelZero(shadowMapSampler, tempUV, refDepth);
+            float shadow = shadowMap[shadowIndex].SampleCmpLevelZero(shadowMapCmpSampler, tempUV, refDepth);
             sum += (1.0f - shadow);
         }
 
@@ -185,6 +189,16 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
     //float closestDepth = shadowMap.Sample(shadowMapSampler, uv).r;
     //float shadow = currentDepth < (closestDepth - bias) ? 1.0f : 0.0f; //reverse z
     //return shadow;
+}
+
+float ShadowCubeMapCalculation(float3 L)
+{
+    float dist = length(L);
+    float sampledDist = shadowCubeMap.Sample(shadowMapSampler, L).r;
+    
+    float shadow = (dist <= sampledDist) ? 1.0f : 0.0f;
+    
+    return shadow;
 }
 
 float4 main(PSInput input) : SV_Target
@@ -205,23 +219,26 @@ float4 main(PSInput input) : SV_Target
     float3 viewDir = normalize(lightUBO.eyePos - input.worldPos);
     float3 result = float3(0.0, 0.0, 0.0);
     
-    
-    for (uint i = 0; i < lightUBO.pointLightNum; i++)
-        result += CalculatePointLight(lightUBO.pointLights[i], normal, input.worldPos, viewDir, albedo, specStrength, shininess, 0.0);
-
-    for (uint j = 0; j < lightUBO.dirLightNum; j++)
+    for (uint i = 0; i < lightUBO.dirLightNum; i++)
     {
-        float shadow = ShadowCalculation(j, input.worldPos, normal, normalize(-lightUBO.dirLights[j].direction));
+        float shadow = ShadowCalculation(i, input.worldPos, normal, normalize(-lightUBO.dirLights[i].direction));
         
-        result += CalculateDirectionalLight(lightUBO.dirLights[j], normal, viewDir, albedo, specStrength, shininess, shadow);
+        result += CalculateDirectionalLight(lightUBO.dirLights[i], normal, viewDir, albedo, specStrength, shininess, shadow);
     }
 
-    for (uint k = 0; k < lightUBO.spotLightNum; k++)
+    for (uint j = 0; j < lightUBO.spotLightNum; j++)
     {
-        uint shadowIndex = lightUBO.dirLightNum + k;
-        float3 L = normalize(lightUBO.spotLights[k].position - input.worldPos);
+        uint shadowIndex = lightUBO.dirLightNum + j;
+        float3 L = normalize(lightUBO.spotLights[j].position - input.worldPos);
         float shadow = ShadowCalculation(shadowIndex, input.worldPos, normal, L);
-        result += CalculateSpotLight(lightUBO.spotLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
+        result += CalculateSpotLight(lightUBO.spotLights[j], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
+    }
+    
+    for (uint k = 0; k < lightUBO.pointLightNum; k++)
+    {
+        float3 L = normalize(input.worldPos - lightUBO.pointLights[k].position);
+        float shadow = ShadowCubeMapCalculation(L);
+        result += CalculatePointLight(lightUBO.pointLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
     }
     
     return float4(result, texSample.a);
