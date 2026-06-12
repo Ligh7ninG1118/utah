@@ -34,8 +34,11 @@ VulkanRenderer::~VulkanRenderer()
 		DestroyImage(_shadowMapImages[i]);
 	}
 
-	_shadowCubeMapImageView = nullptr;
-	DestroyImage(_shadowCubeMapImage);
+	for (int i = 0; i < _shadowCubeMapImages.size(); i++)
+	{
+		_shadowCubeMapImageViews[i] = nullptr;
+		DestroyImage(_shadowCubeMapImages[i]);
+	}
 
 	_colorImageView = nullptr;
 	_depthImageView = nullptr;
@@ -532,14 +535,21 @@ void VulkanRenderer::CleanupSwapChain()
 	DestroyImage(_colorImage);
 	DestroyImage(_depthImage);
 
-	_shadowCubeMapImageView = nullptr;
-	DestroyImage(_shadowCubeMapImage);
-
 	for (int i = 0; i < _shadowMapImages.size(); i++)
 	{
 		_shadowMapImageViews[i] = nullptr;
 		DestroyImage(_shadowMapImages[i]);
 	}
+	_shadowMapImageViews.clear();
+	_shadowMapImages.clear();
+
+	for (int i = 0; i < _shadowCubeMapImages.size(); i++)
+	{
+		_shadowCubeMapImageViews[i] = nullptr;
+		DestroyImage(_shadowCubeMapImages[i]);
+	}
+	_shadowCubeMapImageViews.clear();
+	_shadowCubeMapImages.clear();
 
 	_swapChainImageViews.clear();
 	_swapChain = nullptr;
@@ -633,9 +643,9 @@ void VulkanRenderer::InitBindingDescs()
 	// 9: Shadow cube map texture
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowCubeMap),
 										.type = vk::DescriptorType::eSampledImage,
-										.count = 1,
+										.count = MAX_SHADOW_CASTER_POINT_LIGHTS,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
-										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
+										.bindingFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -794,9 +804,16 @@ void VulkanRenderer::CreateDescriptorSets()
 		vk::DescriptorImageInfo shadowMapSamplerInfo = vk::DescriptorImageInfo{
 										.sampler = _shadowMapSampler,};
 
-		vk::DescriptorImageInfo shadowCubeMapInfo = vk::DescriptorImageInfo{
-										.imageView = _shadowCubeMapImageView,
-										.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		size_t shadowCubeMapCount = _shadowCubeMapImages.size();
+		std::vector<vk::DescriptorImageInfo> shadowCubeMapInfos;
+		shadowCubeMapInfos.reserve(shadowCubeMapCount);
+		for (size_t i = 0; i < shadowCubeMapCount; i++)
+		{
+			// skip sampler field, defined in separate image info
+			shadowCubeMapInfos.push_back(vk::DescriptorImageInfo{
+											.imageView = _shadowCubeMapImageViews[i],
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+		}
 
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
@@ -834,9 +851,9 @@ void VulkanRenderer::CreateDescriptorSets()
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::ShadowCubeMap),
 				.dstArrayElement = 0,
-				.descriptorCount = 1,
+				.descriptorCount = static_cast<uint32_t>(shadowCubeMapCount),
 				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = &shadowCubeMapInfo
+				.pImageInfo = shadowCubeMapInfos.data()
 			});
 			
 
@@ -1264,7 +1281,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	for (size_t j = 0; j < _pointLights.size(); j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowCubeMapImage.image,
+		TransitionImageLayout(_shadowCubeMapImages[j].image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			{},
@@ -1277,7 +1294,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 
 		// Depth attachment
-		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowCubeMapImageView,
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowCubeMapImageViews[j],
 													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 													   .loadOp = vk::AttachmentLoadOp::eClear,
 													   .storeOp = vk::AttachmentStoreOp::eStore,
@@ -1344,7 +1361,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		cmd.endRendering();
 
-		TransitionImageLayout(_shadowCubeMapImage.image,
+		TransitionImageLayout(_shadowCubeMapImages[j].image,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -1634,15 +1651,18 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 	vk::Format format, 
 	vk::ImageTiling tiling, 
 	vk::ImageUsageFlags usage,
-	VmaMemoryUsage memUsage)
+	VmaMemoryUsage memUsage,
+	VkImageCreateFlags creationFlags, 
+	uint32_t arrayLayers)
 {
 	VkImageCreateInfo imageInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.flags = creationFlags,
 		.imageType = VK_IMAGE_TYPE_2D,
 		.format = static_cast<VkFormat>(format),
 		.extent = { width, height, 1 },
 		.mipLevels = mipLevels,
-		.arrayLayers = 1,
+		.arrayLayers = arrayLayers,
 		.samples = static_cast<VkSampleCountFlagBits>(numSamples),
 		.tiling = static_cast<VkImageTiling>(tiling),
 		.usage = static_cast<VkImageUsageFlags>(usage),
@@ -1662,12 +1682,12 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 }
 
 [[nodiscard]] vk::raii::ImageView VulkanRenderer::CreateImageView(vk::Image image, vk::Format format,
-	vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const
+	vk::ImageAspectFlags aspectFlags, uint32_t mipLevels, vk::ImageViewType viewType, uint32_t subresourceLayerCount) const
 {
 	vk::ImageViewCreateInfo viewInfo{ .image = image,
-									 .viewType = vk::ImageViewType::e2D,
+									 .viewType = viewType,
 									 .format = format,
-									 .subresourceRange = {aspectFlags, 0, mipLevels, 0, 1} };
+									 .subresourceRange = {aspectFlags, 0, mipLevels, 0, subresourceLayerCount} };
 	return vk::raii::ImageView(_vkCtx.GetDevice(), viewInfo);
 }
 
@@ -2060,7 +2080,7 @@ void VulkanRenderer::CreateShadowMapResources()
 	//TODO: Calculate shadow caster count
 	for (size_t i = 0; i < 3; i++)
 	{
-		//TODO: shadow map resolution (vary based on setting & light type). For now using screen resolution for view test
+		//TODO: shadow map resolution (vary based on setting & light type)
 		_shadowMapImages.emplace_back(CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled));
@@ -2071,8 +2091,21 @@ void VulkanRenderer::CreateShadowMapResources()
 	// For viewing the shadow map in imgui window
 	//_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	CreateCubeMapImage();
-	CreateCubeMapImageView();
+	for (size_t i = 0; i < 2; i++)
+	{
+		_shadowCubeMapImages.emplace_back(
+			CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1,
+				vk::Format::eD32Sfloat,
+				vk::ImageTiling::eOptimal,
+				vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+				VMA_MEMORY_USAGE_AUTO,
+				VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+				6));
+
+		_shadowCubeMapImageViews.emplace_back(
+			CreateImageView(_shadowCubeMapImages[i].image, vk::Format::eD32Sfloat,
+				vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::eCube, 6));
+	}
 
 	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();
 	//TODO: double check this comparison creation info
@@ -2090,46 +2123,4 @@ void VulkanRenderer::CreateShadowMapResources()
 	//TODO: check out border color
 
 	_shadowMapSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
-}
-
-
-void VulkanRenderer::CreateCubeMapImage()
-{
-	VkImageCreateInfo imageInfo{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
-		.imageType = VK_IMAGE_TYPE_2D,
-		.format = static_cast<VkFormat>(vk::Format::eD32Sfloat),
-		.extent = { SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1 },
-		.mipLevels = 1,
-		.arrayLayers = 6,
-		.samples = static_cast<VkSampleCountFlagBits>(vk::SampleCountFlagBits::e1),
-		.tiling = static_cast<VkImageTiling>(vk::ImageTiling::eOptimal),
-		.usage = static_cast<VkImageUsageFlags>(
-			vk::ImageUsageFlagBits::eDepthStencilAttachment 
-			| vk::ImageUsageFlagBits::eSampled),
-		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED };
-
-	VmaAllocationCreateInfo allocCreateInfo{};
-	allocCreateInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-	AllocatedImage result{};
-	if (vmaCreateImage(_vkCtx.GetAllocator(), &imageInfo, &allocCreateInfo,
-		&result.image, &result.allocation, nullptr) != VK_SUCCESS)
-	{
-		throw std::runtime_error("vmaCreateImage failed");
-	}
-
-	_shadowCubeMapImage = result;
-}
-
-void VulkanRenderer::CreateCubeMapImageView()
-{
-	vk::ImageViewCreateInfo viewInfo{ .image = _shadowCubeMapImage.image,
-									 .viewType = vk::ImageViewType::eCube,
-									 .format = vk::Format::eD32Sfloat,
-									 .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 6} };
-
-	_shadowCubeMapImageView = vk::raii::ImageView(_vkCtx.GetDevice(), viewInfo);
 }

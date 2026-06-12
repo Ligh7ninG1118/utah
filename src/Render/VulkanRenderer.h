@@ -161,12 +161,11 @@ public:
 	//TODO: Sort these into a separate ResourceFactory class
 
 	[[nodiscard]] AllocatedImage CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
-		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO);
+		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO, 
+		VkImageCreateFlags creationFlags = 0, uint32_t arrayLayers = 1);
 	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
-		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) const;
-
-	void CreateCubeMapImage();
-	void CreateCubeMapImageView();
+		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels, vk::ImageViewType viewType = vk::ImageViewType::e2D, 
+		uint32_t subresourceLayerCount = 1) const;
 
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout, uint32_t mipLevels);
@@ -301,8 +300,8 @@ private:
 	std::vector<vk::raii::ImageView> _shadowMapImageViews;
 	vk::raii::Sampler _shadowMapSampler = nullptr;
 
-	AllocatedImage _shadowCubeMapImage;
-	vk::raii::ImageView _shadowCubeMapImageView = nullptr;
+	std::vector<AllocatedImage> _shadowCubeMapImages;
+	std::vector<vk::raii::ImageView> _shadowCubeMapImageViews;
 
 	TextureManager _textureManger;
 	MeshManager _meshManager;

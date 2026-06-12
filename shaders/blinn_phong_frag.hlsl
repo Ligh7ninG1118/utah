@@ -82,10 +82,9 @@ struct ShadowMapUBO
 
 [[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
 
-[[vk::binding(7, 0)]] Texture2D shadowMap[];
+[[vk::binding(7, 0)]] Texture2D shadowMaps[];
 [[vk::binding(8, 0)]] SamplerComparisonState shadowMapCmpSampler;
-[[vk::binding(8, 0)]] SamplerState shadowMapSampler;
-[[vk::binding(9, 0)]] TextureCube shadowCubeMap;
+[[vk::binding(9, 0)]] TextureCube shadowCubeMaps[];
 
 struct PSInput
 {
@@ -168,7 +167,7 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
     float bias = max(maxBias * (1.0f - NdotL), minBias);
     
     uint width, height;
-    shadowMap[shadowIndex].GetDimensions(width, height);
+    shadowMaps[shadowIndex].GetDimensions(width, height);
     float2 texelSize = 1.0f / float2(width, height);
     
     // PCF
@@ -179,7 +178,7 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
         for (float y = -1.5f; y <= 1.5f; y++)
         {
             float2 tempUV = uv + float2(x, y) * texelSize;
-            float shadow = shadowMap[shadowIndex].SampleCmpLevelZero(shadowMapCmpSampler, tempUV, refDepth);
+            float shadow = shadowMaps[shadowIndex].SampleCmpLevelZero(shadowMapCmpSampler, tempUV, refDepth);
             sum += (1.0f - shadow);
         }
 
@@ -191,14 +190,36 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
     //return shadow;
 }
 
-float ShadowCubeMapCalculation(float3 L)
+float ShadowCubeMapCalculation(uint shadowIndex, float3 N, float3 L, float nearPlane, float farPlane)
 {
-    float dist = length(L);
-    float sampledDist = shadowCubeMap.Sample(shadowMapSampler, L).r;
+    float zE = max(max(abs(L.x), abs(L.y)), abs(L.z));
+ 
+    // reconstruct linearize depth (can't use perspective result directly)
+    float currentDepth = nearPlane / (nearPlane - farPlane) - (farPlane * nearPlane) / ((nearPlane - farPlane) * zE);
     
-    float shadow = (dist <= sampledDist) ? 1.0f : 0.0f;
+    float NdotL = max(dot(N, L), 0.0f);
+    float minBias = 0.000005f;
+    float maxBias = 0.0001f;
+    float bias = max(maxBias * (1.0f - NdotL), minBias);
+
+    float refDepth = currentDepth + bias;
     
-    return shadow;
+    // PCF 
+    static const float3 offsets[8] =
+    {
+        float3(1, 1, 1), float3(1, -1, 1), float3(-1, 1, 1), float3(-1, -1, 1),
+        float3(1, 1, -1), float3(1, -1, -1), float3(-1, 1, -1), float3(-1, -1, -1)
+    };
+    
+    float radius = length(L) * 0.001f;
+    float sum = 0.0f;
+    
+    for (uint i = 0; i < 8; i++)
+    {
+        sum += (1.0 - shadowCubeMaps[shadowIndex].SampleCmpLevelZero(shadowMapCmpSampler, L + offsets[i] * radius, refDepth));
+    }
+    
+    return sum / 8.0f;
 }
 
 float4 main(PSInput input) : SV_Target
@@ -219,16 +240,20 @@ float4 main(PSInput input) : SV_Target
     float3 viewDir = normalize(lightUBO.eyePos - input.worldPos);
     float3 result = float3(0.0, 0.0, 0.0);
     
+    uint offset = 0;
+    
     for (uint i = 0; i < lightUBO.dirLightNum; i++)
     {
         float shadow = ShadowCalculation(i, input.worldPos, normal, normalize(-lightUBO.dirLights[i].direction));
         
         result += CalculateDirectionalLight(lightUBO.dirLights[i], normal, viewDir, albedo, specStrength, shininess, shadow);
     }
+    
+    offset += lightUBO.dirLightNum;
 
     for (uint j = 0; j < lightUBO.spotLightNum; j++)
     {
-        uint shadowIndex = lightUBO.dirLightNum + j;
+        uint shadowIndex = offset + j;
         float3 L = normalize(lightUBO.spotLights[j].position - input.worldPos);
         float shadow = ShadowCalculation(shadowIndex, input.worldPos, normal, L);
         result += CalculateSpotLight(lightUBO.spotLights[j], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
@@ -236,8 +261,9 @@ float4 main(PSInput input) : SV_Target
     
     for (uint k = 0; k < lightUBO.pointLightNum; k++)
     {
-        float3 L = normalize(input.worldPos - lightUBO.pointLights[k].position);
-        float shadow = ShadowCubeMapCalculation(L);
+        uint shadowIndex = k; //separate binding, no need for offset
+        float3 L = input.worldPos - lightUBO.pointLights[k].position;
+        float shadow = ShadowCubeMapCalculation(shadowIndex, normal, L, lightUBO.nearPlane, lightUBO.farPlane);
         result += CalculatePointLight(lightUBO.pointLights[k], normal, input.worldPos, viewDir, albedo, specStrength, shininess, shadow);
     }
     

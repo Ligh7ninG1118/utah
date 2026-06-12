@@ -3,7 +3,7 @@
 
 
 // Lighting Data for Shaders
-
+//TODO: add a shadow map index for all these light types. more robust than current (pure order based)
 struct alignas(16) PointLightGPU
 {
 	glm::vec3 position;

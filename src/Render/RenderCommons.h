@@ -19,7 +19,9 @@ constexpr uint32_t MAX_POINT_LIGHTS = 32;
 constexpr uint32_t MAX_DIR_LIGHTS = 4;
 constexpr uint32_t MAX_SPOT_LIGHTS = 32;
 
-constexpr uint32_t MAX_SHADOW_CASTER_LIGHTS = 64;
+constexpr uint32_t MAX_SHADOW_CASTER_LIGHTS = 64; // dir + spot
+
+constexpr uint32_t MAX_SHADOW_CASTER_POINT_LIGHTS = 8;
 
 constexpr uint32_t INVALID_HANDLE = 0xFFFFFFFF;
 
