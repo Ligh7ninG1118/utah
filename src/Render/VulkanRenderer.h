@@ -91,6 +91,8 @@ enum class GlobalBinding : uint32_t
 	ShadowMaps = 7,
 	ShadowMapSampler = 8,
 	ShadowCubeMap = 9,
+	HDROutput = 10,
+	HDRSampler = 11,
 	Count
 };
 
@@ -237,6 +239,7 @@ private:
 		vk::PipelineLayout layout, PipelineType type = PipelineType::Default);
 	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
+	uint32_t CreateHDRGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -263,6 +266,8 @@ private:
 	// Multiple Sampling
 	vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
 	void CreateColorResources();
+	// Separate from the above function since no need to recreate
+	void CreateHDRColorSampler();
 
 	// Shadow Map
 	void CreateShadowMapResources();
@@ -285,11 +290,17 @@ private:
 	std::vector<PipelineEntry> _pipelines;
 	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
 	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
+	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
 	AllocatedImage		   _colorImage{};
 	vk::raii::ImageView    _colorImageView = nullptr;
+
+	AllocatedImage _hdrColorImage{};
+	vk::raii::ImageView _hdrColorImageView = nullptr;
+	vk::raii::Sampler _hdrSampler = nullptr;
+
 
 	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;

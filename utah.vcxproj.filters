@@ -191,5 +191,7 @@
     <FxCompile Include="shaders\shadow_vert.hlsl" />
     <FxCompile Include="shaders\unlit_frag.hlsl" />
     <FxCompile Include="shaders\unlit_vert.hlsl" />
+    <FxCompile Include="shaders\tonemap_pbr_neutral_frag.hlsl" />
+    <FxCompile Include="shaders\tonemap_vert.hlsl" />
   </ItemGroup>
 </Project>
