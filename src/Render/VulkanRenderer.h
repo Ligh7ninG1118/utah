@@ -90,9 +90,10 @@ enum class GlobalBinding : uint32_t
 	ShadowMapUBO = 6,
 	ShadowMaps = 7,
 	ShadowMapSampler = 8,
-	ShadowCubeMap = 9,
+	ShadowCubeMaps = 9,
 	HDROutput = 10,
 	HDRSampler = 11,
+	SkyboxCubemap = 12,
 	Count
 };
 
@@ -170,14 +171,14 @@ public:
 		uint32_t subresourceLayerCount = 1) const;
 
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
-		vk::ImageLayout newLayout, uint32_t mipLevels);
+		vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount = 1);
 	void TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
 		vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask,
 		vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask,
 		vk::ImageAspectFlags aspectMask);
 
-	void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height);
-	void GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+	void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, uint32_t layerCount = 1);
+	void GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels, uint32_t layerCount = 1);
 
 	// Buffer Creation and Data Transfer
 	[[nodiscard]] AllocatedBuffer CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
@@ -291,6 +292,7 @@ private:
 	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
 	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
 	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;
+	uint32_t _skyboxPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 

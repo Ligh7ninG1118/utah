@@ -72,6 +72,7 @@ void VulkanRenderer::Initialize()
 	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
 	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
+	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -648,7 +649,7 @@ void VulkanRenderer::InitBindingDescs()
 										.bindingFlags = {} });
 
 	// 9: Shadow cube map texture
-	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowCubeMap),
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowCubeMaps),
 										.type = vk::DescriptorType::eSampledImage,
 										.count = MAX_SHADOW_CASTER_POINT_LIGHTS,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
@@ -665,6 +666,12 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} });
+	// 12: skybox cubemap
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SkyboxCubemap),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = 1,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -840,6 +847,10 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		vk::DescriptorImageInfo hdrSamplerInfo = vk::DescriptorImageInfo{
 											.sampler = _hdrSampler, };
+
+		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
+											.imageView = _textureManger.GetTextureImageView(_textureManger.skyboxTextureIndex),
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 			
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
@@ -875,7 +886,7 @@ void VulkanRenderer::CreateDescriptorSets()
 			});
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::ShadowCubeMap),
+				.dstBinding = ToIdx(GlobalBinding::ShadowCubeMaps),
 				.dstArrayElement = 0,
 				.descriptorCount = static_cast<uint32_t>(shadowCubeMapCount),
 				.descriptorType = vk::DescriptorType::eSampledImage,
@@ -898,6 +909,15 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eSampler,
 				.pImageInfo = &hdrSamplerInfo
+			});
+
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::SkyboxCubemap),
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = &skyboxCubemapInfo
 			});
 
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
@@ -1547,6 +1567,62 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	cmd.beginRendering(renderingInfo);
 
+	// Draw skybox
+	{
+		const PipelineEntry& pso = _pipelines[_skyboxPipelineIndex];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(_swapChainExtent.width),
+				static_cast<float>(_swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				_swapChainExtent));
+
+		cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		PerDrawPC pc{ 0, 0 };
+
+		const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+
+		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+
+
 	size_t offset = 0;
 
 	for (size_t i = 0; i < _drawList.size(); i++)
@@ -1876,7 +1952,7 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 
 
 void VulkanRenderer::TransitionImageLayout(vk::Image image, vk::ImageLayout oldLayout,
-	vk::ImageLayout newLayout, uint32_t mipLevels)
+	vk::ImageLayout newLayout, uint32_t mipLevels, uint32_t layerCount)
 {
 	const auto commandBuffer = BeginSingleTimeCommands();
 
@@ -1912,7 +1988,7 @@ void VulkanRenderer::TransitionImageLayout(vk::Image image, vk::ImageLayout oldL
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.image = image,
-		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, 1} };
+		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, layerCount} };
 
 	vk::DependencyInfo dependencyInfo{
 		.imageMemoryBarrierCount = 1,
@@ -1945,14 +2021,14 @@ void VulkanRenderer::TransitionImageLayout(vk::Image image, vk::ImageLayout oldL
 }
 
 void VulkanRenderer::CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width,
-	uint32_t height)
+	uint32_t height, uint32_t layerCount)
 {
 	std::unique_ptr<vk::raii::CommandBuffer> commandBuffer = BeginSingleTimeCommands();
 
 	vk::BufferImageCopy region{ .bufferOffset = 0,
 							   .bufferRowLength = 0,
 							   .bufferImageHeight = 0,
-							   .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+							   .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, layerCount},
 							   .imageOffset = {0, 0, 0},
 							   .imageExtent = {width, height, 1} };
 
@@ -1962,7 +2038,7 @@ void VulkanRenderer::CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint3
 }
 
 void VulkanRenderer::GenerateMipmaps(vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight,
-	uint32_t mipLevels)
+	uint32_t mipLevels, uint32_t layerCount)
 {
 	// Check if image format supports linear blit-ing
 	vk::FormatProperties formatProperties = _vkCtx.GetPhysicalDevice().getFormatProperties(imageFormat);
@@ -1980,7 +2056,7 @@ void VulkanRenderer::GenerateMipmaps(vk::Image image, vk::Format imageFormat, in
 		.image = image };
 	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
 	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.layerCount = layerCount;
 	barrier.subresourceRange.levelCount = 1;
 
 	int32_t mipWidth = texWidth;

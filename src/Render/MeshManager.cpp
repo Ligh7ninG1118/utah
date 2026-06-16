@@ -28,10 +28,30 @@ void MeshManager::Initialize(VulkanRenderer* renderer)
 {
 	_pRenderer = renderer;
 
+	CreateUnitCubeMesh();
 	CreateAABBMesh();
 	CreateIcosphereMesh(1);
 	CreatePyramidMesh();
 	CreatePlane();
+}
+
+void MeshManager::CreateUnitCubeMesh()
+{
+	std::vector<glm::vec3> pos = {
+	{-1,-1,-1},{ 1,-1,-1},{ 1, 1,-1},{-1, 1,-1},
+	{-1,-1, 1},{ 1,-1, 1},{ 1, 1, 1},{-1, 1, 1} };
+	std::vector<uint32_t> idx = {
+		0,1,2, 2,3,0,  4,5,6, 6,7,4,  0,4,7, 7,3,0,
+		1,5,6, 6,2,1,  3,2,6, 6,7,3,  0,1,5, 5,4,0 };
+
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(pos.data(),
+		sizeof(glm::vec3) * pos.size(), vk::BufferUsageFlagBits::eVertexBuffer);
+
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(idx.data(),
+		sizeof(uint32_t) * idx.size(), vk::BufferUsageFlagBits::eIndexBuffer);
+
+	_meshes.emplace_back(vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(idx.size()));
+	RegisterName("unit_cube");
 }
 
 void MeshManager::CreateAABBMesh()

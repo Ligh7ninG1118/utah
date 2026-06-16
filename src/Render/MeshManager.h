@@ -33,6 +33,7 @@ public:
 
 	void Initialize(VulkanRenderer* rendererRef);
 
+	void CreateUnitCubeMesh();
 	void CreateAABBMesh();
 	void CreatePyramidMesh(float baseSize = 1.0f, float height = 1.0f);
 	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 0.2f);

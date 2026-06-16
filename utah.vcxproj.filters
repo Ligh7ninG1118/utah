@@ -193,5 +193,7 @@
     <FxCompile Include="shaders\unlit_vert.hlsl" />
     <FxCompile Include="shaders\tonemap_pbr_neutral_frag.hlsl" />
     <FxCompile Include="shaders\tonemap_vert.hlsl" />
+    <FxCompile Include="shaders\skybox_vert.hlsl" />
+    <FxCompile Include="shaders\skybox_frag.hlsl" />
   </ItemGroup>
 </Project>

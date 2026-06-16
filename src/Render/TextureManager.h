@@ -34,6 +34,11 @@ public:
 	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateWhiteTexture();
 
+	// Temp function to handle everything for importing skybox texture
+	void ImportSkyboxCubemapTexture();
+	uint32_t skyboxTextureIndex;
+
+
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	[[nodiscard]] vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[index]; }
 

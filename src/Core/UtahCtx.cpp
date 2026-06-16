@@ -134,7 +134,7 @@ void UtahCtx::InitDemo()
 		TransformComponent t;
 		RenderComponent r;
 
-		t._scale = glm::vec3(100.0f, 1.0f, 100.0f);
+		t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
 
 		r._mesh = planeMesh;
 		r._material = whiteMat;
@@ -143,22 +143,22 @@ void UtahCtx::InitDemo()
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
 
-	// Ceiling Plane
-	{
-		Entity e = _registry.CreateEntity();
+	//// Ceiling Plane
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		RenderComponent r;
-		t._pos.y = 5.0f;
-		t._rot = glm::vec3(180.0f, 0.0f, 0.0f);
-		t._scale = glm::vec3(100.0f, 1.0f, 100.0f);
+	//	TransformComponent t;
+	//	RenderComponent r;
+	//	t._pos.y = 5.0f;
+	//	t._rot = glm::vec3(180.0f, 0.0f, 0.0f);
+	//	t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
 
-		r._mesh = planeMesh;
-		r._material = whiteMat;
+	//	r._mesh = planeMesh;
+	//	r._material = whiteMat;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
+	//}
 
 	// Fly camera
 	Entity flyCam = _registry.CreateEntity();
