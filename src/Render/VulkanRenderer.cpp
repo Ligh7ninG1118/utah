@@ -849,7 +849,7 @@ void VulkanRenderer::CreateDescriptorSets()
 											.sampler = _hdrSampler, };
 
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
-											.imageView = _textureManger.GetTextureImageView(_textureManger.skyboxTextureIndex),
+											.imageView = _textureManger.GetTextureImageView(_textureManger.GetSkyboxHandle().index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 			
 		writes.push_back(vk::WriteDescriptorSet{

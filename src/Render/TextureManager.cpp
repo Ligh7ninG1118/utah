@@ -27,7 +27,13 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 
 	CreateTextureSampler();
 	CreateWhiteTexture();
-	ImportSkyboxCubemapTexture();
+
+	_skyboxTexHandle = ImportCubemapTexture({ "textures/skybox test x pos.png",
+											"textures/skybox test x neg.png",
+											"textures/skybox test y pos.png",
+											"textures/skybox test y neg.png",
+											"textures/skybox test z pos.png",
+											"textures/skybox test z neg.png", }, "skybox_test");
 }
 
 TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace)
@@ -57,8 +63,22 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
 
 	stbi_image_free(pixels);
 
-	vk::Format format = (colorSpace == TextureColorSpace::sRGB)
-		? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+	vk::Format format = vk::Format::eUndefined;
+
+	switch (colorSpace)
+	{
+	case TextureColorSpace::sRGB:
+		format = vk::Format::eR8G8B8A8Srgb;
+		break;
+	case TextureColorSpace::HDR:
+		format = vk::Format::eR16G16B16A16Sfloat;
+		break;
+	case TextureColorSpace::Linear:
+		format = vk::Format::eR8G8B8A8Unorm;
+		break;
+	default:
+		break;
+	}
 
 	// Create Image
 	AllocatedImage textureImage = _pRenderer->CreateImage(texWidth, texHeight, mipLevels,
@@ -87,6 +107,108 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
     return RegisterName(name);
 }
 
+// Cubemap order: pos x, neg x, pos y, neg y, pos z, neg z
+TextureHandle TextureManager::ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace)
+{
+	if (texPaths.size() != 6)
+	{
+		throw std::runtime_error("Cubemap texture size is not 6");
+	}
+
+	std::array<stbi_uc*, 6> pixelBytes;
+	int texWidth = 0, texHeight = 0, texChannels;
+
+	for (size_t i = 0; i < texPaths.size(); i++)
+	{
+		int w, h;
+		pixelBytes[i] = stbi_load(texPaths[i].c_str(), &w, &h, &texChannels, STBI_rgb_alpha);
+		if (!pixelBytes[i])
+			throw std::runtime_error("Failed to load texture image!");
+
+		if (i == 0)
+		{
+			texWidth = w;
+			texHeight = h;
+		}
+		else if (w != texWidth || h != texHeight)
+		{
+			throw std::runtime_error("Cubemap faces are not uniform in dimension");
+		}
+	}
+
+	if (texWidth != texHeight)
+		throw std::runtime_error("Cubemap faces not square");
+
+	vk::DeviceSize imageSize = texWidth * texHeight * 4;
+
+	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(
+		imageSize * 6,
+		vk::BufferUsageFlagBits::eTransferSrc,
+		VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+
+	auto* dst = static_cast<std::byte*>(stagingBuffer.info.pMappedData);
+	for (size_t i = 0; i < 6; i++)
+	{
+		memcpy(dst + i * imageSize, pixelBytes[i], imageSize);
+		stbi_image_free(pixelBytes[i]);
+	}
+
+
+	vk::Format format = vk::Format::eUndefined;
+
+	switch (colorSpace)
+	{
+	case TextureColorSpace::sRGB:
+		format = vk::Format::eR8G8B8A8Srgb;
+		break;
+	case TextureColorSpace::HDR:
+		format = vk::Format::eR16G16B16A16Sfloat;
+		break;
+	case TextureColorSpace::Linear:
+		format = vk::Format::eR8G8B8A8Unorm;
+		break;
+	default:
+		break;
+	}
+
+	uint32_t mipLevels = 1;
+
+	// Create Image
+	AllocatedImage textureImage = _pRenderer->CreateImage(texWidth, texHeight, mipLevels,
+		vk::SampleCountFlagBits::e1,
+		format,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+		VMA_MEMORY_USAGE_AUTO,
+		VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+		6);
+
+	_pRenderer->TransitionImageLayout(textureImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels, 6);
+	_pRenderer->CopyBufferToImage(stagingBuffer.buffer, textureImage.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 6);
+	_pRenderer->TransitionImageLayout(textureImage.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels, 6);
+
+	_pRenderer->DestroyBuffer(stagingBuffer);
+
+	// Create Image View
+	vk::raii::ImageView textureImageView =
+		_pRenderer->CreateImageView(textureImage.image,
+			format,
+			vk::ImageAspectFlagBits::eColor,
+			mipLevels,
+			vk::ImageViewType::eCube,
+			6);
+
+	// Add & return index
+	_textures.emplace_back(
+		textureImage,
+		std::move(textureImageView),
+		0 /*use default linear repeat sampler*/);
+
+	return RegisterName(name);
+}
+
 TextureHandle TextureManager::CreateWhiteTexture()
 {
 	uint32_t white = 0xFFFFFFFF;            // RGBA 255,255,255,255
@@ -110,84 +232,6 @@ TextureHandle TextureManager::CreateWhiteTexture()
 	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1);
 	_textures.emplace_back(img, std::move(view), 0);
 	return RegisterName("white");
-}
-
-void TextureManager::ImportSkyboxCubemapTexture()
-{
-	int texWidth = 1024, texHeight = 1024, texChannels;
-
-	std::vector<std::string> texPaths = { "textures/skybox test x pos.png",
-										"textures/skybox test x neg.png",
-										"textures/skybox test y pos.png",
-										"textures/skybox test y neg.png",
-										"textures/skybox test z pos.png",
-										"textures/skybox test z neg.png", };
-
-	vk::DeviceSize imageSize = 1024 * 1024 * 4;
-
-	AllocatedBuffer stagingBuffer = _pRenderer->CreateBuffer(
-		imageSize * 6,
-		vk::BufferUsageFlagBits::eTransferSrc,
-		VMA_MEMORY_USAGE_AUTO,
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-
-	std::array<stbi_uc*, 6> pixels;
-
-	for (size_t i = 0; i < texPaths.size(); i++)
-	{
-		pixels[i] = stbi_load(texPaths[i].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-
-		if (!pixels[i])
-		{
-			throw std::runtime_error("Failed to load texture image!");
-		}
-
-	}
-	//TODO: hacky shit fix later
-	auto* dst = static_cast<std::byte*>(stagingBuffer.info.pMappedData);
-	for (size_t i = 0; i < 6; i++)
-	{
-		memcpy(dst + i * imageSize, pixels[i], imageSize);
-		stbi_image_free(pixels[i]);
-	}
-
-
-	vk::Format format = vk::Format::eR8G8B8A8Srgb; //TODO: cubemap could be HDR, include R16G16B16 into the original function
-
-	uint32_t mipLevels = 1;
-
-	// Create Image
-	AllocatedImage textureImage = _pRenderer->CreateImage(texWidth, texHeight, mipLevels,
-		vk::SampleCountFlagBits::e1,
-		format,
-		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-		VMA_MEMORY_USAGE_AUTO,
-		VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
-		6);
-
-	_pRenderer->TransitionImageLayout(textureImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels, 6);
-	_pRenderer->CopyBufferToImage(stagingBuffer.buffer, textureImage.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 6);
-	_pRenderer->TransitionImageLayout(textureImage.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels, 6);
-
-	_pRenderer->DestroyBuffer(stagingBuffer);
-
-	// Create Image View
-	vk::raii::ImageView textureImageView =
-		_pRenderer->CreateImageView(textureImage.image, 
-									format, 
-									vk::ImageAspectFlagBits::eColor, 
-									mipLevels,
-									vk::ImageViewType::eCube,
-									6);
-
-	// Add & return index
-	_textures.emplace_back(
-		textureImage,
-		std::move(textureImageView),
-		0 /*use default linear repeat sampler*/);
-
-	skyboxTextureIndex = _textures.size() - 1;
 }
 
 // Only create one sampler (linear repeat) for now

@@ -20,6 +20,7 @@ struct Texture
 enum class TextureColorSpace
 {
 	sRGB,	//albedo, emissive
+	HDR,
 	Linear  //normal, ao, spec, etc.
 };
 
@@ -32,17 +33,14 @@ public:
 	void Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx);
 
 	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
+	TextureHandle ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateWhiteTexture();
-
-	// Temp function to handle everything for importing skybox texture
-	void ImportSkyboxCubemapTexture();
-	uint32_t skyboxTextureIndex;
-
 
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	[[nodiscard]] vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[index]; }
 
 	[[nodiscard]] TextureHandle GetHandle(const std::string& name) const;
+	[[nodiscard]] TextureHandle GetSkyboxHandle() const { return _skyboxTexHandle; };
 
 	[[nodiscard]] size_t GetTexturesCount() const { return _textures.size(); }
 	[[nodiscard]] size_t GetTextureSamplersCount() const { return _samplers.size(); }
@@ -57,6 +55,8 @@ private:
 
 	std::vector<Texture> _textures;
 	std::vector<vk::raii::Sampler> _samplers;
+
+	TextureHandle _skyboxTexHandle;
 
 	// string name -> index/handle
 	std::unordered_map<std::string, uint32_t> _nameMap;
