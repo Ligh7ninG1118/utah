@@ -59,8 +59,7 @@ void VulkanRenderer::Initialize()
 	_vkCtx.Initialize(_programCtx.GetContextWindow());
 
 	_msaaSamples = GetMaxUsableSampleCount();
-	CreateSwapChain();
-	CreateImageViews();
+	_pSwapChainCtx = std::make_unique <SwapChainContext>(_vkCtx);
 
 	InitBindingDescs();
 	_globalDescriptorSetLayout = std::move(CreateDescriptorSetLayout(bindingDescs));
@@ -154,8 +153,7 @@ void VulkanRenderer::DrawFrame()
 			;
 
 		// Acquire image from the swap chain
-		auto [result, imageIndex] =
-			_swapChain.acquireNextImage(UINT64_MAX, *frame.presentCompleteSemaphore, nullptr);
+		auto [result, imageIndex] = _pSwapChainCtx->AcquireNextImage(UINT64_MAX, *frame.presentCompleteSemaphore, nullptr);
 
 		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
@@ -186,13 +184,8 @@ void VulkanRenderer::DrawFrame()
 
 		try
 		{
-			const vk::PresentInfoKHR presentInfo{ .waitSemaphoreCount = 1,
-												 .pWaitSemaphores = &*_renderFinishedSemaphores[imageIndex],
-												 .swapchainCount = 1,
-												 .pSwapchains = &*_swapChain,
-												 .pImageIndices = &imageIndex };
+			result = _pSwapChainCtx->Present(_vkCtx.GetQueue(), *_renderFinishedSemaphores[imageIndex], imageIndex);
 
-			result = _vkCtx.GetQueue().presentKHR(presentInfo);
 			if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR || _framebufferResized)
 			{
 				_framebufferResized = false;
@@ -244,7 +237,7 @@ void VulkanRenderer::InitImGUI()
 	_imguiDescriptorPool = vk::raii::DescriptorPool(_vkCtx.GetDevice(), poolInfo);
 
 	ImGui_ImplGlfw_InitForVulkan(_programCtx.GetContextWindow(), true);
-	VkFormat colorFormat = static_cast<VkFormat>(_swapChainSurfaceFormat.format);
+	VkFormat colorFormat = static_cast<VkFormat>(_pSwapChainCtx->GetSurfaceFormat().format);
 	VkFormat depthFormat = static_cast<VkFormat>(FindDepthFormat());
 
 	ImGui_ImplVulkan_InitInfo initInfo{};
@@ -256,7 +249,7 @@ void VulkanRenderer::InitImGUI()
 	initInfo.Queue = *_vkCtx.GetQueue();
 	initInfo.DescriptorPool = *_imguiDescriptorPool;
 	initInfo.MinImageCount = 2;
-	initInfo.ImageCount = static_cast<uint32_t>(_swapChainImages.size());
+	initInfo.ImageCount = static_cast<uint32_t>(_pSwapChainCtx->GetSwapChainImagesSize());
 	initInfo.PipelineCache = VK_NULL_HANDLE;
 
 	initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
@@ -281,11 +274,13 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	auto  currentTime = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
 	CameraUBO camUBO{};
 	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
 	// Swap far and near plane input -> Reverse Z for greater precision
 	camUBO.proj =
-		glm::perspective(glm::radians(_mainCam._verticalFOV), _swapChainExtent.width / (float)_swapChainExtent.height, _mainCam._farPlane, _mainCam._nearPlane);
+		glm::perspective(glm::radians(_mainCam._verticalFOV), swapChainExtent.width / (float)swapChainExtent.height, _mainCam._farPlane, _mainCam._nearPlane);
 	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
 	memcpy(frame.Mapped(GlobalBinding::CameraUBO), &camUBO, sizeof(camUBO));
@@ -448,93 +443,6 @@ void VulkanRenderer::FramebufferResizeCallback(GLFWwindow* window, int width, in
 	pAppCtx->NotifyFramebufferResized();
 }
 
-vk::SurfaceFormatKHR VulkanRenderer::ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
-{
-	assert(!availableFormats.empty());
-
-	const auto formatIt = std::ranges::find_if(availableFormats, [](const auto& format) {
-		return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
-		});
-
-	return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
-}
-
-vk::PresentModeKHR VulkanRenderer::ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes)
-{
-	assert(std::ranges::any_of(availablePresentModes,
-		[](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
-
-	return std::ranges::any_of(availablePresentModes,
-		[](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
-		vk::PresentModeKHR::eMailbox :
-		vk::PresentModeKHR::eFifo;
-}
-
-uint32_t VulkanRenderer::ChooseSwapMinImageCount(vk::SurfaceCapabilitiesKHR const& surfaceCapabilities)
-{
-	auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
-	if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount))
-	{
-		minImageCount = surfaceCapabilities.maxImageCount;
-	}
-	return minImageCount;
-}
-
-[[nodiscard]] vk::Extent2D VulkanRenderer::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) const
-{
-	if (capabilities.currentExtent.width != 0xFFFFFFFF)
-		return capabilities.currentExtent;
-
-	int width, height;
-	glfwGetFramebufferSize(_programCtx.GetContextWindow(), &width, &height);
-
-	return { std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-			std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height) };
-}
-
-void VulkanRenderer::CreateSwapChain()
-{
-	auto surfaceCapabilities = _vkCtx.GetPhysicalDevice().getSurfaceCapabilitiesKHR(*_vkCtx.GetSurface());
-	_swapChainExtent = ChooseSwapExtent(surfaceCapabilities);
-	_swapChainSurfaceFormat = ChooseSwapSurfaceFormat(_vkCtx.GetPhysicalDevice().getSurfaceFormatsKHR(*_vkCtx.GetSurface()));
-
-	vk::SwapchainCreateInfoKHR swapChainCreateInfo{
-		.surface = *_vkCtx.GetSurface(),
-		.minImageCount = ChooseSwapMinImageCount(surfaceCapabilities),
-		// Format: Color channels and types
-		.imageFormat = _swapChainSurfaceFormat.format,
-		// Color space: SRGB, etc.
-		.imageColorSpace = _swapChainSurfaceFormat.colorSpace,
-		// Swap Extent: Resolution
-		.imageExtent = _swapChainExtent,
-		.imageArrayLayers = 1,
-		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-		.imageSharingMode = vk::SharingMode::eExclusive,
-		.preTransform = surfaceCapabilities.currentTransform,
-		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		// Present Mode: Conditions for showing images (Immediate, FIFO, FIFO Relaxed, Mailbox)
-		.presentMode = ChooseSwapPresentMode(_vkCtx.GetPhysicalDevice().getSurfacePresentModesKHR(*_vkCtx.GetSurface())),
-		.clipped = true };
-
-	_swapChain = vk::raii::SwapchainKHR(_vkCtx.GetDevice(), swapChainCreateInfo);
-	_swapChainImages = _swapChain.getImages();
-}
-
-void VulkanRenderer::CreateImageViews()
-{
-	assert(_swapChainImageViews.empty());
-
-	vk::ImageViewCreateInfo imageViewCreateInfo{ .viewType = vk::ImageViewType::e2D,
-												.format = _swapChainSurfaceFormat.format,
-												.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1} };
-
-	for (auto image : _swapChainImages)
-	{
-		imageViewCreateInfo.image = image;
-		_swapChainImageViews.emplace_back(_vkCtx.GetDevice(), imageViewCreateInfo);
-	}
-}
-
 void VulkanRenderer::CleanupSwapChain()
 {
 	// Image views must be destroyed before the underlying VMA-allocated images.
@@ -560,11 +468,9 @@ void VulkanRenderer::CleanupSwapChain()
 	}
 	_shadowCubeMapImageViews.clear();
 	_shadowCubeMapImages.clear();
-
-	_swapChainImageViews.clear();
-	_swapChain = nullptr;
 }
 
+//TODO: Doesnt work, will cause device lost on resize
 void VulkanRenderer::RecreateSwapChain()
 {
 	int width = 0, height = 0;
@@ -579,11 +485,43 @@ void VulkanRenderer::RecreateSwapChain()
 
 	CleanupSwapChain();
 
-	CreateSwapChain();
-	CreateImageViews();
+	vk::SwapchainKHR oldHandle = _pSwapChainCtx ? _pSwapChainCtx->GetHandle() : VK_NULL_HANDLE;
+	auto newCtx = std::make_unique<SwapChainContext>(_vkCtx, oldHandle);
+	_pSwapChainCtx = std::move(newCtx);
+
+	_renderFinishedSemaphores.clear();
+	for (size_t i = 0; i < _pSwapChainCtx->GetSwapChainImagesSize(); i++)
+		_renderFinishedSemaphores.emplace_back(_vkCtx.GetDevice(), vk::SemaphoreCreateInfo());
+
+	_currentFrame = 0;
+
 	CreateColorResources();
 	CreateDepthResources();
 	CreateShadowMapResources();
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		FrameData& frame = _frames[i];
+		std::vector<vk::WriteDescriptorSet> writes;
+		std::vector<vk::DescriptorImageInfo> infos;
+		infos.reserve(16);
+
+		auto pushImage = [&](GlobalBinding b, vk::ImageView view) {
+			infos.push_back({ .imageView = view,
+							  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+			writes.push_back({ .dstSet = frame.globalDescriptorSet,
+							   .dstBinding = ToIdx(b),
+							   .dstArrayElement = 0,
+							   .descriptorCount = 1,
+							   .descriptorType = vk::DescriptorType::eSampledImage,
+							   .pImageInfo = &infos.back() });
+			};
+
+		pushImage(GlobalBinding::HDROutput, _hdrColorImageView);
+		// shadow maps & shadow cubes: loop pushImage for each into ShadowMaps / ShadowCubeMaps
+
+		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
+	}
 }
 
 void VulkanRenderer::InitBindingDescs()
@@ -1282,6 +1220,8 @@ uint32_t VulkanRenderer::CreateHDRGraphicsPipeline(const std::string& vertPath, 
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
+	const vk::Format& colorFormat = _pSwapChainCtx->GetSurfaceFormat().format;
+
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
 		{.stageCount = 2,
 		 .pStages = shaderStages,
@@ -1296,7 +1236,7 @@ uint32_t VulkanRenderer::CreateHDRGraphicsPipeline(const std::string& vertPath, 
 		 .layout = layout,
 		 .renderPass = nullptr},
 		{.colorAttachmentCount = 1,
-		 .pColorAttachmentFormats = &_swapChainSurfaceFormat.format,
+		 .pColorAttachmentFormats = &colorFormat,
 		 .depthAttachmentFormat = vk::Format::eUndefined} };
 
 
@@ -1558,6 +1498,8 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
 	// Color attachment (multisampled) with resolve attachment
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _colorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -1575,13 +1517,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 												   .storeOp = vk::AttachmentStoreOp::eDontCare,
 												   .clearValue = clearDepth };
 
-	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = _swapChainExtent},
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,
 									   .pColorAttachments = &colorAttachment,
 									   .pDepthAttachment = &depthAttachment };
 
 	cmd.beginRendering(renderingInfo);
+
 
 	// Draw skybox
 	{
@@ -1592,14 +1535,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
 				0.0f, 1.0f));
 
 		cmd.setScissor(0,
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
-				_swapChainExtent));
+				swapChainExtent));
 
 		cmd.setCullMode(vk::CullModeFlagBits::eNone);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1651,14 +1594,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
 				0.0f, 1.0f));
 
 		cmd.setScissor(0,
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
-				_swapChainExtent));
+				swapChainExtent));
 
 		cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1709,14 +1652,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
 				0.0f, 1.0f));
 
 		cmd.setScissor(0,
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
-				_swapChainExtent));
+				swapChainExtent));
 
 		cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1767,14 +1710,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
 				0.0f, 1.0f));
 
 		cmd.setScissor(0,
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
-				_swapChainExtent));
+				swapChainExtent));
 
 		cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
@@ -1832,7 +1775,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	// Tone map pass
 	{
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_swapChainImages[imageIndex],
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			{},                                                        // srcAccessMask (no need to wait for previous operations)
@@ -1841,13 +1784,13 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
 			vk::ImageAspectFlagBits::eColor);
 
-		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _swapChainImageViews[imageIndex],
+		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _pSwapChainCtx->GetSwapChainImageView(imageIndex),
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
 												   .storeOp = vk::AttachmentStoreOp::eStore,
 												   .clearValue = clearColor };
 
-		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = _swapChainExtent},
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,
 									   .pColorAttachments = &colorAttachment};
@@ -1861,14 +1804,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
-				static_cast<float>(_swapChainExtent.width),
-				static_cast<float>(_swapChainExtent.height),
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
 				0.0f, 1.0f));
 
 		cmd.setScissor(0,
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
-				_swapChainExtent));
+				swapChainExtent));
 
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
@@ -1887,7 +1830,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	cmd.endRendering();
 
 	// After rendering, transition the swapchain image to PRESENT_SRC
-	TransitionImageLayout(_swapChainImages[imageIndex], 
+	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::ePresentSrcKHR,
 		vk::AccessFlagBits2::eColorAttachmentWrite,                // srcAccessMask
@@ -2137,8 +2080,9 @@ void VulkanRenderer::GenerateMipmaps(vk::Image image, vk::Format imageFormat, in
 void VulkanRenderer::CreateDepthResources()
 {
 	vk::Format depthFormat = FindDepthFormat();
+	auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
-	_depthImage = CreateImage(_swapChainExtent.width, _swapChainExtent.height, 1, _msaaSamples, depthFormat,
+	_depthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, _msaaSamples, depthFormat,
 		vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment);
 
 	_depthImageView = CreateImageView(_depthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
@@ -2280,7 +2224,7 @@ void VulkanRenderer::CreateSyncObjects()
 	// Render-finished semaphores: waited on by present, tied to swapchain images -> per IMAGE
 	_renderFinishedSemaphores.clear();
 
-	for (size_t i = 0; i < _swapChainImages.size(); i++)
+	for (size_t i = 0; i < _pSwapChainCtx->GetSwapChainImagesSize(); i++)
 	{
 		_renderFinishedSemaphores.emplace_back(_vkCtx.GetDevice(), vk::SemaphoreCreateInfo());
 	}
@@ -2345,13 +2289,15 @@ void VulkanRenderer::CreateColorResources()
 	//vk::Format colorFormat = _swapChainSurfaceFormat.format;
 	vk::Format hdrFormat = vk::Format::eR16G16B16A16Sfloat;
 
-	_colorImage = CreateImage(_swapChainExtent.width, _swapChainExtent.height, 1, _msaaSamples, hdrFormat,
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	_colorImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, _msaaSamples, hdrFormat,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment);
 
 	_colorImageView = CreateImageView(_colorImage.image, hdrFormat, vk::ImageAspectFlagBits::eColor, 1);
 
-	_hdrColorImage = CreateImage(_swapChainExtent.width, _swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, hdrFormat,
+	_hdrColorImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, hdrFormat,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment);  //Also need transient?
 

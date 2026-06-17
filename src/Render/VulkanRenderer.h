@@ -31,6 +31,7 @@
 #include "Gameplay/CameraComponent.h"
 #include "Render/GPUTypes.h"
 #include "RenderCommons.h"
+#include "SwapChainContext.h"
 
 
 struct Vertex
@@ -109,9 +110,7 @@ struct BindingDesc
 	vk::Flags<vk::DescriptorBindingFlagBits> bindingFlags;
 };
 
-// Everything that must exist once per frame in flight: resources the CPU writes or records
-// while the GPU may still be consuming the previous frame's copy.
-//
+// data that needs extra copies, per frame in flight. cpu written
 // Excludes:
 //  - render-finished semaphores: per swapchain IMAGE (present consumes them), kept outside
 //  - color/depth/shadow images: GPU-written persistents, synchronized by barriers
@@ -124,7 +123,7 @@ struct FrameData
 	vk::raii::DescriptorSet globalDescriptorSet = nullptr;
 	vk::raii::CommandBuffer commandBuffer = nullptr;
 
-	vk::raii::Fence     inFlightFence = nullptr;
+	vk::raii::Fence inFlightFence = nullptr;
 	vk::raii::Semaphore presentCompleteSemaphore = nullptr; // image-acquire semaphore
 
 	AllocatedBuffer& Buffer(GlobalBinding b) { return globalBuffers[ToIdx(b)]; }
@@ -206,22 +205,6 @@ private:
 	void RegisterResizeCallback();
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 
-	// Swap Chain
-	struct SwapChainSupportDetails
-	{
-		vk::SurfaceCapabilitiesKHR        capabilities;
-		std::vector<vk::SurfaceFormatKHR> formats;
-		std::vector<vk::PresentModeKHR>   presentModes;
-	};
-
-	// Resize Callback
-	static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
-	static vk::PresentModeKHR   ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
-	static uint32_t             ChooseSwapMinImageCount(vk::SurfaceCapabilitiesKHR const& surfaceCapabilities);
-	[[nodiscard]] vk::Extent2D  ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) const;
-
-	void CreateSwapChain();
-	void CreateImageViews();
 	// Swap Chain Recreation
 	void CleanupSwapChain();
 	void RecreateSwapChain();
@@ -283,12 +266,8 @@ private:
 
 	// Handles instance creation, device management, etc.
 	VulkanContext _vkCtx;
-	
-	vk::raii::SwapchainKHR           _swapChain = nullptr;
-	std::vector<vk::Image>           _swapChainImages;
-	vk::SurfaceFormatKHR             _swapChainSurfaceFormat;
-	vk::Extent2D                     _swapChainExtent;
-	std::vector<vk::raii::ImageView> _swapChainImageViews;
+
+	std::unique_ptr<SwapChainContext> _pSwapChainCtx;
 
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
