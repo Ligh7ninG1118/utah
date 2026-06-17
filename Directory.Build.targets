@@ -1,7 +1,0 @@
-<Project>
-  <ItemGroup>
-    <FxCompile Update="@(FxCompile)">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </FxCompile>
-  </ItemGroup>
-</Project>

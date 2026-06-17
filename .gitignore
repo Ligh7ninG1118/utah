@@ -432,3 +432,6 @@ shaderBin
 
 # Ignore ImGUI config file
 imgui.ini
+
+# Ignore CMake build files
+build
