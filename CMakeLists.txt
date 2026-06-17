@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Utah LANGUAGES CXX)
+project(utah LANGUAGES CXX)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -24,15 +24,15 @@ set(IMGUI_SOURCES
     ${IMGUI_DIR}/imgui_impl_glfw.cpp
     ${IMGUI_DIR}/imgui_impl_vulkan.cpp)
 
-add_executable(Utah ${UTAH_SOURCES} ${IMGUI_SOURCES})
-target_compile_features(Utah PRIVATE cxx_std_20)
+add_executable(utah ${UTAH_SOURCES} ${IMGUI_SOURCES})
+target_compile_features(utah PRIVATE cxx_std_20)
 
-target_include_directories(Utah PRIVATE
+target_include_directories(utah PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${IMGUI_DIR}
     ${Stb_INCLUDE_DIR})
 
-target_link_libraries(Utah PRIVATE
+target_link_libraries(utah PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
@@ -45,9 +45,9 @@ add_custom_target(utah_shaders ALL
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Compiling HLSL shaders with dxc"
     VERBATIM)
-add_dependencies(Utah utah_shaders)
+add_dependencies(utah utah_shaders)
 
-set_target_properties(Utah PROPERTIES
+set_target_properties(utah PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(UTAH_USE_AFTERMATH "Enable NVIDIA Nsight Aftermath GPU crash dumps" OFF)
@@ -57,23 +57,26 @@ if(UTAH_USE_AFTERMATH)
         CACHE PATH "Nsight Aftermath SDK root")
     file(GLOB AFTERMATH_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/Render/Aftermath/*.cpp)
-    target_sources(Utah PRIVATE ${AFTERMATH_SOURCES})
-    target_include_directories(Utah PRIVATE ${AFTERMATH_SDK}/include)
-    target_link_libraries(Utah PRIVATE
+    target_sources(utah PRIVATE ${AFTERMATH_SOURCES})
+    target_include_directories(utah PRIVATE ${AFTERMATH_SDK}/include)
+    target_link_libraries(utah PRIVATE
         ${AFTERMATH_SDK}/lib/x64/GFSDK_Aftermath_Lib.x64.lib)
-    target_compile_definitions(Utah PRIVATE USE_NSIGHT_AFTERMATH=1)
-    add_custom_command(TARGET Utah POST_BUILD
+    target_compile_definitions(utah PRIVATE USE_NSIGHT_AFTERMATH=1)
+    add_custom_command(TARGET utah POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${AFTERMATH_SDK}/lib/x64/GFSDK_Aftermath_Lib.x64.dll
-            $<TARGET_FILE_DIR:Utah>
+            $<TARGET_FILE_DIR:utah>
         VERBATIM)
 endif()
 
-add_custom_command(TARGET Utah POST_BUILD
+add_custom_command(TARGET utah POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/models      $<TARGET_FILE_DIR:Utah>/models
+        ${CMAKE_CURRENT_SOURCE_DIR}/models      $<TARGET_FILE_DIR:utah>/models
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/textures    $<TARGET_FILE_DIR:Utah>/textures
+        ${CMAKE_CURRENT_SOURCE_DIR}/textures    $<TARGET_FILE_DIR:utah>/textures
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/shaderBin   $<TARGET_FILE_DIR:Utah>/shaderBin
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaderBin   $<TARGET_FILE_DIR:utah>/shaderBin
     VERBATIM)
+
+
+target_compile_definitions(utah PRIVATE PROJECT_ROOT="${CMAKE_SOURCE_DIR}")

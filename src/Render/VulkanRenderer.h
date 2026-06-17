@@ -233,6 +233,8 @@ private:
 	void CreateDescriptorSets();
 	void CreatePipelineLayouts();
 
+	void CreatePipelines();
+
 	std::vector<BindingDesc> bindingDescs;
 
 	// Graphics Pipeline
@@ -273,6 +275,8 @@ private:
 	// Shadow Map
 	void CreateShadowMapResources();
 
+	void HotReloadShaders();
+
 	// Variables
 	// Ref to windows and program context
 	UtahCtx& _programCtx;
@@ -289,6 +293,10 @@ private:
 	vk::raii::DescriptorSetLayout _globalDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
 	std::vector<PipelineEntry> _pipelines;
+	
+	uint32_t _blinnPhongPipeline = INVALID_HANDLE;
+	uint32_t _debugPipeline = INVALID_HANDLE;
+	uint32_t _debugWireframePipeline = INVALID_HANDLE;
 	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
 	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
 	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;

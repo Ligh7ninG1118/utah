@@ -9,7 +9,7 @@
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
-
+#include <filesystem>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
@@ -65,14 +65,7 @@ void VulkanRenderer::Initialize()
 	InitBindingDescs();
 	_globalDescriptorSetLayout = std::move(CreateDescriptorSetLayout(bindingDescs));
 	CreatePipelineLayouts();
-	uint32_t blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
-	uint32_t debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
-	uint32_t debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
-	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
-	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
-	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
-	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
-	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
+	CreatePipelines();
 
 	CreateCommandPool();
 	CreateColorResources();
@@ -98,11 +91,11 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	_materialManager.CreateBlinnPhongMaterial("viking_room", blinnPhongPipeline, {vikingRoomTex}, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
-	_materialManager.CreateBlinnPhongMaterial("pure_green", blinnPhongPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
-	_materialManager.CreateBlinnPhongMaterial("pure_white", blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
-	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
-	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
+	_materialManager.CreateBlinnPhongMaterial("viking_room", _blinnPhongPipeline, {vikingRoomTex}, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
+	_materialManager.CreateBlinnPhongMaterial("pure_green", _blinnPhongPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
+	_materialManager.CreateBlinnPhongMaterial("pure_white", _blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
+	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
+	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
@@ -144,6 +137,14 @@ void VulkanRenderer::SetLights(std::vector<PointLightGPU>&& pointLights, std::ve
 
 void VulkanRenderer::DrawFrame()
 {
+	if (_programCtx.GetRequestShaderReload())
+	{
+		HotReloadShaders();
+
+		_programCtx.SetRequestShaderReload(false);
+	}
+
+
 	try
 	{
 		FrameData& frame = _frames[_currentFrame];
@@ -940,6 +941,20 @@ void VulkanRenderer::CreatePipelineLayouts()
 		.pPushConstantRanges = &pushRange };
 
 	_globalPipelineLayout = vk::raii::PipelineLayout(_vkCtx.GetDevice(), info);
+}
+
+void VulkanRenderer::CreatePipelines()
+{
+	_pipelines.clear();
+
+	_blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
+	_debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
+	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
+	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
+	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
+	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
+	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
+	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -2410,4 +2425,17 @@ void VulkanRenderer::CreateShadowMapResources()
 	//TODO: check out border color
 
 	_shadowMapSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
+}
+
+void VulkanRenderer::HotReloadShaders()
+{
+	std::filesystem::path batPath = std::filesystem::path(PROJECT_ROOT) / "shaders/hlslHotReload.bat";
+	std::string cmd = "\"" + batPath.string() + "\"";
+	int result = std::system(cmd.c_str());
+
+	_vkCtx.GetDevice().waitIdle();
+
+	CreatePipelines();
+
+	_vkCtx.GetDevice().waitIdle();
 }

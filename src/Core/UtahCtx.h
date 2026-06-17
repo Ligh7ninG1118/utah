@@ -28,7 +28,8 @@ public:
 	void Run();
 
 	GLFWwindow* GetContextWindow() const { return _pWindow; }
-
+	bool GetRequestShaderReload() const { return _hasRequestedShaderReload; }
+	void SetRequestShaderReload(bool val);
 	void NotifyFramebufferResized();
 
 private:
@@ -39,6 +40,7 @@ private:
 	void CleanUp();
 
 	void ToggleCursorMode();
+
 
 	static void MousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 	static void KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -64,6 +66,8 @@ private:
 
 	// Using cursor to interact with ImGUI, and block camera input
 	bool _isCursorMode = false;
+
+	bool _hasRequestedShaderReload = false;
 
 	bool _holdMode = false;
 };
