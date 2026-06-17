@@ -80,12 +80,13 @@ void VulkanRenderer::Initialize()
 	CreateDepthResources();
 
 	_textureManger.Initialize(this, &_vkCtx);
-	TextureHandle vikingRoomTex = _textureManger.ImportTexture("models/viking_room.png", "viking_room");
+	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
 	//_textureManger.ImportTexture("models/viking_room_2.png");  not used right now
 
 	_meshManager.Initialize(this);
-	_meshManager.ImportMesh("models/viking_room.obj", "viking_room");
-	_meshManager.ImportMesh("models/utah_teapot.obj", "teapot");
+	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
+	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
+	_meshManager.ImportMeshGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "damaged_helmet");
 
 	InitImGUI();
 	CreateShadowMapResources();
@@ -2169,10 +2170,11 @@ AllocatedBuffer VulkanRenderer::CreateBuffer(vk::DeviceSize size, vk::BufferUsag
 	allocCreateInfo.flags = allocFlags;
 
 	AllocatedBuffer result{};
-	if (vmaCreateBuffer(_vkCtx.GetAllocator(), &bufferInfo, &allocCreateInfo,
-		&result.buffer, &result.allocation, &result.info) != VK_SUCCESS)
+	VkResult res = vmaCreateBuffer(_vkCtx.GetAllocator(), &bufferInfo, &allocCreateInfo,
+		&result.buffer, &result.allocation, &result.info);
+	if (res != VK_SUCCESS)
 	{
-		throw std::runtime_error("vmaCreateBuffer failed");
+		throw std::runtime_error("vmaCreateBuffer failed: " + std::to_string(res));
 	}
 	return result;
 }

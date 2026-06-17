@@ -5,6 +5,7 @@
 
 
 FlyCameraSystem::FlyCameraSystem()
+	: _lastMouseXPos(0.0), _lastMouseYPos(0.0)
 {
 
 }

@@ -85,6 +85,7 @@ void UtahCtx::InitDemo()
 	MeshHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
 	MeshHandle teapotMesh = meshMgr->GetHandle("teapot");
 	MeshHandle planeMesh = meshMgr->GetHandle("plane");
+	MeshHandle helmetMesh = meshMgr->GetHandle("damaged_helmet");
 
 	MaterialHandle vikingRoomMat = matMgr->GetHandle("viking_room");
 	MaterialHandle greenMat = matMgr->GetHandle("pure_green");

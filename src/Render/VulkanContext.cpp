@@ -249,7 +249,7 @@ void VulkanContext::CreateLogicalDevice()
 			  .descriptorBindingPartiallyBound = true,
 			  .runtimeDescriptorArray = true,
 			  .timelineSemaphore = true,
-			  .bufferDeviceAddress = false
+			  .bufferDeviceAddress = true
 			},
 			{
 				.multiview = true,

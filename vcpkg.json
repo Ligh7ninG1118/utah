@@ -6,6 +6,7 @@
     "glm",
     "vulkan-memory-allocator",
     "tinyobjloader",
-    "stb"
+    "stb",
+    "fastgltf"
   ]
 }

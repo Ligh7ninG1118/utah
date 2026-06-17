@@ -39,7 +39,8 @@ public:
 	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 0.2f);
 	void CreatePlane();
 
-	MeshHandle ImportMesh(const std::string& meshPath, const std::string& name);
+	MeshHandle ImportMeshOBJ(const std::string& meshPath, const std::string& name);
+	MeshHandle ImportMeshGLTF(const std::string& meshPath, const std::string& name);
 
 	[[nodiscard]] MeshHandle GetHandle(const std::string& name) const;
 

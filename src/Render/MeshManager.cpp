@@ -1,10 +1,15 @@
 #include "MeshManager.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
-
+#include <fastgltf/core.hpp>
+#include <fastgltf/types.hpp>
+#include <fastgltf/tools.hpp>
 #include "VulkanRenderer.h"
+#include <filesystem>
+
 
 MeshManager::MeshManager()
+	: _pRenderer(nullptr)
 {
 	_meshes.reserve(MAX_OBJECTS);
 }
@@ -31,8 +36,9 @@ void MeshManager::Initialize(VulkanRenderer* renderer)
 	CreateUnitCubeMesh();
 	CreateAABBMesh();
 	CreateIcosphereMesh(1);
-	CreatePyramidMesh();
 	CreatePlane();
+	CreatePyramidMesh();
+
 }
 
 void MeshManager::CreateUnitCubeMesh()
@@ -201,7 +207,7 @@ void MeshManager::CreatePlane()
 	RegisterName("plane");
 }
 
-MeshHandle MeshManager::ImportMesh(const std::string& meshPath, const std::string& name)
+MeshHandle MeshManager::ImportMeshOBJ(const std::string& meshPath, const std::string& name)
 {
 	tinyobj::attrib_t                attrib;
 	std::vector<tinyobj::shape_t>    shapes;
@@ -261,6 +267,94 @@ MeshHandle MeshManager::ImportMesh(const std::string& meshPath, const std::strin
 	// Add & return handle
 	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
 	
+	return RegisterName(name);
+}
+
+MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::string& name)
+{
+	std::filesystem::path path{ meshPath };
+
+	//TODO: consider reuse this across loads
+	fastgltf::Parser parser;
+
+	auto data = fastgltf::GltfDataBuffer::FromPath(path);
+	if (data.error() != fastgltf::Error::None)
+		throw std::runtime_error("Can't load gltf mesh");
+
+	auto asset = parser.loadGltfJson(data.get(), path.parent_path(), fastgltf::Options::LoadExternalBuffers);
+	if (auto error = asset.error(); error != fastgltf::Error::None)
+		throw std::runtime_error("Error occured reading buffer, parsing JSON, or validating data");
+
+	fastgltf::Asset& gltf = asset.get();
+
+	std::vector<Vertex>    vertices;
+	std::vector<uint32_t>  indices;
+
+	glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+	glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+	
+	for (const fastgltf::Mesh& mesh : gltf.meshes)
+	{
+		for (const fastgltf::Primitive& prim : mesh.primitives)
+		{
+			const size_t vertexStart = vertices.size();
+
+			// indices
+			if (prim.indicesAccessor.has_value())
+			{
+				const fastgltf::Accessor& idxAccessor = gltf.accessors[prim.indicesAccessor.value()];
+				indices.reserve(indices.size() + idxAccessor.count);
+				
+				fastgltf::iterateAccessor<uint32_t>(gltf, idxAccessor,
+					[&](uint32_t i) {
+						indices.push_back(static_cast<uint32_t>(vertexStart) + i);
+					});
+			}
+
+			// positions
+			const fastgltf::Attribute* posIt = prim.findAttribute("POSITION");
+			const fastgltf::Accessor& posAccessor = gltf.accessors[posIt->accessorIndex];
+			vertices.resize(vertices.size() + posAccessor.count);
+
+			fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor,
+				[&](fastgltf::math::fvec3 p, size_t i) {
+					glm::vec3 pos = { p.x(), p.y(), p.z() };
+					vertices[vertexStart + i].pos = pos;
+					minAABB = glm::min(minAABB, pos);
+					maxAABB = glm::max(maxAABB, pos);
+				});
+
+			// normals
+			if (const auto* nrm = prim.findAttribute("NORMAL"); nrm != prim.attributes.end())
+			{
+				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+					gltf, gltf.accessors[nrm->accessorIndex],
+					[&](fastgltf::math::fvec3 n, size_t i) {
+						vertices[vertexStart + i].normal = { n.x(), n.y(), n.z() };
+					});
+			}
+
+			// texcoord 0
+			if (const auto* uv = prim.findAttribute("TEXCOORD_0"); uv != prim.attributes.end())
+			{
+				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
+					gltf, gltf.accessors[uv->accessorIndex],
+					[&](fastgltf::math::fvec2 t, size_t i) {
+						vertices[vertexStart + i].texCoord = { t.x(), t.y() };
+					});
+			}
+		}
+	}
+
+	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(vertices.data(),
+		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
+
+	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
+
+	// Add & return handle
+	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
+
 	return RegisterName(name);
 }
 

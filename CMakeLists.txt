@@ -7,6 +7,7 @@ find_package(glm CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(fastgltf CONFIG REQUIRED)
 
 file(GLOB_RECURSE UTAH_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
@@ -36,7 +37,8 @@ target_link_libraries(Utah PRIVATE
     glfw
     glm::glm
     GPUOpen::VulkanMemoryAllocator
-    tinyobjloader::tinyobjloader)
+    tinyobjloader::tinyobjloader
+    fastgltf::fastgltf)
 
 add_custom_target(utah_shaders ALL
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/shaders/hlslCompile.bat
