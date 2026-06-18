@@ -35,7 +35,8 @@ public:
 private:
 	void InitWindow();
 	void InitSystems();
-	void InitDemo();
+	void InitDemo1();
+	void InitDemo2();
 	void MainLoop();
 	void CleanUp();
 

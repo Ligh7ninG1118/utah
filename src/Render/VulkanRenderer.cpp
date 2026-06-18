@@ -59,7 +59,7 @@ void VulkanRenderer::Initialize()
 	_vkCtx.Initialize(_programCtx.GetContextWindow());
 
 	_msaaSamples = GetMaxUsableSampleCount();
-	_pSwapChainCtx = std::make_unique <SwapChainContext>(_vkCtx);
+	_pSwapChainCtx = std::make_unique<SwapChainContext>(_vkCtx);
 
 	InitBindingDescs();
 	_globalDescriptorSetLayout = std::move(CreateDescriptorSetLayout(bindingDescs));
@@ -73,12 +73,16 @@ void VulkanRenderer::Initialize()
 
 	_textureManger.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
-	//_textureManger.ImportTexture("models/viking_room_2.png");  not used right now
+
+	TextureHandle hemletAlbedoTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_albedo.jpg", "helmet_albedo");
+	TextureHandle helmetORMTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_orm.png", "helmet_omr", TextureColorSpace::Linear);
+	TextureHandle helmetNormalTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_normal.jpg", "helmet_normal", TextureColorSpace::Linear);
+	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
 
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
 	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
-	_meshManager.ImportMeshGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "damaged_helmet");
+	_meshManager.ImportMeshGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
 
 	InitImGUI();
 	CreateShadowMapResources();
@@ -95,6 +99,11 @@ void VulkanRenderer::Initialize()
 	_materialManager.CreateBlinnPhongMaterial("pure_white", _blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
+
+	// is pbr, but same function tho
+	//TODO: get rid of shinness field altogether? 
+	_materialManager.CreateBlinnPhongMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }, glm::vec4(1.0f)); // PBR, tex (damaged helmet)
+
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
@@ -885,7 +894,9 @@ void VulkanRenderer::CreatePipelines()
 {
 	_pipelines.clear();
 
-	_blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/blinn_phong_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
+	_blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
+	//TODO: same vert shader, rename to something more general
+	_pbrPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/pbr_frag.spv", *_globalPipelineLayout);
 	_debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);

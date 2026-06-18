@@ -33,7 +33,7 @@ void UtahCtx::Run()
 {
 	InitWindow();
 	InitSystems();
-	InitDemo();
+	InitDemo2();
 	MainLoop();
 	CleanUp();
 }
@@ -77,7 +77,9 @@ void UtahCtx::InitSystems()
 	_systems.push_back(flyCamera);
 }
 
-void UtahCtx::InitDemo()
+
+// Multiple .obj models, blinn phong textured and pure color, multiple light types (point, directional, spot)
+void UtahCtx::InitDemo1()
 {
 	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
 	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
@@ -85,7 +87,6 @@ void UtahCtx::InitDemo()
 	MeshHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
 	MeshHandle teapotMesh = meshMgr->GetHandle("teapot");
 	MeshHandle planeMesh = meshMgr->GetHandle("plane");
-	MeshHandle helmetMesh = meshMgr->GetHandle("damaged_helmet");
 
 	MaterialHandle vikingRoomMat = matMgr->GetHandle("viking_room");
 	MaterialHandle greenMat = matMgr->GetHandle("pure_green");
@@ -99,7 +100,6 @@ void UtahCtx::InitDemo()
 
 		glm::vec3(0.0f, 0.5f, 2.0f),
 		glm::vec3(0.0f, 0.5f, 4.0f),
-
 	};
 
 	// Models
@@ -162,16 +162,18 @@ void UtahCtx::InitDemo()
 	//}
 
 	// Fly camera
-	Entity flyCam = _registry.CreateEntity();
+	{
+		Entity flyCam = _registry.CreateEntity();
 
-	CameraComponent c;
-	c._pos.x = -2.0f;
-	c._pos.y = 2.0f;
-	c._pos.z = 3.5f;
-	c._rot.y = -70.0f;
-	c._rot.z = -30.f;
+		CameraComponent c;
+		c._pos.x = -2.0f;
+		c._pos.y = 2.0f;
+		c._pos.z = 3.5f;
+		c._rot.y = -70.0f;
+		c._rot.z = -30.f;
 
-	_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
+		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
+	}
 
 	// Point lights
 	for (int i = 0; i < 2; i++)
@@ -253,6 +255,68 @@ void UtahCtx::InitDemo()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+	}
+}
+
+
+// PBR, damaged helmet
+void UtahCtx::InitDemo2()
+{
+	// Fly camera
+	{
+		Entity flyCam = _registry.CreateEntity();
+
+		CameraComponent c;
+		c._pos.x = -2.0f;
+		c._pos.y = 2.0f;
+		c._pos.z = 3.5f;
+		c._rot.y = -70.0f;
+		c._rot.z = -30.f;
+
+		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
+	}
+
+	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
+	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
+
+	MeshHandle helmetMesh = meshMgr->GetHandle("helmet");
+	MaterialHandle helmetMat = matMgr->GetHandle("helmet");
+
+	// Models
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._rot = glm::vec3(90.0f, 0.0f, 0.0f);
+
+		RenderComponent r;
+		r._mesh = helmetMesh;
+		r._material = helmetMat;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+
+	// Point lights
+	for (int i = 0; i < 2; i++)
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.y = 2.0f;
+		t._pos.x = i * 3.0f;
+
+		PointLightCPU p;
+		p.ambient = glm::vec3(0.0f, 0.1f, 0.0f);
+		p.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
+		p.specular = glm::vec3(0.0f, 0.5f, 0.0f);
+
+		p.constant = 1.0f;
+		p.linear = 0.07f;
+		p.quadratic = 0.017f;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
 }
 

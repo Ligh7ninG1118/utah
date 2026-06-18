@@ -274,6 +274,7 @@ private:
 	std::vector<PipelineEntry> _pipelines;
 	
 	uint32_t _blinnPhongPipeline = INVALID_HANDLE;
+	uint32_t _pbrPipeline = INVALID_HANDLE;
 	uint32_t _debugPipeline = INVALID_HANDLE;
 	uint32_t _debugWireframePipeline = INVALID_HANDLE;
 	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
