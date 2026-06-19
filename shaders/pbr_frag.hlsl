@@ -80,6 +80,7 @@ struct ShadowMapUBO
 [[vk::binding(3, 0)]] StructuredBuffer<MatData> matBuf;
 
 [[vk::binding(4, 0)]] Texture2D textures[];
+[[vk::binding(4, 0)]] TextureCube textureCubes[];
 [[vk::binding(5, 0)]] SamplerState textureSamplers[];
 
 [[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
@@ -135,9 +136,9 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
     return ggx1 * ggx2;
 }
 
-float3 FresnelSchlick(float cosTheta, float3 F0)
+float3 FresnelSchlick(float cosTheta, float3 F0, float roughness)
 {
-    return F0 + (1.0f - F0) * pow(1.0f - cosTheta, 5.0f);
+    return F0 + (max((float3) (1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
 
@@ -248,7 +249,7 @@ float4 main(PSInput input) : SV_Target
         
         float NDF = DistributionGGX(N, H, roughness);
         float G = GeometrySmith(N, V, L, roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0);
+        float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0, roughness);
         
         float3 kS = F;
         float3 kD = (float3)1.0f - kS;
@@ -262,11 +263,13 @@ float4 main(PSInput input) : SV_Target
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
     
-    float3 ambient = (float3) 0.03f * albedo * ao;
-    float3 color = ambient + Lo + emissive; 
+    float3 kS = FresnelSchlick(max(dot(N, V), 0.0f), F0, roughness);
+    float3 kD = 1.0f - kS;
+    kD *= 1.0f - metallic;
+    //TODO: hard coded irradiance map, has to send it from CPU side
+    float3 irradiance = textureCubes[9].Sample(textureSamplers[0], N).rgb;
+    float3 diffuse = irradiance * albedo;
+    float3 ambient = (kD * diffuse) * ao;
     
-    color = color / (color + (float3) 1.0f);
-    color = pow(color, (float3)(1.0f / 2.2f));
-    
-    return float4(color, 1.0f);
+    return float4(ambient + Lo + emissive, 1.0f);
 }

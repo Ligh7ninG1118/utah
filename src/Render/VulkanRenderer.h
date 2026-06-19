@@ -283,6 +283,7 @@ private:
 	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;
 	uint32_t _skyboxPipelineIndex = INVALID_HANDLE;
 	uint32_t _equirectToCubePipelineIndex = INVALID_HANDLE;
+	uint32_t _convolutionPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -342,6 +343,8 @@ private:
 
 
 	void ConvertEquirectToCubeMap();
+	void ConvolveIrradianceMap();
 	TextureHandle equirectHandle;
 	TextureHandle cubemapRTHandle;
+	TextureHandle convolutionHandle;
 };

@@ -80,7 +80,8 @@ void VulkanRenderer::Initialize()
 	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
 
 	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR);
-	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target");
+	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target", 2048);
+	convolutionHandle = _textureManger.CreateCubemapRenderTarget("convolution_render_target", 32);
 
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
@@ -123,6 +124,7 @@ void VulkanRenderer::Initialize()
 	}
 
 	ConvertEquirectToCubeMap();
+	ConvolveIrradianceMap();
 }
 
 void VulkanRenderer::SetDrawList(std::vector<struct DrawJob>&& list)
@@ -804,7 +806,8 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
 											//.imageView = _textureManger.GetTextureImageView(_textureManger.GetSkyboxHandle().index),
-											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
+											//.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
+											.imageView = _textureManger.GetTextureImageView(convolutionHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 		writes.push_back(vk::WriteDescriptorSet{
@@ -910,6 +913,8 @@ void VulkanRenderer::CreatePipelines()
 	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
 	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_equirectToCubePipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_equirect_to_cube_frag.spv", *_globalPipelineLayout);
+
+	_convolutionPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_irradiance_convolve_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -2350,7 +2355,7 @@ std::vector<char> VulkanRenderer::ReadFile(const std::string& filename)
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
 	if (!file.is_open())
-		throw std::runtime_error("Failed to open file");
+		throw std::runtime_error("Failed to open file: " + filename);
 
 	std::vector<char> buffer(file.tellg());
 	file.seekg(0, std::ios::beg);
@@ -2633,6 +2638,159 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 	cmd.endRendering();
 
 	TransitionImageLayout(cubemapTex.texImage.image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eColor);
+
+	cmd.end();
+
+	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
+	_vkCtx.GetQueue().submit(submitInfo, nullptr);
+	_vkCtx.GetQueue().waitIdle();
+}
+
+void VulkanRenderer::ConvolveIrradianceMap()
+{
+	// Reuse shadow map ubo for this
+	FrameData& frame = _frames[_currentFrame];
+	std::vector<glm::mat4> viewProjMatrices;
+	viewProjMatrices.reserve(6);
+	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);  //no need for reverse z on this one?
+
+	// +X
+	glm::vec3 eye = glm::vec3(0.0f);
+	glm::vec3 dir = glm::vec3(1.0f, 0.0f, 0.0f);
+	glm::vec3 up = glm::vec3(0.0f, -1.0f, 0.0f);
+	glm::mat4 view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -X
+	dir = glm::vec3(-1.0f, 0.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// +Y
+	dir = glm::vec3(0.0f, 1.0f, 0.0f);
+	up = glm::vec3(0.0f, 0.0f, 1.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -Y
+	dir = glm::vec3(0.0f, -1.0f, 0.0f);
+	up = glm::vec3(0.0f, 0.0f, -1.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// +Z
+	dir = glm::vec3(0.0f, 0.0f, 1.0f);
+	up = glm::vec3(0.0f, -1.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -Z
+	dir = glm::vec3(0.0f, 0.0f, -1.0f);
+	up = glm::vec3(0.0f, -1.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
+
+	const Texture& convolutionTex = _textureManger.GetTexture(convolutionHandle.index);
+	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
+
+
+	const auto& cmd = frame.commandBuffer;
+	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+
+
+	cmd.begin(beginInfo);
+
+	// Transition the skybox image to write and color attachment optimal
+	TransitionImageLayout(convolutionTex.texImage.image,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		{},
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		{},
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::ImageAspectFlagBits::eColor);
+
+
+	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
+
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = convolutionTex.texImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+
+	//TODO: convolution resolution
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(32, 32)},
+									   .layerCount = 6,
+									   .viewMask = 0b00111111,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment,
+									   .pDepthAttachment = nullptr };
+
+
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_convolutionPipelineIndex];
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(32),
+			static_cast<float>(32),
+			0.0f, 1.0f));
+
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			vk::Extent2D(32, 32)));
+
+	cmd.setCullMode(vk::CullModeFlagBits::eNone);
+	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+	cmd.setDepthTestEnable(vk::False);
+	cmd.setDepthWriteEnable(vk::False);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+	PerDrawPC pc{ cubemapRTHandle.index, cubemapTex.samplerIndex };
+
+	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+
+	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	cmd.pushConstants<PerDrawPC>(
+		pso.layout,
+		vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+		0,
+		pc
+	);
+
+	cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+
+	cmd.endRendering();
+
+	TransitionImageLayout(convolutionTex.texImage.image,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::AccessFlagBits2::eColorAttachmentWrite,

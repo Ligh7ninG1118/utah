@@ -2,6 +2,8 @@
 #include <glm/glm.hpp>
 #include "GPUTypes.h"
 
+//TODO: Convert to PBR, only one color, one or no range limit
+
 struct PointLightCPU
 {
 	glm::vec3 ambient{ 0.1f };

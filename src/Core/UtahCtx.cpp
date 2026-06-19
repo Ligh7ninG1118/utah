@@ -307,13 +307,7 @@ void UtahCtx::InitDemo2()
 		t._pos.x = i * 3.0f;
 
 		PointLightCPU p;
-		p.ambient = glm::vec3(0.0f, 0.1f, 0.0f);
-		p.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
-		p.specular = glm::vec3(0.0f, 0.5f, 0.0f);
-
-		p.constant = 1.0f;
-		p.linear = 0.07f;
-		p.quadratic = 0.017f;
+		p.diffuse = glm::vec3(5.0f);
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));

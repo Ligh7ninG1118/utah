@@ -247,14 +247,14 @@ TextureHandle TextureManager::CreateWhiteTexture()
 	return RegisterName("white");
 }
 
-TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name)
+TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name, uint32_t resolution)
 {
 	vk::Format format = vk::Format::eR16G16B16A16Sfloat;
 
 	uint32_t mipLevels = 1;
 
 	// Create Image
-	AllocatedImage textureImage = _pRenderer->CreateImage(2048, 2048, mipLevels,
+	AllocatedImage textureImage = _pRenderer->CreateImage(resolution, resolution, mipLevels,
 		vk::SampleCountFlagBits::e1,
 		format,
 		vk::ImageTiling::eOptimal,
