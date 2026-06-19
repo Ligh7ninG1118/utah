@@ -27,7 +27,6 @@ struct VSInput
 
 float4 main(VSInput input, uint ViewIndex : SV_ViewID) : SV_POSITION
 {
-    
     float4x4 model = objBuf[pc.objIndex].model;
     return mul(shadowMapUBO.lightViewProj[pc.lightIndex + ViewIndex], mul(model, float4(input.inPos, 1.0)));
 }

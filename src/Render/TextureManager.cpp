@@ -44,8 +44,21 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
 	}
 
 	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(texPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	vk::DeviceSize imageSize = texWidth * texHeight * 4;
+
+	void* pixels;
+	vk::DeviceSize imageSize;
+
+	if (colorSpace == TextureColorSpace::HDR)
+	{
+		pixels = static_cast<float*>(stbi_loadf(texPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha));
+		imageSize = texWidth * texHeight * 16;
+	}
+	else
+	{
+		pixels = static_cast<stbi_uc*>(stbi_load(texPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha));
+		imageSize = texWidth * texHeight * 4;
+	}
+
 	uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
 	if (!pixels)
@@ -71,7 +84,7 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
 		format = vk::Format::eR8G8B8A8Srgb;
 		break;
 	case TextureColorSpace::HDR:
-		format = vk::Format::eR16G16B16A16Sfloat;
+		format = vk::Format::eR32G32B32A32Sfloat;
 		break;
 	case TextureColorSpace::Linear:
 		format = vk::Format::eR8G8B8A8Unorm;
@@ -232,6 +245,40 @@ TextureHandle TextureManager::CreateWhiteTexture()
 	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1);
 	_textures.emplace_back(img, std::move(view), 0);
 	return RegisterName("white");
+}
+
+TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name)
+{
+	vk::Format format = vk::Format::eR16G16B16A16Sfloat;
+
+	uint32_t mipLevels = 1;
+
+	// Create Image
+	AllocatedImage textureImage = _pRenderer->CreateImage(2048, 2048, mipLevels,
+		vk::SampleCountFlagBits::e1,
+		format,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
+		VMA_MEMORY_USAGE_AUTO,
+		VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+		6);
+
+	// Create Image View
+	vk::raii::ImageView textureImageView =
+		_pRenderer->CreateImageView(textureImage.image,
+			format,
+			vk::ImageAspectFlagBits::eColor,
+			mipLevels,
+			vk::ImageViewType::eCube,
+			6);
+
+	// Add & return index
+	_textures.emplace_back(
+		textureImage,
+		std::move(textureImageView),
+		0 /*use default linear repeat sampler*/);
+
+	return RegisterName(name);
 }
 
 // Only create one sampler (linear repeat) for now

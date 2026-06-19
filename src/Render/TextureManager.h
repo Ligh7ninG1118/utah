@@ -35,7 +35,9 @@ public:
 	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateWhiteTexture();
+	TextureHandle CreateCubemapRenderTarget(const std::string& name);
 
+	[[nodiscard]] const Texture& GetTexture(uint32_t index) const { return _textures[index]; }
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	[[nodiscard]] vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[index]; }
 

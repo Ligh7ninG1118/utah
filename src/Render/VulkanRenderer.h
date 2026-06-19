@@ -226,6 +226,7 @@ private:
 	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 	uint32_t CreateHDRGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -281,6 +282,7 @@ private:
 	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
 	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;
 	uint32_t _skyboxPipelineIndex = INVALID_HANDLE;
+	uint32_t _equirectToCubePipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -337,4 +339,9 @@ private:
 	std::vector<PointLightGPU> _pointLights;
 	std::vector<DirectionalLightGPU> _dirLights;
 	std::vector<SpotLightGPU> _spotLights;
+
+
+	void ConvertEquirectToCubeMap();
+	TextureHandle equirectHandle;
+	TextureHandle cubemapRTHandle;
 };

@@ -233,10 +233,10 @@ float4 main(PSInput input) : SV_Target
     float3 N = normalize(input.normal);
     float3 V = normalize(lightUBO.eyePos - input.worldPos);
     
-    float3 F0 = float3(0.04f, 0.04f, 0.04f);
+    float3 F0 = (float3) 0.04f;
     F0 = lerp(F0, albedo, metallic);
     
-    float3 Lo = float3(0.0f, 0.0f, 0.0f);
+    float3 Lo = (float3) 0.0f;
     for (int i = 0; i < lightUBO.pointLightNum; i++)
     {
         float3 L = lightUBO.pointLights[i].position - input.worldPos;
@@ -251,7 +251,7 @@ float4 main(PSInput input) : SV_Target
         float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0);
         
         float3 kS = F;
-        float3 kD = float3(1.0f, 1.0f, 1.0f) - kS;
+        float3 kD = (float3)1.0f - kS;
         kD *= 1.0f - metallic;
 
         float3 numerator = NDF * G * F;
@@ -262,11 +262,11 @@ float4 main(PSInput input) : SV_Target
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
     
-    float3 ambient = float3(0.03f, 0.03f, 0.03f) * albedo * ao;
+    float3 ambient = (float3) 0.03f * albedo * ao;
     float3 color = ambient + Lo + emissive; 
     
-    color = color / (color + float3(1.0f, 1.0f, 1.0f));
-    color = pow(color, float3(1.0f / 2.2f, 1.0f / 2.2f, 1.0f / 2.2f));
+    color = color / (color + (float3) 1.0f);
+    color = pow(color, (float3)(1.0f / 2.2f));
     
     return float4(color, 1.0f);
 }

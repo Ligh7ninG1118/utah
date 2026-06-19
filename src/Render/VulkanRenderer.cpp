@@ -79,6 +79,9 @@ void VulkanRenderer::Initialize()
 	TextureHandle helmetNormalTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_normal.jpg", "helmet_normal", TextureColorSpace::Linear);
 	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
 
+	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR);
+	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target");
+
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
 	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
@@ -94,7 +97,7 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	_materialManager.CreateBlinnPhongMaterial("viking_room", _blinnPhongPipeline, {vikingRoomTex}, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
+	_materialManager.CreateBlinnPhongMaterial("viking_room", _blinnPhongPipeline, { vikingRoomTex }, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
 	_materialManager.CreateBlinnPhongMaterial("pure_green", _blinnPhongPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
 	_materialManager.CreateBlinnPhongMaterial("pure_white", _blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
@@ -118,6 +121,8 @@ void VulkanRenderer::Initialize()
 			memcpy(materials[j].samplerIndices, matGPUs[j].samplerIndices, sizeof(uint32_t) * 4);
 		}
 	}
+
+	ConvertEquirectToCubeMap();
 }
 
 void VulkanRenderer::SetDrawList(std::vector<struct DrawJob>&& list)
@@ -299,7 +304,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	lightUBO.nearPlane = _mainCam._nearPlane;
 	lightUBO.farPlane = _mainCam._farPlane;
 	lightUBO.dirLightNum = static_cast<uint32_t>(_dirLights.size());
-	std::memcpy(lightUBO.dirLights, _dirLights.data(), 
+	std::memcpy(lightUBO.dirLights, _dirLights.data(),
 		std::min(_dirLights.size(), size_t(MAX_DIR_LIGHTS)) * sizeof(DirectionalLightGPU));
 
 	lightUBO.spotLightNum = static_cast<uint32_t>(_spotLights.size());
@@ -372,7 +377,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
 		glm::mat4 orthoProj = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, _mainCam._farPlane, _mainCam._nearPlane);
- 		glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[i].direction) * 2.0f;
+		glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[i].direction) * 2.0f;
 		glm::mat4 view = glm::lookAt(lightEye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 		viewProjMatrices.emplace_back(orthoProj * view);
@@ -713,7 +718,7 @@ void VulkanRenderer::CreateDescriptorSets()
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		FrameData& frame = _frames[i];
-		
+
 		std::vector<vk::WriteDescriptorSet> writes;
 		writes.reserve(bindingDescs.size());
 
@@ -762,7 +767,7 @@ void VulkanRenderer::CreateDescriptorSets()
 		{
 			samplerInfos.push_back(vk::DescriptorImageInfo{
 										.sampler = _textureManger.GetTextureSampler(i),
-														});
+				});
 		}
 
 		size_t shadowMapCount = _shadowMapImages.size();
@@ -777,7 +782,7 @@ void VulkanRenderer::CreateDescriptorSets()
 		}
 
 		vk::DescriptorImageInfo shadowMapSamplerInfo = vk::DescriptorImageInfo{
-										.sampler = _shadowMapSampler,};
+										.sampler = _shadowMapSampler, };
 
 		size_t shadowCubeMapCount = _shadowCubeMapImages.size();
 		std::vector<vk::DescriptorImageInfo> shadowCubeMapInfos;
@@ -798,9 +803,10 @@ void VulkanRenderer::CreateDescriptorSets()
 											.sampler = _hdrSampler, };
 
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
-											.imageView = _textureManger.GetTextureImageView(_textureManger.GetSkyboxHandle().index),
+											//.imageView = _textureManger.GetTextureImageView(_textureManger.GetSkyboxHandle().index),
+											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-			
+
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::Textures),
@@ -841,7 +847,7 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = shadowCubeMapInfos.data()
 			});
-			
+
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::HDROutput),
@@ -895,7 +901,6 @@ void VulkanRenderer::CreatePipelines()
 	_pipelines.clear();
 
 	_blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
-	//TODO: same vert shader, rename to something more general
 	_pbrPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/pbr_frag.spv", *_globalPipelineLayout);
 	_debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
@@ -904,6 +909,7 @@ void VulkanRenderer::CreatePipelines()
 	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
 	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
 	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
+	_equirectToCubePipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_equirect_to_cube_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -924,7 +930,7 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 	// Position only
 	if (type == PipelineType::Debug || type == PipelineType::DebugWireframe)
 	{
-		bindingDescription = vk::VertexInputBindingDescription{0, sizeof(glm::vec3), vk::VertexInputRate::eVertex };
+		bindingDescription = vk::VertexInputBindingDescription{ 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex };
 		attributeDescriptions = {
 			vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0)
 		};
@@ -949,7 +955,7 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 														.cullMode = vk::CullModeFlagBits::eBack,
 														.frontFace = vk::FrontFace::eCounterClockwise,
 														.depthBiasEnable = vk::False,
-														.lineWidth = 1.0f};
+														.lineWidth = 1.0f };
 
 	if (type == PipelineType::DebugWireframe)
 	{
@@ -1023,7 +1029,7 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
 		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
-	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo};
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo };
 
 	auto bindingDescription = Vertex::GetBindingDescription();
 	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
@@ -1226,7 +1232,7 @@ uint32_t VulkanRenderer::CreateHDRGraphicsPipeline(const std::string& vertPath, 
 
 	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor};
+		vk::DynamicState::eScissor };
 
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
@@ -1248,6 +1254,98 @@ uint32_t VulkanRenderer::CreateHDRGraphicsPipeline(const std::string& vertPath, 
 		 .renderPass = nullptr},
 		{.colorAttachmentCount = 1,
 		 .pColorAttachmentFormats = &colorFormat,
+		 .depthAttachmentFormat = vk::Format::eUndefined} };
+
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
+uint32_t VulkanRenderer::CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	auto bindingDescription = vk::VertexInputBindingDescription{ 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex };
+	std::vector< vk::VertexInputAttributeDescription> attributeDescriptions;
+
+	 attributeDescriptions = { vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0) };
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+		.pVertexAttributeDescriptions = attributeDescriptions.data() };
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::False,
+														 .depthWriteEnable = vk::False,
+														 .depthCompareOp = vk::CompareOp::eLess,
+														 .depthBoundsTestEnable = vk::False,
+														 .stencilTestEnable = vk::False };
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	vk::Format hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.viewMask = 0b00111111,
+		 .colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &hdrFormat,
 		 .depthAttachmentFormat = vk::Format::eUndefined} };
 
 
@@ -1286,7 +1384,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	size_t casterCount = _dirLights.size() + _spotLights.size();
 	// Shadow map BEGIN
-	for(size_t j = 0;j<casterCount;j++)
+	for (size_t j = 0; j < casterCount; j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_shadowMapImages[j].image,
@@ -1406,7 +1504,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
 										   .layerCount = 6,
-										   .viewMask = 0b00111111, 
+										   .viewMask = 0b00111111,
 										   .colorAttachmentCount = 0,
 										   .pColorAttachments = nullptr,
 										   .pDepthAttachment = &depthAttachment };
@@ -1487,19 +1585,19 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::ImageAspectFlagBits::eColor);
 
 	// Transition the multisampled color image to COLOR_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(_colorImage.image, 
-		vk::ImageLayout::eUndefined, 
+	TransitionImageLayout(_colorImage.image,
+		vk::ImageLayout::eUndefined,
 		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite, 
+		vk::AccessFlagBits2::eColorAttachmentWrite,
 		vk::AccessFlagBits2::eColorAttachmentWrite,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, 
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::ImageAspectFlagBits::eColor);
 	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(_depthImage.image, 
-		vk::ImageLayout::eUndefined, 
+	TransitionImageLayout(_depthImage.image,
+		vk::ImageLayout::eUndefined,
 		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite, 
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
@@ -1769,7 +1867,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
 	}
 
-	
+
 
 	cmd.endRendering();
 
@@ -1804,7 +1902,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,
-									   .pColorAttachments = &colorAttachment};
+									   .pColorAttachments = &colorAttachment };
 
 		cmd.beginRendering(renderingInfo);
 
@@ -1875,13 +1973,13 @@ void VulkanRenderer::EndSingleTimeCommands(const vk::raii::CommandBuffer& comman
 }
 
 
-AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, 
+AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels,
 	vk::SampleCountFlagBits numSamples,
-	vk::Format format, 
-	vk::ImageTiling tiling, 
+	vk::Format format,
+	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
 	VmaMemoryUsage memUsage,
-	VkImageCreateFlags creationFlags, 
+	VkImageCreateFlags creationFlags,
 	uint32_t arrayLayers)
 {
 	VkImageCreateInfo imageInfo{
@@ -2127,7 +2225,7 @@ bool VulkanRenderer::HasStencilComponent(vk::Format format) const
 	return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint;
 }
 
-AllocatedBuffer VulkanRenderer::CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, 
+AllocatedBuffer VulkanRenderer::CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 	VmaMemoryUsage memUsage, VmaAllocationCreateFlags allocFlags)
 {
 	VkBufferCreateInfo bufferInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -2368,7 +2466,7 @@ void VulkanRenderer::CreateShadowMapResources()
 	//TODO: Separate this out too? No need to recreate
 	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();
 	//TODO: double check this comparison creation info
-	vk::SamplerCreateInfo samplerInfo{  .magFilter = vk::Filter::eLinear,
+	vk::SamplerCreateInfo samplerInfo{ .magFilter = vk::Filter::eLinear,
 										.minFilter = vk::Filter::eLinear,
 										.mipmapMode = vk::SamplerMipmapMode::eLinear,
 										.addressModeU = vk::SamplerAddressMode::eClampToBorder,
@@ -2395,4 +2493,157 @@ void VulkanRenderer::HotReloadShaders()
 	CreatePipelines();
 
 	_vkCtx.GetDevice().waitIdle();
+}
+
+void VulkanRenderer::ConvertEquirectToCubeMap()
+{
+	// Reuse shadow map ubo for this
+	FrameData& frame = _frames[_currentFrame];
+	std::vector<glm::mat4> viewProjMatrices;
+	viewProjMatrices.reserve(6);
+	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);  //no need for reverse z on this one?
+
+	// +X
+	glm::vec3 eye = glm::vec3(0.0f);
+	glm::vec3 dir = glm::vec3(1.0f, 0.0f, 0.0f);
+	glm::vec3 up = glm::vec3(0.0f, -1.0f, 0.0f);
+	glm::mat4 view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -X
+	dir = glm::vec3(-1.0f, 0.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// +Y
+	dir = glm::vec3(0.0f, 1.0f, 0.0f);
+	up = glm::vec3(0.0f, 0.0f, 1.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -Y
+	dir = glm::vec3(0.0f, -1.0f, 0.0f);
+	up = glm::vec3(0.0f, 0.0f, -1.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// +Z
+	dir = glm::vec3(0.0f, 0.0f, 1.0f);
+	up = glm::vec3(0.0f, -1.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+
+	// -Z
+	dir = glm::vec3(0.0f, 0.0f, -1.0f);
+	up = glm::vec3(0.0f, -1.0f, 0.0f);
+	view = glm::lookAt(eye, eye + dir, up);
+	viewProjMatrices.emplace_back(proj * view);
+	
+	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
+
+	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
+	const Texture& equirectTex = _textureManger.GetTexture(equirectHandle.index);
+	
+
+	const auto& cmd = frame.commandBuffer;
+	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+	
+	
+	cmd.begin(beginInfo);
+
+	// Transition the skybox image to write and color attachment optimal
+	TransitionImageLayout(cubemapTex.texImage.image,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		{},
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		{},
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::ImageAspectFlagBits::eColor);
+
+
+	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
+
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = cubemapTex.texImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+
+	//TODO: skybox resolution?
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(2048, 2048)},
+									   .layerCount = 6,
+									   .viewMask = 0b00111111,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment,
+									   .pDepthAttachment = nullptr };
+
+
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_equirectToCubePipelineIndex];
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(2048),
+			static_cast<float>(2048),
+			0.0f, 1.0f));
+
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			vk::Extent2D(2048, 2048)));
+
+	cmd.setCullMode(vk::CullModeFlagBits::eNone);
+	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+	cmd.setDepthTestEnable(vk::False);
+	cmd.setDepthWriteEnable(vk::False);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+	PerDrawPC pc{ equirectHandle.index, equirectTex.samplerIndex };
+
+	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+
+	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	cmd.pushConstants<PerDrawPC>(
+		pso.layout,
+		vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+		0,
+		pc
+	);
+
+	cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+
+	cmd.endRendering();
+
+	TransitionImageLayout(cubemapTex.texImage.image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eColor);
+
+	cmd.end();
+
+	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
+	_vkCtx.GetQueue().submit(submitInfo, nullptr);
+	_vkCtx.GetQueue().waitIdle();
 }
