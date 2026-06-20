@@ -36,6 +36,8 @@ public:
 	TextureHandle ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateWhiteTexture();
 	TextureHandle CreateCubemapRenderTarget(const std::string& name, uint32_t resolution);
+	TextureHandle CreateCubemapRenderTargetWithMips(const std::string& name, uint32_t resolution, uint32_t mipLevels);
+	TextureHandle Create2DRenderTarget(const std::string& name, uint32_t width, uint32_t height);
 
 	[[nodiscard]] const Texture& GetTexture(uint32_t index) const { return _textures[index]; }
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }

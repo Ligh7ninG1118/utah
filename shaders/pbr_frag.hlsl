@@ -266,10 +266,17 @@ float4 main(PSInput input) : SV_Target
     float3 kS = FresnelSchlick(max(dot(N, V), 0.0f), F0, roughness);
     float3 kD = 1.0f - kS;
     kD *= 1.0f - metallic;
-    //TODO: hard coded irradiance map, has to send it from CPU side
+    //TODO: hard coded maps, has to send it from CPU side
     float3 irradiance = textureCubes[9].Sample(textureSamplers[0], N).rgb;
     float3 diffuse = irradiance * albedo;
-    float3 ambient = (kD * diffuse) * ao;
+    
+    static const float MAX_REFLECTION_LOD = 4.0f;
+    float3 R = reflect(-V, N);
+    float3 prefilteredColor = textureCubes[10].SampleLevel(textureSamplers[0], R, roughness * MAX_REFLECTION_LOD).rgb;
+    float2 brdf = textures[11].Sample(textureSamplers[0], float2(max(dot(N, V), 0.0f), roughness)).rg;
+    float3 specularIBL = prefilteredColor * (kS * brdf.r + brdf.g);
+    
+    float3 ambient = (kD * diffuse + specularIBL) * ao;
     
     return float4(ambient + Lo + emissive, 1.0f);
 }

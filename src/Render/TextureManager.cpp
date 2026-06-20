@@ -281,6 +281,58 @@ TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name,
 	return RegisterName(name);
 }
 
+TextureHandle TextureManager::CreateCubemapRenderTargetWithMips(const std::string& name, uint32_t resolution, uint32_t mipLevels)
+{
+	vk::Format format = vk::Format::eR16G16B16A16Sfloat;
+
+	AllocatedImage textureImage = _pRenderer->CreateImage(resolution, resolution, mipLevels,
+		vk::SampleCountFlagBits::e1,
+		format,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
+		VMA_MEMORY_USAGE_AUTO,
+		VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+		6);
+
+	// Full-mip view used for runtime sampling (per-mip render views are created at draw time)
+	vk::raii::ImageView textureImageView =
+		_pRenderer->CreateImageView(textureImage.image,
+			format,
+			vk::ImageAspectFlagBits::eColor,
+			mipLevels,
+			vk::ImageViewType::eCube,
+			6);
+
+	_textures.emplace_back(
+		textureImage,
+		std::move(textureImageView),
+		0);
+
+	return RegisterName(name);
+}
+
+TextureHandle TextureManager::Create2DRenderTarget(const std::string& name, uint32_t width, uint32_t height)
+{
+	vk::Format format = vk::Format::eR16G16B16A16Sfloat;
+	uint32_t mipLevels = 1;
+
+	AllocatedImage textureImage = _pRenderer->CreateImage(width, height, mipLevels,
+		vk::SampleCountFlagBits::e1,
+		format,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment);
+
+	vk::raii::ImageView textureImageView =
+		_pRenderer->CreateImageView(textureImage.image, format, vk::ImageAspectFlagBits::eColor, mipLevels);
+
+	_textures.emplace_back(
+		textureImage,
+		std::move(textureImageView),
+		0);
+
+	return RegisterName(name);
+}
+
 // Only create one sampler (linear repeat) for now
 void TextureManager::CreateTextureSampler()
 {

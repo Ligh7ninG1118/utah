@@ -227,6 +227,7 @@ private:
 	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
 	uint32_t CreateHDRGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -284,6 +285,8 @@ private:
 	uint32_t _skyboxPipelineIndex = INVALID_HANDLE;
 	uint32_t _equirectToCubePipelineIndex = INVALID_HANDLE;
 	uint32_t _convolutionPipelineIndex = INVALID_HANDLE;
+	uint32_t _prefilterPipelineIndex = INVALID_HANDLE;
+	uint32_t _brdfLutPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -344,7 +347,16 @@ private:
 
 	void ConvertEquirectToCubeMap();
 	void ConvolveIrradianceMap();
+	void PrefilterEnvironmentMap();
+	void BakeBRDFLUT();
+
 	TextureHandle equirectHandle;
 	TextureHandle cubemapRTHandle;
 	TextureHandle convolutionHandle;
+	TextureHandle prefilterHandle;
+	TextureHandle brdfLUTHandle;
+
+	static constexpr uint32_t PREFILTER_RESOLUTION = 128;
+	static constexpr uint32_t PREFILTER_MIP_LEVELS = 5;
+	static constexpr uint32_t BRDF_LUT_RESOLUTION = 512;
 };

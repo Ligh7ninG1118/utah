@@ -82,6 +82,9 @@ void VulkanRenderer::Initialize()
 	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR);
 	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target", 2048);
 	convolutionHandle = _textureManger.CreateCubemapRenderTarget("convolution_render_target", 32);
+	prefilterHandle = _textureManger.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
+	brdfLUTHandle = _textureManger.Create2DRenderTarget("brdf_lut_render_target", BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION);
+
 
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
@@ -125,6 +128,8 @@ void VulkanRenderer::Initialize()
 
 	ConvertEquirectToCubeMap();
 	ConvolveIrradianceMap();
+	PrefilterEnvironmentMap();
+	BakeBRDFLUT();
 }
 
 void VulkanRenderer::SetDrawList(std::vector<struct DrawJob>&& list)
@@ -805,9 +810,7 @@ void VulkanRenderer::CreateDescriptorSets()
 											.sampler = _hdrSampler, };
 
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
-											//.imageView = _textureManger.GetTextureImageView(_textureManger.GetSkyboxHandle().index),
-											//.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
-											.imageView = _textureManger.GetTextureImageView(convolutionHandle.index),
+											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 		writes.push_back(vk::WriteDescriptorSet{
@@ -887,7 +890,7 @@ void VulkanRenderer::CreatePipelineLayouts()
 	vk::PushConstantRange pushRange{
 		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 		.offset = 0,
-		.size = sizeof(uint32_t) * 2   // PerDrawPC: objectIndex, materialIndex
+		.size = sizeof(uint32_t) * 3   // PerDrawPC: objectIndex, materialIndex, roughness for prefilter
 	};
 
 	vk::PipelineLayoutCreateInfo info{
@@ -915,6 +918,8 @@ void VulkanRenderer::CreatePipelines()
 	_equirectToCubePipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_equirect_to_cube_frag.spv", *_globalPipelineLayout);
 
 	_convolutionPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_irradiance_convolve_frag.spv", *_globalPipelineLayout);
+	_prefilterPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_prefilter_specular_frag.spv", *_globalPipelineLayout);
+	_brdfLutPipelineIndex = CreateBRDFLUTPipeline("shaderBin/tonemap_vert.spv", "shaderBin/ibl_brdf_lut_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1353,6 +1358,69 @@ uint32_t VulkanRenderer::CreateEquirectToCubePipeline(const std::string& vertPat
 		 .pColorAttachmentFormats = &hdrFormat,
 		 .depthAttachmentFormat = vk::Format::eUndefined} };
 
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
+uint32_t VulkanRenderer::CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	// Fullscreen-triangle pipeline (no vertex input), no depth, no multiview, R16G16B16A16 RT.
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{ .stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{ .stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList, .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+	vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::False, .depthWriteEnable = vk::False };
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	vk::Format hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &hdrFormat,
+		 .depthAttachmentFormat = vk::Format::eUndefined} };
 
 	_pipelines.push_back(PipelineEntry{
 		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
@@ -2801,6 +2869,207 @@ void VulkanRenderer::ConvolveIrradianceMap()
 
 	cmd.end();
 
+	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
+	_vkCtx.GetQueue().submit(submitInfo, nullptr);
+	_vkCtx.GetQueue().waitIdle();
+}
+
+void VulkanRenderer::PrefilterEnvironmentMap()
+{
+	// Reuse shadow map UBO for the 6 face view-proj matrices, same as ConvertEquirectToCubeMap / ConvolveIrradianceMap
+	FrameData& frame = _frames[_currentFrame];
+	std::vector<glm::mat4> viewProjMatrices;
+	viewProjMatrices.reserve(6);
+	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+
+	glm::vec3 eye = glm::vec3(0.0f);
+	{
+		glm::vec3 dir = glm::vec3(1.0f, 0.0f, 0.0f);
+		glm::vec3 up = glm::vec3(0.0f, -1.0f, 0.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+		dir = glm::vec3(-1.0f, 0.0f, 0.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+		dir = glm::vec3(0.0f, 1.0f, 0.0f); up = glm::vec3(0.0f, 0.0f, 1.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+		dir = glm::vec3(0.0f, -1.0f, 0.0f); up = glm::vec3(0.0f, 0.0f, -1.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+		dir = glm::vec3(0.0f, 0.0f, 1.0f); up = glm::vec3(0.0f, -1.0f, 0.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+		dir = glm::vec3(0.0f, 0.0f, -1.0f);
+		viewProjMatrices.emplace_back(proj * glm::lookAt(eye, eye + dir, up));
+	}
+	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
+
+	const Texture& prefilterTex = _textureManger.GetTexture(prefilterHandle.index);
+	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
+
+	const auto& cmd = frame.commandBuffer;
+	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+	cmd.begin(beginInfo);
+
+	// Transition all mips of the prefilter cubemap to color attachment
+	{
+		vk::ImageMemoryBarrier2 barrier{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.image = prefilterTex.texImage.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, PREFILTER_MIP_LEVELS, 0, 6 },
+		};
+		vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+		cmd.pipelineBarrier2(dep);
+	}
+
+	// Per-mip render (one draw per mip; each draw expands to 6 faces via SV_ViewID)
+	std::vector<vk::raii::ImageView> perMipViews;
+	perMipViews.reserve(PREFILTER_MIP_LEVELS);
+
+	const PipelineEntry& pso = _pipelines[_prefilterPipelineIndex];
+
+	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pso.layout, 0,
+		*_frames[_currentFrame].globalDescriptorSet, nullptr);
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+	for (uint32_t mip = 0; mip < PREFILTER_MIP_LEVELS; ++mip)
+	{
+		uint32_t mipResolution = PREFILTER_RESOLUTION >> mip;
+
+		vk::ImageViewCreateInfo viewInfo{
+			.image = prefilterTex.texImage.image,
+			.viewType = vk::ImageViewType::eCube,
+			.format = vk::Format::eR16G16B16A16Sfloat,
+			.subresourceRange = {vk::ImageAspectFlagBits::eColor, mip, 1, 0, 6}
+		};
+		perMipViews.emplace_back(_vkCtx.GetDevice(), viewInfo);
+
+		vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+		vk::RenderingAttachmentInfo colorAttachment{ .imageView = perMipViews.back(),
+													 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+													 .resolveMode = vk::ResolveModeFlagBits::eNone,
+													 .loadOp = vk::AttachmentLoadOp::eClear,
+													 .storeOp = vk::AttachmentStoreOp::eStore,
+													 .clearValue = clearColor };
+
+		vk::RenderingInfo renderingInfo{ .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(mipResolution, mipResolution)},
+										 .layerCount = 6,
+										 .viewMask = 0b00111111,
+										 .colorAttachmentCount = 1,
+										 .pColorAttachments = &colorAttachment,
+										 .pDepthAttachment = nullptr };
+
+		cmd.beginRendering(renderingInfo);
+
+		cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(mipResolution), static_cast<float>(mipResolution), 0.0f, 1.0f));
+		cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(mipResolution, mipResolution)));
+		cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::False);
+		cmd.setDepthWriteEnable(vk::False);
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+		struct PrefilterPC { uint32_t env; uint32_t samp; float roughness; } pc{
+			cubemapRTHandle.index,
+			cubemapTex.samplerIndex,
+			static_cast<float>(mip) / static_cast<float>(PREFILTER_MIP_LEVELS - 1)
+		};
+		cmd.pushConstants<PrefilterPC>(pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, pc);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		cmd.endRendering();
+	}
+
+	// Transition all mips to shader read
+	{
+		vk::ImageMemoryBarrier2 barrier{
+			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.image = prefilterTex.texImage.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, PREFILTER_MIP_LEVELS, 0, 6 },
+		};
+		vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+		cmd.pipelineBarrier2(dep);
+	}
+
+	cmd.end();
+	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
+	_vkCtx.GetQueue().submit(submitInfo, nullptr);
+	_vkCtx.GetQueue().waitIdle();
+	// perMipViews destroyed here, which is fine since queue is idle.
+}
+
+void VulkanRenderer::BakeBRDFLUT()
+{
+	const Texture& brdfTex = _textureManger.GetTexture(brdfLUTHandle.index);
+
+	FrameData& frame = _frames[_currentFrame];
+	const auto& cmd = frame.commandBuffer;
+	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+	cmd.begin(beginInfo);
+
+	TransitionImageLayout(brdfTex.texImage.image,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		{},
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		{},
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::ImageAspectFlagBits::eColor);
+
+	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	vk::RenderingAttachmentInfo colorAttachment{ .imageView = brdfTex.texImageView,
+												 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												 .resolveMode = vk::ResolveModeFlagBits::eNone,
+												 .loadOp = vk::AttachmentLoadOp::eClear,
+												 .storeOp = vk::AttachmentStoreOp::eStore,
+												 .clearValue = clearColor };
+
+	vk::RenderingInfo renderingInfo{ .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION)},
+									 .layerCount = 1,
+									 .viewMask = 0,
+									 .colorAttachmentCount = 1,
+									 .pColorAttachments = &colorAttachment,
+									 .pDepthAttachment = nullptr };
+
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_brdfLutPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(BRDF_LUT_RESOLUTION), static_cast<float>(BRDF_LUT_RESOLUTION), 0.0f, 1.0f));
+	cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION)));
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pso.layout, 0,
+		*_frames[_currentFrame].globalDescriptorSet, nullptr);
+
+	// fullscreen triangle (tonemap_vert)
+	cmd.draw(3, 1, 0, 0);
+
+	cmd.endRendering();
+
+	TransitionImageLayout(brdfTex.texImage.image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eColor);
+
+	cmd.end();
 	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
 	_vkCtx.GetQueue().submit(submitInfo, nullptr);
 	_vkCtx.GetQueue().waitIdle();
