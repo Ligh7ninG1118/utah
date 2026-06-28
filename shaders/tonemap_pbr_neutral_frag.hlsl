@@ -1,6 +1,5 @@
+#include "_GlobalBindings.hlsli"
 
-[[vk::binding(10, 0)]] Texture2D hdrTexture;
-[[vk::binding(11, 0)]] SamplerState hdrSampler;
 
 struct PSInput
 {

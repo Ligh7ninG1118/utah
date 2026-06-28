@@ -1,12 +1,5 @@
-struct MatData 
-{ 
-    uint texIndices[4]; 
-    uint samplerIndex[4];
-    float4 color; 
-    float shininess; 
-};
+#include "_GlobalBindings.hlsli"
 
-[[vk::binding(3, 0)]] StructuredBuffer<MatData> matBuf;
 
 struct PSInput 
 {

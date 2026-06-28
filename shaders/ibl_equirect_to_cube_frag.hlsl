@@ -1,12 +1,12 @@
+#include "_GlobalBindings.hlsli"
+
+
 struct PushConstants
 {
     // reuse the same PC layout
     uint equirectIndex;
     uint samplerIndex;
 };
-
-[[vk::binding(4, 0)]] Texture2D textures[];
-[[vk::binding(5, 0)]] SamplerState textureSamplers[];
 
 [[vk::push_constant]] PushConstants pc;
 

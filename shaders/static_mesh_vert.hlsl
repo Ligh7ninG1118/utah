@@ -1,24 +1,11 @@
-struct CameraUBO
-{
-    float4x4 view;
-    float4x4 proj;
-};
+#include "_GlobalBindings.hlsli"
 
-struct ObjectData
-{
-    float4x4 model;
-};
 
 struct PushConstants
 {
     uint objIndex;
     uint matIndex;
 };
-
-
-[[vk::binding(0, 0)]] ConstantBuffer<CameraUBO> cam;
-
-[[vk::binding(2, 0)]] StructuredBuffer<ObjectData> objBuf;
 
 [[vk::push_constant]] PushConstants pc;
 

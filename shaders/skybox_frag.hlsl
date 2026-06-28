@@ -1,5 +1,5 @@
-[[vk::binding(5, 0)]] SamplerState textureSamplers[];
-[[vk::binding(12, 0)]] TextureCube skyboxCubemap;
+#include "_GlobalBindings.hlsli"
+
 
 struct PSInput
 {

@@ -1,12 +1,12 @@
+#include "_GlobalBindings.hlsli"
+
+
 struct PushConstants
 {
     uint envMapIndex;
     uint samplerIndex;
     float roughness;
 };
-
-[[vk::binding(4, 0)]] TextureCube textures[];
-[[vk::binding(5, 0)]] SamplerState textureSamplers[];
 
 [[vk::push_constant]] PushConstants pc;
 
@@ -15,8 +15,6 @@ struct PSInput
     float4 position : SV_Position;
     [[vk::location(0)]] float3 localPos : LOCALPOS;
 };
-
-static const float PI = 3.1415926535f;
 
 float RadicalInverse_VdC(uint bits)
 {
@@ -71,7 +69,7 @@ float4 main(PSInput input) : SV_TARGET
         if (NdotL > 0.0f)
         {
             // source cubemap has no mip chain; sample mip 0 directly. some firefly noise at high roughness is acceptable.
-            prefilteredColor += textures[pc.envMapIndex].SampleLevel(textureSamplers[pc.samplerIndex], L, 0.0f).rgb * NdotL;
+            prefilteredColor += textureCubes[pc.envMapIndex].SampleLevel(textureSamplers[pc.samplerIndex], L, 0.0f).rgb * NdotL;
             totalWeight += NdotL;
         }
     }

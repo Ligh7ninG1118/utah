@@ -1,10 +1,5 @@
-struct CameraUBO
-{
-    float4x4 view;
-    float4x4 proj;
-};
+#include "_GlobalBindings.hlsli"
 
-[[vk::binding(0, 0)]] ConstantBuffer<CameraUBO> cam;
 
 struct VSInput
 {

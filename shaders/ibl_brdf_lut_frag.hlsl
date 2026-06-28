@@ -1,10 +1,10 @@
+#include "_SharedTypes.hlsli"
+
 struct PSInput
 {
     float4 position : SV_Position;
     [[vk::location(0)]] float2 uv : TEXCOORD0;
 };
-
-static const float PI = 3.1415926535f;
 
 float RadicalInverse_VdC(uint bits)
 {

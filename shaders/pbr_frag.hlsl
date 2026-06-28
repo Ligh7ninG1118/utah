@@ -1,93 +1,5 @@
+#include "_GlobalBindings.hlsli"
 
-struct PointLight
-{
-    float3 position;
-    float attenConstant;
-    float3 ambient;
-    float attenLinear;
-    float3 diffuse;
-    float attenQuadratic;
-    float3 specular;
-    
-    float padding;
-};
-
-// Mirror DirectionalLightGPU
-struct DirectionalLight
-{
-    float3 direction;
-    float pad0;
-    float3 ambient;
-    float pad1;
-    float3 diffuse;
-    float pad2;
-    float3 specular;
-    float pad3;
-};
-
-struct SpotLight
-{
-    float3 position;
-    float attenConstant;
-    float3 direction;
-    float attenLinear;
-    float3 ambient;
-    float attenQuadratic;
-    float3 diffuse;
-    float cutoff;
-    float3 specular;
-    float outerCutoff;
-};
-
-static const uint MAX_POINT_LIGHTS = 32;
-static const uint MAX_DIR_LIGHTS = 4;
-static const uint MAX_SPOT_LIGHTS = 32;
-
-static const float PI = 3.1415926535f;
-
-struct LightUBO
-{
-    float3 eyePos;
-    float nearPlane;
-    float farPlane;
-    uint pointLightNum;
-    uint dirLightNum;
-    uint spotLightNum;
-
-    PointLight pointLights[MAX_POINT_LIGHTS];
-    DirectionalLight dirLights[MAX_DIR_LIGHTS];
-    SpotLight spotLights[MAX_SPOT_LIGHTS];
-};
-
-struct MatData
-{
-    uint texIndices[4]; // [0] Albedo, [1] OMR, [2] Normal, [3] Emissive
-    uint samplerIndices[4];
-    float4 color;
-    float shininess;
-};
-
-static const uint MAX_SHADOW_CASTER_LIGHTS = 64;
-
-struct ShadowMapUBO
-{
-    float4x4 lightViewProj[MAX_SHADOW_CASTER_LIGHTS];
-};
-
-
-[[vk::binding(1, 0)]] ConstantBuffer<LightUBO> lightUBO;
-
-[[vk::binding(3, 0)]] StructuredBuffer<MatData> matBuf;
-
-[[vk::binding(4, 0)]] Texture2D textures[];
-[[vk::binding(4, 0)]] TextureCube textureCubes[];
-[[vk::binding(5, 0)]] SamplerState textureSamplers[];
-
-[[vk::binding(6, 0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
-
-[[vk::binding(7, 0)]] Texture2D shadowMaps[];
-[[vk::binding(8, 0)]] SamplerComparisonState shadowMapCmpSampler;
-[[vk::binding(9, 0)]] TextureCube shadowCubeMaps[];
 
 struct PSInput
 {
@@ -102,6 +14,7 @@ struct PSInput
 float DistributionGGX(float3 N, float3 H, float roughness)
 {
     // Trowbridge-Reitz GGX
+    // Disney trick: square the roughness for a better look
     float a = roughness * roughness;
     float a2 = a * a;
     float NdotH = max(dot(N, H), 0.0f);
@@ -116,6 +29,7 @@ float DistributionGGX(float3 N, float3 H, float roughness)
 
 float GeometrySchlickGGX(float NdotV, float roughness)
 {
+    // kDirectLighting
     float r = (roughness + 1.0f);
     float k = (r * r) / 8.0f;
     
@@ -145,7 +59,7 @@ float3 FresnelSchlick(float cosTheta, float3 F0, float roughness)
 
 float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
 {
-    float4 worldPosLightSpace = mul(shadowMapUBO.lightViewProj[shadowIndex], float4(worldPos, 1.0f));
+    float4 worldPosLightSpace = mul(shadowMap.lightViewProj[shadowIndex], float4(worldPos, 1.0f));
     
     float3 projCoords = worldPosLightSpace.xyz / worldPosLightSpace.w;
     float currentDepth = projCoords.z;
@@ -232,27 +146,32 @@ float4 main(PSInput input) : SV_Target
     float metallic = orm.b;
     
     float3 N = normalize(input.normal);
-    float3 V = normalize(lightUBO.eyePos - input.worldPos);
+    float3 V = normalize(cam.eyePos - input.worldPos);
     
+    // Assume base reflectivity to be at 0.04
+    // And for metallic surface, lerp between F0 to albedo color
     float3 F0 = (float3) 0.04f;
     F0 = lerp(F0, albedo, metallic);
     
     float3 Lo = (float3) 0.0f;
-    for (int i = 0; i < lightUBO.pointLightNum; i++)
+    for (int i = 0; i < light.pointLightNum; i++)
     {
-        float3 L = lightUBO.pointLights[i].position - input.worldPos;
+        float3 L = light.pointLights[i].position - input.worldPos;
         float distance = length(L);
         L = normalize(L);
         float3 H = normalize(V + L);
+        //TODO: Currently ignoring attenuation
         float attenuation = 1.0f / (distance * distance);
-        float3 radiance = lightUBO.pointLights[i].diffuse;
+        float3 radiance = light.pointLights[i].diffuse;
         
         float NDF = DistributionGGX(N, H, roughness);
         float G = GeometrySmith(N, V, L, roughness);
         float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0, roughness);
         
+        // kS is corresponded in F
         float3 kS = F;
         float3 kD = (float3)1.0f - kS;
+        // Metaliic = Absorb refractance = No diffuse
         kD *= 1.0f - metallic;
 
         float3 numerator = NDF * G * F;

@@ -1,9 +1,5 @@
-struct ShadowMapUBO
-{
-	float4x4 lightViewProj[8];
-};
+#include "_GlobalBindings.hlsli"
 
-[[vk::binding(6,0)]] ConstantBuffer<ShadowMapUBO> shadowMapUBO;
 
 struct VSInput
 {
@@ -21,6 +17,6 @@ VSOutput main(VSInput input, uint ViewIndex : SV_ViewID)
 {
 	VSOutput o;
 	o.localPos = input.inPos;
-	o.position = mul(shadowMapUBO.lightViewProj[ViewIndex], float4(input.inPos, 1.0f));
+	o.position = mul(shadowMap.lightViewProj[ViewIndex], float4(input.inPos, 1.0f));
 	return o;
 }
