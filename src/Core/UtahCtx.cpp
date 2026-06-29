@@ -33,7 +33,7 @@ void UtahCtx::Run()
 {
 	InitWindow();
 	InitSystems();
-	InitDemo2();
+	InitDemo1();
 	MainLoop();
 	CleanUp();
 }
