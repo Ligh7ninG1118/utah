@@ -7,35 +7,28 @@
 struct alignas(16) PointLightGPU
 {
 	glm::vec3 position;
-	float constant;
-	glm::vec3 ambient;
-	float linear;
-	glm::vec3 diffuse;
-	float quadratic;
-	glm::vec3 specular;
-	float padding;
+	glm::vec3 color;
+	float intensity;
+	float range;
 };
 
 struct alignas(16) DirectionalLightGPU
 {
-	glm::vec3 direction; float padding0;
-	glm::vec3 ambient; float padding1;
-	glm::vec3 diffuse; float padding2;
-	glm::vec3 specular; float padding3;
+	glm::vec3 direction;
+	glm::vec3 color;
+	float intensity;
+	float range;
 };
 
 struct alignas(16) SpotLightGPU
 {
 	glm::vec3 position;
-	float constant;
 	glm::vec3 direction;
-	float linear;
-	glm::vec3 ambient;
-	float quadratic;
-	glm::vec3 diffuse;
 	float cutOff;
-	glm::vec3 specular;
 	float outerCutoff;
+	glm::vec3 color;
+	float intensity;
+	float range;
 };
 
 // UBO, SSBO, PushConstant
@@ -44,13 +37,14 @@ struct alignas(16) CameraUBO
 {
 	glm::mat4 view;
 	glm::mat4 proj;
+
+	glm::vec3 eyePos;
+	float nearPlane;	// for linearizing depth
+	float farPlane;
 };
 
 struct alignas(16) LightUBO
 {
-	glm::vec3 eyePos;
-	float nearPlane;	// for linearizing depth
-	float farPlane;
 	unsigned int pointLightNum;
 	unsigned int dirLightNum;
 	unsigned int spotLightNum;
@@ -58,6 +52,17 @@ struct alignas(16) LightUBO
 	PointLightGPU pointLights[32];
 	DirectionalLightGPU dirLights[4];
 	SpotLightGPU spotLights[32];
+};
+
+struct alignas(16) SceneIBLUBO
+{
+	uint32_t irradianceIndex;
+	uint32_t prefilteredIndex;
+	uint32_t brdfLUTIndex;
+	uint32_t samplerIndex;
+	float intensity;
+	uint32_t prefilteredMaxMip;
+	glm::vec3 ambientColor;
 };
 
 struct alignas(16) ObjectSSBO
@@ -70,8 +75,10 @@ struct alignas(16) MaterialSSBO
 {
 	uint32_t texIndices[4];
 	uint32_t samplerIndices[4];
-	glm::vec4 color;
-	float shininess;
+	glm::vec4 baseColorFactor;
+	glm::vec3 ormFactor;
+	glm::vec3 emissiveFactor;
+	float normalScale;
 };
 
 struct PerDrawPC

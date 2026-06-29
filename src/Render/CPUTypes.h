@@ -6,22 +6,15 @@
 
 struct PointLightCPU
 {
-	glm::vec3 ambient{ 0.1f };
-	glm::vec3 diffuse{ 0.5f };
-	glm::vec3 specular{ 1.0f };
-
-	float constant = 1.0f;
-	float linear = 0.07f;
-	float quadratic = 0.017f;
+	glm::vec3 color{ 0.5f };
+	float intensity = 1.0f;
+	float range = 30.0f;
 
 	// Build struct for GPU layout
 	PointLightGPU ToGPU(const glm::vec3& position) const
 	{
 		return PointLightGPU{
-			position, constant,
-			ambient, linear,
-			diffuse, quadratic,
-			specular, 0.0f // padding
+			position, color, intensity, range
 		};
 	}
 };
@@ -31,9 +24,9 @@ struct DirectionalLightCPU
 	float pitch = -45.0f;
 	float yaw = 0.0f;
 
-	glm::vec3 ambient{ 0.1f };
-	glm::vec3 diffuse{ 0.5f };
-	glm::vec3 specular{ 1.0f };
+	glm::vec3 color{ 0.5f };
+	float intensity = 1.0f;
+	float range = 30.0f;
 
 	glm::vec3 GetDirection() const
 	{
@@ -51,10 +44,7 @@ struct DirectionalLightCPU
 	DirectionalLightGPU ToGPU() const
 	{
 		return DirectionalLightGPU{
-			GetDirection(), 0.0f, //paddings
-			ambient,  0.0f,
-			diffuse,  0.0f,
-			specular, 0.0f
+			GetDirection(), color, intensity, range
 		};
 	}
 };
@@ -64,16 +54,12 @@ struct SpotLightCPU
 	float pitch = -45.0f;
 	float yaw = 0.0f;
 
-	glm::vec3 ambient{ 0.1f };
-	glm::vec3 diffuse{ 0.5f };
-	glm::vec3 specular{ 1.0f };
-
-	float constant = 1.0f;
-	float linear = 0.07f;
-	float quadratic = 0.017f;
-
 	float cutoff = 12.5f;
 	float outerCutoff = 17.5f;
+
+	glm::vec3 color;
+	float intensity;
+	float range;
 
 	glm::vec3 GetDirection() const
 	{
@@ -91,11 +77,11 @@ struct SpotLightCPU
 	SpotLightGPU ToGPU(const glm::vec3& position) const
 	{
 		return SpotLightGPU{
-			position, constant,
-			GetDirection(), linear,
-			ambient, quadratic,
-			diffuse, glm::cos(glm::radians(cutoff)),
-			specular, glm::cos(glm::radians(outerCutoff))
+			position, 
+			GetDirection(),
+			glm::cos(glm::radians(cutoff)),
+			glm::cos(glm::radians(outerCutoff)),
+			color, intensity, range
 		};
 	}
 };

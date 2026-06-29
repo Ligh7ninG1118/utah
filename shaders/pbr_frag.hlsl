@@ -126,24 +126,29 @@ float ShadowCubeMapCalculation(uint shadowIndex, float3 N, float3 L, float nearP
 
 float4 main(PSInput input) : SV_Target
 {
-    uint albedoIdx = matBuf[input.matIndex].texIndices[0];
-    uint ormIdx = matBuf[input.matIndex].texIndices[1];
-    uint normalIdx = matBuf[input.matIndex].texIndices[2];
-    uint emissiveIdx = matBuf[input.matIndex].texIndices[3];
+    MatData mat = matBuf[input.matIndex];
     
-    uint albedoSamplerIdx = matBuf[input.matIndex].samplerIndices[0];
-    uint ormSamplerIdx = matBuf[input.matIndex].samplerIndices[1];
-    uint normalSamplerIdx = matBuf[input.matIndex].samplerIndices[2];
-    uint emissiveSamplerIdx = matBuf[input.matIndex].samplerIndices[3];
+    uint albedoIdx = mat.texIndices[0];
+    uint ormIdx = mat.texIndices[1];
+    uint normalIdx = mat.texIndices[2];
+    uint emissiveIdx = mat.texIndices[3];
+    
+    uint albedoSamplerIdx = mat.samplerIndices[0];
+    uint ormSamplerIdx = mat.samplerIndices[1];
+    uint normalSamplerIdx = mat.samplerIndices[2];
+    uint emissiveSamplerIdx = mat.samplerIndices[3];
     
     float3 albedo = textures[NonUniformResourceIndex(albedoIdx)].Sample(textureSamplers[albedoSamplerIdx], input.uv).rgb;
     float3 orm = textures[NonUniformResourceIndex(ormIdx)].Sample(textureSamplers[ormSamplerIdx], input.uv).rgb;
     float3 normal = textures[NonUniformResourceIndex(normalIdx)].Sample(textureSamplers[normalSamplerIdx], input.uv).rgb;
     float3 emissive = textures[NonUniformResourceIndex(emissiveIdx)].Sample(textureSamplers[emissiveSamplerIdx], input.uv).rgb;
     
-    float ao = orm.r;
-    float roughness = orm.g;
-    float metallic = orm.b;
+    float ao = lerp(1.0f, orm.r, mat.ormFactor.r);
+    float roughness = orm.g * mat.ormFactor.g;
+    float metallic = orm.b * mat.ormFactor.b;
+   
+    albedo *= mat.baseColorFactor.rgb;
+    emissive *= mat.emissiveFactor;
     
     float3 N = normalize(input.normal);
     float3 V = normalize(cam.eyePos - input.worldPos);
@@ -160,9 +165,9 @@ float4 main(PSInput input) : SV_Target
         float distance = length(L);
         L = normalize(L);
         float3 H = normalize(V + L);
-        //TODO: Currently ignoring attenuation
+        
         float attenuation = 1.0f / (distance * distance);
-        float3 radiance = light.pointLights[i].diffuse;
+        float3 radiance = light.pointLights[i].color * light.pointLights[i].intensity * attenuation;
         
         float NDF = DistributionGGX(N, H, roughness);
         float G = GeometrySmith(N, V, L, roughness);
@@ -185,17 +190,16 @@ float4 main(PSInput input) : SV_Target
     float3 kS = FresnelSchlick(max(dot(N, V), 0.0f), F0, roughness);
     float3 kD = 1.0f - kS;
     kD *= 1.0f - metallic;
-    //TODO: hard coded maps, has to send it from CPU side
-    float3 irradiance = textureCubes[9].Sample(textureSamplers[0], N).rgb;
+    
+    float3 irradiance = textureCubes[sceneIBL.irradianceIndex].Sample(textureSamplers[sceneIBL.samplerIndex], N).rgb;
     float3 diffuse = irradiance * albedo;
     
-    static const float MAX_REFLECTION_LOD = 4.0f;
     float3 R = reflect(-V, N);
-    float3 prefilteredColor = textureCubes[10].SampleLevel(textureSamplers[0], R, roughness * MAX_REFLECTION_LOD).rgb;
-    float2 brdf = textures[11].Sample(textureSamplers[0], float2(max(dot(N, V), 0.0f), roughness)).rg;
+    float3 prefilteredColor = textureCubes[sceneIBL.prefilteredIndex].SampleLevel(textureSamplers[0], R, roughness * sceneIBL.prefilteredMaxMip).rgb;
+    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(textureSamplers[sceneIBL.samplerIndex], float2(max(dot(N, V), 0.0f), roughness)).rg;
     float3 specularIBL = prefilteredColor * (kS * brdf.r + brdf.g);
     
-    float3 ambient = (kD * diffuse + specularIBL) * ao;
+    float3 ambient = (kD * diffuse + specularIBL) * ao * sceneIBL.intensity + sceneIBL.ambientColor * albedo * ao;
     
     return float4(ambient + Lo + emissive, 1.0f);
 }

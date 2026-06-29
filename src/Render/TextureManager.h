@@ -34,7 +34,7 @@ public:
 
 	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
-	TextureHandle CreateWhiteTexture();
+	TextureHandle CreateDefaultTexture(uint32_t colorValue, TextureColorSpace colorSpace, const std::string& name);
 	TextureHandle CreateCubemapRenderTarget(const std::string& name, uint32_t resolution);
 	TextureHandle CreateCubemapRenderTargetWithMips(const std::string& name, uint32_t resolution, uint32_t mipLevels);
 	TextureHandle Create2DRenderTarget(const std::string& name, uint32_t width, uint32_t height);

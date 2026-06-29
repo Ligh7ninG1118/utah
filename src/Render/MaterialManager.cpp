@@ -14,20 +14,25 @@ MaterialHandle MaterialManager::CreateUnlitMaterial(const std::string& name, uin
     Material newMat{};
     newMat.type = MaterialType::Unlit;
     newMat.pipeline = pipelineIndex;
-    newMat.baseColor = color;
+    newMat.baseColorFactor = color;
 
     _materials.push_back(newMat);
     return RegisterName(name);
 }
 
-MaterialHandle MaterialManager::CreateBlinnPhongMaterial(const std::string& name, uint32_t pipelineIndex, std::vector<TextureHandle> texIndices, glm::vec4 color, float shininess)
+MaterialHandle MaterialManager::CreatePBRMaterial(const std::string& name, uint32_t pipelineIndex, 
+    std::vector<TextureHandle> texIndices, glm::vec4 baseColorFactor, glm::vec3 ormFactor,
+    glm::vec3 emissiveFactor, float normalScale)
 {
     Material newMat{};
-    newMat.type = MaterialType::BlinnPhong;
+    newMat.type = MaterialType::PBR;
     newMat.pipeline = pipelineIndex;
 
-    //TODO: Change this to something more readable
-    newMat.texIndices[0] = newMat.texIndices[1] = newMat.texIndices[2] = newMat.texIndices[3] = 0; // Defaults to white 1x1 texture
+    // init with default textures for albedo/orm/normal/emissive
+    newMat.texIndices[0] = 0;
+    newMat.texIndices[1] = 1;
+    newMat.texIndices[2] = 2;
+    newMat.texIndices[3] = 3; 
 
     //TODO: All materials default to use one sampler for now
     newMat.samplerIndices[0] = newMat.samplerIndices[1] = newMat.samplerIndices[2] = newMat.samplerIndices[3] = 0;
@@ -36,8 +41,10 @@ MaterialHandle MaterialManager::CreateBlinnPhongMaterial(const std::string& name
     {
         newMat.texIndices[i] = texIndices[i].index;
     }
-    newMat.baseColor = color;
-    newMat.shininess = shininess;
+    newMat.baseColorFactor = baseColorFactor;
+    newMat.ormFactor = ormFactor;
+    newMat.emissiveFactor = emissiveFactor;
+    newMat.normalScale = normalScale;
 
     _materials.push_back(newMat);
     return RegisterName(name);
@@ -52,8 +59,12 @@ std::vector<MaterialGPU> MaterialManager::ConvertMaterialsToGPU()
         MaterialGPU matGPU{};
         memcpy(matGPU.texIndices, mat.texIndices, sizeof(uint32_t)*4);
         memcpy(matGPU.samplerIndices, mat.samplerIndices, sizeof(uint32_t) * 4);
-        matGPU.baseColor = mat.baseColor;
-        matGPU.shininess = mat.shininess;
+
+        matGPU.baseColorFactor = mat.baseColorFactor;
+        matGPU.ormFactor = mat.ormFactor;
+        matGPU.emissiveFactor = mat.emissiveFactor;
+        matGPU.normalScale = mat.normalScale;
+
         matGPUs.push_back(matGPU);
     }
 

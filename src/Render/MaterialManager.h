@@ -10,7 +10,7 @@
 enum class MaterialType : uint32_t
 {
 	Unlit,
-	BlinnPhong,
+	//BlinnPhong, // deprecated
 	PBR
 };
 
@@ -20,16 +20,20 @@ struct Material
 	uint32_t pipeline;
 	uint32_t texIndices[4];
 	uint32_t samplerIndices[4];
-	glm::vec4 baseColor;
-	float shininess = 32.0f;
+	glm::vec4 baseColorFactor;
+	glm::vec3 ormFactor;
+	glm::vec3 emissiveFactor;
+	float normalScale;
 };
 
 struct MaterialGPU
 {
 	uint32_t texIndices[4];
 	uint32_t samplerIndices[4];
-	glm::vec4 baseColor;
-	float shininess;
+	glm::vec4 baseColorFactor;
+	glm::vec3 ormFactor;
+	glm::vec3 emissiveFactor;
+	float normalScale;
 };
 
 
@@ -43,8 +47,9 @@ public:
 
 	MaterialHandle CreateUnlitMaterial(const std::string& name, uint32_t pipelineIndex, glm::vec4 color);
 
-	MaterialHandle CreateBlinnPhongMaterial(const std::string& name, uint32_t pipelineIndex, 
-		std::vector<TextureHandle> texIndices, glm::vec4 color, float shininess = 32.0f);
+	MaterialHandle CreatePBRMaterial(const std::string& name, uint32_t pipelineIndex, 
+		std::vector<TextureHandle> texIndices, glm::vec4 baseColorFactor = glm::vec4(1.0f), glm::vec3 ormFactor = glm::vec3(1.0f),
+		glm::vec3 emissiveFactor = glm::vec3(1.0f), float normalScale = 1.0f);
 
 	std::vector<MaterialGPU> ConvertMaterialsToGPU();
 

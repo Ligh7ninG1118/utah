@@ -101,15 +101,14 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 
-	_materialManager.CreateBlinnPhongMaterial("viking_room", _blinnPhongPipeline, { vikingRoomTex }, glm::vec4(1.0f)); // Blinn phong, tex (viking room)
-	_materialManager.CreateBlinnPhongMaterial("pure_green", _blinnPhongPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // Blinn Phong, no tex green color
-	_materialManager.CreateBlinnPhongMaterial("pure_white", _blinnPhongPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // Blinn Phong, no tex white color
+	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex }, glm::vec4(1.0f), 
+		glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f)); // tex (viking room), ao and roughness 1, metallic 0, no emissive
+	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
+	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
-	// is pbr, but same function tho
-	//TODO: get rid of shinness field altogether? 
-	_materialManager.CreateBlinnPhongMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }, glm::vec4(1.0f)); // PBR, tex (damaged helmet)
+	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
 
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
@@ -119,8 +118,11 @@ void VulkanRenderer::Initialize()
 		MaterialSSBO* materials = static_cast<MaterialSSBO*>(_frames[i].Mapped(GlobalBinding::MaterialSSBO));
 		for (size_t j = 0; j < matGPUs.size(); ++j)
 		{
-			materials[j].color = matGPUs[j].baseColor;
-			materials[j].shininess = matGPUs[j].shininess;
+			materials[j].baseColorFactor = matGPUs[j].baseColorFactor;
+			materials[j].ormFactor = matGPUs[j].ormFactor;
+			materials[j].emissiveFactor = matGPUs[j].emissiveFactor;
+			materials[j].normalScale = matGPUs[j].normalScale;
+
 			memcpy(materials[j].texIndices, matGPUs[j].texIndices, sizeof(uint32_t) * 4);
 			memcpy(materials[j].samplerIndices, matGPUs[j].samplerIndices, sizeof(uint32_t) * 4);
 		}
@@ -304,12 +306,12 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		glm::perspective(glm::radians(_mainCam._verticalFOV), swapChainExtent.width / (float)swapChainExtent.height, _mainCam._farPlane, _mainCam._nearPlane);
 	// Flip y axis since GLM's was inverted
 	camUBO.proj[1][1] *= -1;
+	camUBO.eyePos = _mainCam._pos;
+	camUBO.nearPlane = _mainCam._nearPlane;
+	camUBO.farPlane = _mainCam._farPlane;
 	memcpy(frame.Mapped(GlobalBinding::CameraUBO), &camUBO, sizeof(camUBO));
 
 	LightUBO lightUBO{};
-	lightUBO.eyePos = _mainCam._pos;
-	lightUBO.nearPlane = _mainCam._nearPlane;
-	lightUBO.farPlane = _mainCam._farPlane;
 	lightUBO.dirLightNum = static_cast<uint32_t>(_dirLights.size());
 	std::memcpy(lightUBO.dirLights, _dirLights.data(),
 		std::min(_dirLights.size(), size_t(MAX_DIR_LIGHTS)) * sizeof(DirectionalLightGPU));
@@ -447,6 +449,18 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
 
+	//TODO: No need to update this per frame probably
+	SceneIBLUBO sceneIBL
+	{   .irradianceIndex = convolutionHandle.index,
+		.prefilteredIndex = prefilterHandle.index,
+		.brdfLUTIndex = brdfLUTHandle.index,
+		.samplerIndex = 0,
+		.intensity = 1.0f,	
+		.prefilteredMaxMip = 4,
+		.ambientColor = glm::vec3(0.0f)		// intensity 1 + ambient 0 for baked IBL; vice versa for no IBL
+	};
+
+	memcpy(frame.Mapped(GlobalBinding::SceneIBLUBO), &sceneIBL, sizeof(sceneIBL));
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -633,6 +647,13 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
+	// 13: Scene IBL UBO
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SceneIBLUBO),
+										.type = vk::DescriptorType::eUniformBuffer,
+										.count = 1,
+										.bufferSize = sizeof(SceneIBLUBO),
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = {} }); //TODO: Should I use update after bind here? If it does than camera needs it too
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -906,7 +927,6 @@ void VulkanRenderer::CreatePipelines()
 {
 	_pipelines.clear();
 
-	_blinnPhongPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/blinn_phong_frag.spv", *_globalPipelineLayout);
 	_pbrPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/pbr_frag.spv", *_globalPipelineLayout);
 	_debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);

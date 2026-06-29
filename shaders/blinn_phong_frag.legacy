@@ -1,3 +1,4 @@
+// Deprecated Blinn Phong fragment shader, kept as reference
 
 struct PointLight
 {

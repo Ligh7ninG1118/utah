@@ -27,10 +27,12 @@ struct ObjectData
 
 struct MatData
 {
-    uint texIndices[4]; // [0] Albedo, [1] Specular
+    uint texIndices[4]; // [0] Albedo, [1] ORM, [2] Normal, [3] Emissive
     uint samplerIndices[4];
-    float4 color;
-    float shininess;
+    float4 baseColorFactor;
+    float3 ormFactor;
+    float3 emissiveFactor;
+    float normalScale;
 };
 
 // Lighting, shadow maps
@@ -78,13 +80,13 @@ struct ShadowMapUBO
     float4x4 lightViewProj[MAX_SHADOW_CASTER_LIGHTS];
 };
 
-struct SceneUBO
+struct SceneIBLUBO
 {
-    uint iblIrradianceIndex;
-    uint iblPrefilteredIndex;
+    uint irradianceIndex;
+    uint prefilteredIndex;
     uint brdfLUTIndex;
-    uint iblSamplerIndex;
-    float iblIntensity;
+    uint samplerIndex;
+    float intensity;
     uint prefilteredMaxMip;
     float3 ambientColor;
 };

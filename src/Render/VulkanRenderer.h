@@ -39,6 +39,7 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec3 normal;
 	glm::vec2 texCoord;
+	glm::vec4 tangent;
 
 	static vk::VertexInputBindingDescription GetBindingDescription()
 	{
@@ -46,18 +47,19 @@ struct Vertex
 		// Input rate can be changed for instanced drawing
 	}
 
-	static std::array<vk::VertexInputAttributeDescription, 3> GetAttributeDescriptions()
+	static std::array<vk::VertexInputAttributeDescription, 4> GetAttributeDescriptions()
 	{
 		return {
 			vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
 			vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)),
 			vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord)),
+			vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, tangent)),
 		};
 	}
 
 	bool operator==(const Vertex& other) const
 	{
-		return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
+		return pos == other.pos && normal == other.normal && texCoord == other.texCoord && tangent == other.tangent;
 	}
 };
 
@@ -95,6 +97,7 @@ enum class GlobalBinding : uint32_t
 	HDROutput = 10,
 	HDRSampler = 11,
 	SkyboxCubemap = 12,
+	SceneIBLUBO = 13,
 	Count
 };
 
@@ -275,7 +278,6 @@ private:
 	vk::raii::PipelineLayout      _globalPipelineLayout = nullptr;
 	std::vector<PipelineEntry> _pipelines;
 	
-	uint32_t _blinnPhongPipeline = INVALID_HANDLE;
 	uint32_t _pbrPipeline = INVALID_HANDLE;
 	uint32_t _debugPipeline = INVALID_HANDLE;
 	uint32_t _debugWireframePipeline = INVALID_HANDLE;

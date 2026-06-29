@@ -9,5 +9,5 @@ struct PSInput
 
 float4 main(PSInput input) : SV_Target
 {
-    return matBuf[input.matIndex].color;
+    return matBuf[input.matIndex].baseColorFactor;
 }

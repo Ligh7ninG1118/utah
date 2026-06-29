@@ -26,7 +26,15 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	_pVkCtxRef = vkCtx;
 
 	CreateTextureSampler();
-	CreateWhiteTexture();
+	// albedo
+	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::sRGB, "white");
+	// ORM
+	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::Linear, "orm");
+	// Normal flat tangent-space (128, 128, 255, 0)
+	CreateDefaultTexture(0x8080FF00, TextureColorSpace::Linear, "normal");
+	// Emissive
+	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::sRGB, "emissive");
+
 
 	_skyboxTexHandle = ImportCubemapTexture({ "textures/skybox test x pos.png",
 											"textures/skybox test x neg.png",
@@ -222,18 +230,31 @@ TextureHandle TextureManager::ImportCubemapTexture(const std::array<std::string,
 	return RegisterName(name);
 }
 
-TextureHandle TextureManager::CreateWhiteTexture()
+TextureHandle TextureManager::CreateDefaultTexture(uint32_t colorValue, TextureColorSpace colorSpace, const std::string& name)
 {
-	uint32_t white = 0xFFFFFFFF;            // RGBA 255,255,255,255
 	vk::DeviceSize imageSize = 4;
 
 	AllocatedBuffer staging = _pRenderer->CreateBuffer(
 		imageSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
 		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-	memcpy(staging.info.pMappedData, &white, imageSize);
+	memcpy(staging.info.pMappedData, &colorValue, imageSize);
+
+	vk::Format format = vk::Format::eUndefined;
+	switch (colorSpace)
+	{
+	case TextureColorSpace::sRGB:
+		format = vk::Format::eR8G8B8A8Srgb;
+		break;
+	case TextureColorSpace::Linear:
+		format = vk::Format::eR8G8B8A8Unorm;
+		break;
+	default:
+		//TODO: printf here
+		break;
+	}
 
 	AllocatedImage img = _pRenderer->CreateImage(
-		1, 1, 1, vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb,
+		1, 1, 1, vk::SampleCountFlagBits::e1, format,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc — no mip blits
 
@@ -242,9 +263,9 @@ TextureHandle TextureManager::CreateWhiteTexture()
 	_pRenderer->TransitionImageLayout(img.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 1);
 	_pRenderer->DestroyBuffer(staging);
 
-	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1);
+	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, format, vk::ImageAspectFlagBits::eColor, 1);
 	_textures.emplace_back(img, std::move(view), 0);
-	return RegisterName("white");
+	return RegisterName(name);
 }
 
 TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name, uint32_t resolution)

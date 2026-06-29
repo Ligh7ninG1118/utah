@@ -22,7 +22,7 @@
 [[vk::binding(11, 0)]] SamplerState hdrSampler;
 [[vk::binding(12, 0)]] TextureCube skyboxCubemap;
 
-[[vk::binding(13, 0)]] ConstantBuffer<SceneUBO> sceneIBL;
+[[vk::binding(13, 0)]] ConstantBuffer<SceneIBLUBO> sceneIBL;
 
 // PushConstant, for now, is defined in individual shaders based on usage
 
