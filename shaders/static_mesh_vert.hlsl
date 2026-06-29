@@ -14,6 +14,8 @@ struct VSInput
     [[vk::location(0)]] float3 inPos    : POSITION;
     [[vk::location(1)]] float3 inNormal : NORMAL;
     [[vk::location(2)]] float2 inUV     : TEXCOORD0;
+    [[vk::location(3)]] float4 inTangent: TANGENT;
+    
 };
 
 struct VSOutput 
@@ -23,6 +25,8 @@ struct VSOutput
     [[vk::location(1)]] float3 normal            : NORMAL;
     [[vk::location(2)]] float2 uv                : TEXCOORD0;
     [[vk::location(3)]] nointerpolation uint matIndex : MATINDEX;
+    [[vk::location(4)]] float4 tangent           : TANGENT;
+    
 };
 
 VSOutput main(VSInput input)
@@ -36,6 +40,6 @@ VSOutput main(VSInput input)
     o.normal   = normalize(mul((float3x3)model, input.inNormal));
     o.uv       = input.inUV;
     o.matIndex = pc.matIndex;
-    
+    o.tangent  = float4(normalize(mul((float3x3)model, input.inTangent.xyz)), input.inTangent.w);
     return o;
 }

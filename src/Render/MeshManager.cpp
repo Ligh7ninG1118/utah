@@ -343,6 +343,16 @@ MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::s
 						vertices[vertexStart + i].texCoord = { t.x(), t.y() };
 					});
 			}
+
+			// tangents (vec4: xyz = tangent, w = handedness)
+			if (const auto* tan = prim.findAttribute("TANGENT"); tan != prim.attributes.end())
+			{
+				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+					gltf, gltf.accessors[tan->accessorIndex],
+					[&](fastgltf::math::fvec4 t, size_t i) {
+						vertices[vertexStart + i].tangent = { t.x(), t.y(), t.z(), t.w() };
+					});
+			}
 		}
 	}
 

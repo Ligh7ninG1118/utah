@@ -185,13 +185,8 @@ void UtahCtx::InitDemo1()
 		t._pos.x = i * 3.0f;
 
 		PointLightCPU p;
-		p.ambient = glm::vec3(0.0f, 0.1f, 0.0f);
-		p.diffuse = glm::vec3(0.0f, 0.3f, 0.0f);
-		p.specular = glm::vec3(0.0f, 0.5f, 0.0f);
-
-		p.constant = 1.0f;
-		p.linear = 0.07f;
-		p.quadratic = 0.017f;
+		p.color = glm::vec3(0.0f, 1.0f, 0.0f);
+		p.intensity = 5.0f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
@@ -208,9 +203,8 @@ void UtahCtx::InitDemo1()
 		p.pitch = -45.0f;
 		p.yaw = 90.0f;
 
-		p.ambient = glm::vec3(0.1f, 0.0f, 0.0f);
-		p.diffuse = glm::vec3(0.2f, 0.0f, 0.0f);
-		p.specular = glm::vec3(0.5f, 0.0f, 0.0f);
+		p.color = glm::vec3(1.0f, 0.0f, 0.0f);
+		p.intensity = 1.5f;
 
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
@@ -228,9 +222,8 @@ void UtahCtx::InitDemo1()
 		p.pitch = -45.0f;
 		p.yaw = -90.0f;
 
-		p.ambient = glm::vec3(0.0f, 0.0f, 0.1f);
-		p.diffuse = glm::vec3(0.0f, 0.0f, 0.2f);
-		p.specular = glm::vec3(0.0f, 0.0f, 1.5f);
+		p.color = glm::vec3(0.0f, 0.0f, 1.0f);
+		p.intensity = 2.5f;
 
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
@@ -244,12 +237,9 @@ void UtahCtx::InitDemo1()
 		TransformComponent t;
 
 		SpotLightCPU p;
-		p.ambient = glm::vec3(0.01f);
-		p.diffuse = glm::vec3(0.4f);
-		p.specular = glm::vec3(0.7f);
-		p.constant = 1.0f;
-		p.linear = 0.07f;
-		p.quadratic = 0.017f;
+		p.color = glm::vec3(1.0f);
+		p.intensity = 20.0f;
+		p.range = 30.0f;
 		p.cutoff = 12.5f;
 		p.outerCutoff = 17.5f;
 
@@ -307,7 +297,8 @@ void UtahCtx::InitDemo2()
 		t._pos.x = i * 3.0f;
 
 		PointLightCPU p;
-		p.diffuse = glm::vec3(5.0f);
+		p.color = glm::vec3(1.0f);
+		p.intensity = 5.0f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));

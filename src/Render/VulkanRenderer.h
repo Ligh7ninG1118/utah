@@ -39,7 +39,7 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec3 normal;
 	glm::vec2 texCoord;
-	glm::vec4 tangent;
+	glm::vec4 tangent{ 0.0f };
 
 	static vk::VertexInputBindingDescription GetBindingDescription()
 	{
@@ -68,8 +68,8 @@ struct std::hash<Vertex>
 {
 	size_t operator()(const Vertex& vertex) const
 	{
-		return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1) ^
-			(hash<glm::vec2>()(vertex.texCoord) << 1);
+		return (((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1) ^
+			(hash<glm::vec2>()(vertex.texCoord) << 1)) ^ (hash<glm::vec4>()(vertex.tangent) << 1);
 	}
 };
 

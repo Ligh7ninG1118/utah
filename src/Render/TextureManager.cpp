@@ -28,12 +28,12 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	CreateTextureSampler();
 	// albedo
 	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::sRGB, "white");
-	// ORM
-	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::Linear, "orm");
+	// ORM, ao = 1, r = 1, m = 0
+	CreateDefaultTexture(0xFFFF00FF, TextureColorSpace::Linear, "orm");
 	// Normal flat tangent-space (128, 128, 255, 0)
 	CreateDefaultTexture(0x8080FF00, TextureColorSpace::Linear, "normal");
 	// Emissive
-	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::sRGB, "emissive");
+	CreateDefaultTexture(0x000000FF, TextureColorSpace::sRGB, "emissive");
 
 
 	_skyboxTexHandle = ImportCubemapTexture({ "textures/skybox test x pos.png",

@@ -14,7 +14,10 @@ struct PointLightCPU
 	PointLightGPU ToGPU(const glm::vec3& position) const
 	{
 		return PointLightGPU{
-			position, color, intensity, range
+			.position = position,
+			.intensity = intensity,
+			.color = color,
+			.range = range,
 		};
 	}
 };
@@ -44,7 +47,10 @@ struct DirectionalLightCPU
 	DirectionalLightGPU ToGPU() const
 	{
 		return DirectionalLightGPU{
-			GetDirection(), color, intensity, range
+			.direction = GetDirection(),
+			.intensity = intensity,
+			.color = color,
+			.range = range,
 		};
 	}
 };
@@ -77,11 +83,13 @@ struct SpotLightCPU
 	SpotLightGPU ToGPU(const glm::vec3& position) const
 	{
 		return SpotLightGPU{
-			position, 
-			GetDirection(),
-			glm::cos(glm::radians(cutoff)),
-			glm::cos(glm::radians(outerCutoff)),
-			color, intensity, range
+			.position = position,
+			.cutOff = glm::cos(glm::radians(cutoff)),
+			.direction = GetDirection(),
+			.outerCutoff = glm::cos(glm::radians(outerCutoff)),
+			.color = color,
+			.intensity = intensity,
+			.range = range,
 		};
 	}
 };

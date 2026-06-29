@@ -100,15 +100,14 @@ void VulkanRenderer::Initialize()
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
+	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
 
-	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex }, glm::vec4(1.0f), 
-		glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(0.0f)); // tex (viking room), ao and roughness 1, metallic 0, no emissive
+	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex });
 	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
-	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
 
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
@@ -451,13 +450,14 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	//TODO: No need to update this per frame probably
 	SceneIBLUBO sceneIBL
-	{   .irradianceIndex = convolutionHandle.index,
+	{   
+		.ambientColor = glm::vec3(0.0f),		// intensity 1 + ambient 0 for baked IBL; vice versa for no IBL
+		.intensity = 1.0f,	
+		.irradianceIndex = convolutionHandle.index,
 		.prefilteredIndex = prefilterHandle.index,
 		.brdfLUTIndex = brdfLUTHandle.index,
 		.samplerIndex = 0,
-		.intensity = 1.0f,	
 		.prefilteredMaxMip = 4,
-		.ambientColor = glm::vec3(0.0f)		// intensity 1 + ambient 0 for baked IBL; vice versa for no IBL
 	};
 
 	memcpy(frame.Mapped(GlobalBinding::SceneIBLUBO), &sceneIBL, sizeof(sceneIBL));
@@ -568,7 +568,7 @@ void VulkanRenderer::InitBindingDescs()
 										.type = vk::DescriptorType::eUniformBuffer,
 										.count = 1,
 										.bufferSize = sizeof(CameraUBO),
-										.stageFlags = vk::ShaderStageFlagBits::eVertex,
+										.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} });
 	// 1: Light UBO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::LightUBO),

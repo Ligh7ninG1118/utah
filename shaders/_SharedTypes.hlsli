@@ -31,8 +31,8 @@ struct MatData
     uint samplerIndices[4];
     float4 baseColorFactor;
     float3 ormFactor;
-    float3 emissiveFactor;
     float normalScale;
+    float3 emissiveFactor;
 };
 
 // Lighting, shadow maps
@@ -40,24 +40,24 @@ struct MatData
 struct PointLight
 {
     float3 position;
-    float3 color;
     float intensity;
+    float3 color;
     float range;
 };
 
 struct DirectionalLight
 {
     float3 direction;
-    float3 color;
     float intensity;
+    float3 color;
     float range;
 };
 
 struct SpotLight
 {
     float3 position;
-    float3 direction;
     float cutoff;
+    float3 direction;
     float outerCutoff;
     float3 color;
     float intensity;
@@ -82,13 +82,13 @@ struct ShadowMapUBO
 
 struct SceneIBLUBO
 {
+    float3 ambientColor;
+    float intensity;
     uint irradianceIndex;
     uint prefilteredIndex;
     uint brdfLUTIndex;
     uint samplerIndex;
-    float intensity;
     uint prefilteredMaxMip;
-    float3 ambientColor;
 };
 
 #endif
