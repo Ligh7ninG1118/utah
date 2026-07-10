@@ -260,7 +260,7 @@ void VulkanRenderer::InitImGUI()
 
 	ImGui_ImplGlfw_InitForVulkan(_programCtx.GetContextWindow(), true);
 	VkFormat colorFormat = static_cast<VkFormat>(_pSwapChainCtx->GetSurfaceFormat().format);
-	VkFormat depthFormat = static_cast<VkFormat>(FindDepthFormat());
+	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
 	ImGui_ImplVulkan_InitInfo initInfo{};
 	initInfo.ApiVersion = VK_API_VERSION_1_3;
@@ -311,15 +311,15 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	memcpy(frame.Mapped(GlobalBinding::CameraUBO), &camUBO, sizeof(camUBO));
 
 	LightUBO lightUBO{};
-	lightUBO.dirLightNum = static_cast<uint32_t>(_dirLights.size());
+	lightUBO.dirLightNum = std::min(static_cast<uint32_t>(_dirLights.size()), MAX_DIR_LIGHTS);
 	std::memcpy(lightUBO.dirLights, _dirLights.data(),
 		std::min(_dirLights.size(), size_t(MAX_DIR_LIGHTS)) * sizeof(DirectionalLightGPU));
 
-	lightUBO.spotLightNum = static_cast<uint32_t>(_spotLights.size());
+	lightUBO.spotLightNum = std::min(static_cast<uint32_t>(_spotLights.size()), MAX_SPOT_LIGHTS);
 	std::memcpy(lightUBO.spotLights, _spotLights.data(),
 		std::min(_spotLights.size(), size_t(MAX_SPOT_LIGHTS)) * sizeof(SpotLightGPU));
 
-	lightUBO.pointLightNum = static_cast<uint32_t>(_pointLights.size());
+	lightUBO.pointLightNum = std::min(static_cast<uint32_t>(_pointLights.size()), MAX_POINT_LIGHTS);
 	std::memcpy(lightUBO.pointLights, _pointLights.data(),
 		std::min(_pointLights.size(), size_t(MAX_POINT_LIGHTS)) * sizeof(PointLightGPU));
 
@@ -488,7 +488,8 @@ void VulkanRenderer::CleanupSwapChain()
 	DestroyImage(_hdrColorImage);
 	DestroyImage(_depthImage);
 
-	for (int i = 0; i < _shadowMapImages.size(); i++)
+	// No need to recreate shadow resources since it's window independent
+	/*for (int i = 0; i < _shadowMapImages.size(); i++)
 	{
 		_shadowMapImageViews[i] = nullptr;
 		DestroyImage(_shadowMapImages[i]);
@@ -502,7 +503,7 @@ void VulkanRenderer::CleanupSwapChain()
 		DestroyImage(_shadowCubeMapImages[i]);
 	}
 	_shadowCubeMapImageViews.clear();
-	_shadowCubeMapImages.clear();
+	_shadowCubeMapImages.clear();*/
 }
 
 //TODO: Doesnt work, will cause device lost on resize
@@ -532,7 +533,8 @@ void VulkanRenderer::RecreateSwapChain()
 
 	CreateColorResources();
 	CreateDepthResources();
-	CreateShadowMapResources();
+	// No need to recreate shadow resources since it's window independent
+	//CreateShadowMapResources();
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
@@ -1092,11 +1094,6 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
 	colorBlendAttachment.blendEnable = vk::False;
 
-	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
-														.logicOp = vk::LogicOp::eCopy,
-														.attachmentCount = 1,
-														.pAttachments = &colorBlendAttachment };
-
 	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor,
@@ -1120,7 +1117,6 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 		 .pRasterizationState = &rasterizer,
 		 .pMultisampleState = &multisampling,
 		 .pDepthStencilState = &depthStencil,
-		 .pColorBlendState = &colorBlending,
 		 .pDynamicState = &dynamicState,
 		 .layout = layout,
 		 .renderPass = nullptr},
@@ -1175,11 +1171,6 @@ uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& 
 		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
 	colorBlendAttachment.blendEnable = vk::False;
 
-	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
-														.logicOp = vk::LogicOp::eCopy,
-														.attachmentCount = 1,
-														.pAttachments = &colorBlendAttachment };
-
 	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor,
@@ -1203,7 +1194,6 @@ uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& 
 		 .pRasterizationState = &rasterizer,
 		 .pMultisampleState = &multisampling,
 		 .pDepthStencilState = &depthStencil,
-		 .pColorBlendState = &colorBlending,
 		 .pDynamicState = &dynamicState,
 		 .layout = layout,
 		 .renderPass = nullptr},
@@ -1475,9 +1465,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	cmd.begin({});
 
-	size_t casterCount = _dirLights.size() + _spotLights.size();
+	//size_t casterCount = _dirLights.size() + _spotLights.size();
 	// Shadow map BEGIN
-	for (size_t j = 0; j < casterCount; j++)
+	for (size_t j = 0; j < _shadowMapImages.size(); j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_shadowMapImages[j].image,
@@ -1629,7 +1619,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 			// Reverse Z, use Greater instead
 			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
 
-			PerDrawPC pc{ i, casterCount + j * 6 };
+			PerDrawPC pc{ i, _shadowMapImages.size() + j * 6 };
 
 			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
 

@@ -195,8 +195,9 @@ float4 main(PSInput input) : SV_Target
         float3 specular = numerator / denominator;
         
         float NdotL = max(dot(N, L), 0.0f);
-        float shadow = ShadowCubeMapCalculation(i, N, -L, cam.nearPlane, cam.farPlane);
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+        //Needs the original Lighting vector to reconstruct depth
+        float shadow = ShadowCubeMapCalculation(i, N, -(light.pointLights[i].position - input.worldPos), cam.nearPlane, cam.farPlane);
+        Lo += (kD * albedo / PI + specular) * radiance * NdotL * (1.0f - shadow);
     }
     
     for (int i = 0; i < light.dirLightNum; i++)
@@ -225,7 +226,7 @@ float4 main(PSInput input) : SV_Target
 
     for (int i = 0; i < light.spotLightNum; i++)
     {
-        float3 L = light.pointLights[i].position - input.worldPos;
+        float3 L = light.spotLights[i].position - input.worldPos;
         float distance = length(L);
         L = normalize(L);
         float3 H = normalize(V + L);
