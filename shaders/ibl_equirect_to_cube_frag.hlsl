@@ -29,7 +29,7 @@ float2 SampleSphericalMap(float3 v)
 float4 main(PSInput input) : SV_TARGET
 {
     float2 uv = SampleSphericalMap(normalize(input.localPos));
-    float3 color = textures[pc.equirectIndex].Sample(textureSamplers[pc.samplerIndex], uv).rgb;
+    float3 color = textures[pc.equirectIndex].SampleLevel(textureSamplers[pc.samplerIndex], uv, 0.0f).rgb;
     
     return float4(color, 1.0f);
 }
