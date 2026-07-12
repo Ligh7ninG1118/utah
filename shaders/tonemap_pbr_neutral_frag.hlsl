@@ -7,6 +7,12 @@ struct PSInput
     [[vk::location(0)]] float2 uv : TEXCOORD0;
 };
 
+float3 LinearToSRGB(float3 c)
+{
+    float3 lo = c * 12.92f;
+    float3 hi = 1.055f * pow(max(c, 0.0f), 1.0f / 2.4f) - 0.055f;
+    return lerp(hi, lo, step(c, (float3) 0.0031308f));
+}
 
 float4 main(PSInput input) : SV_TARGET
 {
@@ -19,15 +25,16 @@ float4 main(PSInput input) : SV_TARGET
     color -= offset;
     
     float peak = max(color.r, max(color.g, color.b));
-    if (peak < startCompression)
-        return float4(color, 1.0f);
+    if (peak >= startCompression)
+    {
+        const float d = 1.0f - startCompression;
+        float newPeak = 1.0f - d * d / (peak + d - startCompression);
+        color *= newPeak / peak;
+        float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
+        color = lerp(color, newPeak * float3(1.0f, 1.0f, 1.0f), g);
+    }
     
-    const float d = 1.0f - startCompression;
-    float newPeak = 1.0f - d * d / (peak + d - startCompression);
-    color *= newPeak / peak;
-    float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
-    float3 colorOut = lerp(color, newPeak * float3(1.0f, 1.0f, 1.0f), g);
-    return float4(colorOut, 1.0f);
+    return float4(LinearToSRGB(color), 1.0f);
 }
 
 // https://github.com/KhronosGroup/ToneMapping/blob/main/PBR_Neutral/pbrNeutral.glsl
