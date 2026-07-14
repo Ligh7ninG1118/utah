@@ -434,3 +434,6 @@ imgui.ini
 
 # Ignore CMake build files
 build
+
+# Ignore screenshots folder
+screenshots

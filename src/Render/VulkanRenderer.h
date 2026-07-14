@@ -167,7 +167,7 @@ public:
 
 	[[nodiscard]] AllocatedImage CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples,
 		vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, VmaMemoryUsage memUsage = VMA_MEMORY_USAGE_AUTO, 
-		VkImageCreateFlags creationFlags = 0, uint32_t arrayLayers = 1);
+		VkImageCreateFlags creationFlags = 0, uint32_t arrayLayers = 1, VmaAllocationCreateFlags allocFlags = 0);
 	[[nodiscard]] vk::raii::ImageView CreateImageView(vk::Image image, vk::Format format,
 		vk::ImageAspectFlags aspectFlags, uint32_t mipLevels, vk::ImageViewType viewType = vk::ImageViewType::e2D, 
 		uint32_t subresourceLayerCount = 1) const;
@@ -265,6 +265,9 @@ private:
 
 	void HotReloadShaders();
 
+	void SaveScreenshot();
+	void CaptureScreenshot(uint32_t imageIndex);
+
 	// Variables
 	// Ref to windows and program context
 	UtahCtx& _programCtx;
@@ -361,4 +364,6 @@ private:
 	static constexpr uint32_t PREFILTER_RESOLUTION = 128;
 	static constexpr uint32_t PREFILTER_MIP_LEVELS = 5;
 	static constexpr uint32_t BRDF_LUT_RESOLUTION = 512;
+
+	AllocatedImage _screenshotImage;
 };

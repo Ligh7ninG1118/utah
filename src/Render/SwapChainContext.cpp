@@ -43,7 +43,7 @@ void SwapChainContext::CreateSwapChain(const VulkanContext& vkCtx, vk::Swapchain
 		// Swap Extent: Resolution
 		.imageExtent = _swapChainExtent,
 		.imageArrayLayers = 1,
-		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc, // TransferSrc for capturing screenshots
 		.imageSharingMode = vk::SharingMode::eExclusive,
 		.preTransform = surfaceCapabilities.currentTransform,
 		.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,

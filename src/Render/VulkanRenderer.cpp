@@ -10,9 +10,14 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <filesystem>
+#include <chrono>
+#include <string>
+#include <format>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 
 VulkanRenderer::VulkanRenderer()
@@ -216,6 +221,13 @@ void VulkanRenderer::DrawFrame()
 			else if (result != vk::Result::eSuccess)
 			{
 				throw std::runtime_error("Failed to present swap chain image");
+			}
+
+			if (_programCtx.GetRequestScreenshot())
+			{
+				SaveScreenshot();
+
+				_programCtx.SetRequestScreenshot(false);
 			}
 		}
 		catch (const vk::SystemError& e)
@@ -2028,8 +2040,14 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::AccessFlagBits2::eColorAttachmentWrite,                // srcAccessMask
 		{},                                                        // dstAccessMask
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
-		vk::PipelineStageFlagBits2::eBottomOfPipe,                 // dstStage
+		vk::PipelineStageFlagBits2::eNone,							// dstStage
 		vk::ImageAspectFlagBits::eColor);
+
+	if (_programCtx.GetRequestScreenshot())
+	{
+		CaptureScreenshot(imageIndex);
+	}
+
 	cmd.end();
 }
 
@@ -2062,12 +2080,13 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
 	VmaMemoryUsage memUsage,
-	VkImageCreateFlags creationFlags,
-	uint32_t arrayLayers)
+	VkImageCreateFlags imageCreationFlags,
+	uint32_t arrayLayers,
+	VmaAllocationCreateFlags allocFlags)
 {
 	VkImageCreateInfo imageInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.flags = creationFlags,
+		.flags = imageCreationFlags,
 		.imageType = VK_IMAGE_TYPE_2D,
 		.format = static_cast<VkFormat>(format),
 		.extent = { width, height, 1 },
@@ -2081,6 +2100,7 @@ AllocatedImage VulkanRenderer::CreateImage(uint32_t width, uint32_t height, uint
 
 	VmaAllocationCreateInfo allocCreateInfo{};
 	allocCreateInfo.usage = memUsage;
+	allocCreateInfo.flags = allocFlags;
 
 	AllocatedImage result{};
 	if (vmaCreateImage(_vkCtx.GetAllocator(), &imageInfo, &allocCreateInfo,
@@ -2576,6 +2596,119 @@ void VulkanRenderer::HotReloadShaders()
 	CreatePipelines();
 
 	_vkCtx.GetDevice().waitIdle();
+}
+
+void VulkanRenderer::SaveScreenshot()
+{
+	FrameData& frame = _frames[_currentFrame];
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	while (vk::Result::eTimeout == _vkCtx.GetDevice().waitForFences(*frame.inFlightFence, vk::True, UINT64_MAX))
+		;
+
+	VmaAllocationInfo allocInfo;
+	vmaGetAllocationInfo(_vkCtx.GetAllocator(), _screenshotImage.allocation, &allocInfo);
+
+	vk::SubresourceLayout layout = (*_vkCtx.GetDevice()).getImageSubresourceLayout(
+		vk::Image(_screenshotImage.image),
+		vk::ImageSubresource{ .aspectMask = vk::ImageAspectFlagBits::eColor },
+		*_vkCtx.GetDevice().getDispatcher()
+	);
+
+	auto now = std::chrono::system_clock::now();
+	// Truncate to nearest whole second; Explicit use "-" to connect time
+	std::string timeStr = std::format("{:%F-%H-%M-%S}", floor<std::chrono::seconds>(now));
+
+	std::string pathName = std::format("screenshots/Screenshot-{}.png", timeStr);
+
+
+	if (stbi_write_png(pathName.c_str(), swapChainExtent.width, swapChainExtent.height, 4, 
+		(const char*)allocInfo.pMappedData + layout.offset, layout.rowPitch))
+	{
+		printf("Screenshot saved at: %s\n", pathName.c_str());
+	}
+	else
+	{
+		printf("Screenshot failed to save!\n");
+	}
+	
+	DestroyImage(_screenshotImage);
+}
+
+void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
+{
+	vk::Image srcImage = _pSwapChainCtx->GetSwapChainImage(imageIndex);
+
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	_screenshotImage = CreateImage(swapChainExtent.width, swapChainExtent.height,
+		1, 
+		vk::SampleCountFlagBits::e1, 
+		vk::Format::eR8G8B8A8Unorm,
+		vk::ImageTiling::eLinear,
+		vk::ImageUsageFlagBits::eTransferDst,
+		VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO,
+		0,
+		1,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+	TransitionImageLayout(srcImage,
+		vk::ImageLayout::ePresentSrcKHR,
+		vk::ImageLayout::eTransferSrcOptimal,
+		vk::AccessFlagBits2::eMemoryRead,						// srcAccessMask
+		vk::AccessFlagBits2::eTransferRead,                     // dstAccessMask
+		vk::PipelineStageFlagBits2::eNone,						// srcStage
+		vk::PipelineStageFlagBits2::eTransfer,                  // dstStage
+		vk::ImageAspectFlagBits::eColor);
+
+	TransitionImageLayout(_screenshotImage.image,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eTransferDstOptimal,
+		{},														// srcAccessMask
+		vk::AccessFlagBits2::eTransferWrite,                    // dstAccessMask
+		vk::PipelineStageFlagBits2::eTransfer,					// srcStage
+		vk::PipelineStageFlagBits2::eTransfer,                  // dstStage
+		vk::ImageAspectFlagBits::eColor);
+
+	vk::Offset3D blitSize;
+	blitSize.x = swapChainExtent.width;
+	blitSize.y = swapChainExtent.height;
+	blitSize.z = 1;
+	vk::ImageBlit imageBlitRegion{
+		.srcSubresource{.aspectMask = vk::ImageAspectFlagBits::eColor,
+						.layerCount = 1},
+		.dstSubresource{.aspectMask = vk::ImageAspectFlagBits::eColor,
+						.layerCount = 1},
+	};
+
+	imageBlitRegion.srcOffsets[1] = blitSize;
+	imageBlitRegion.dstOffsets[1] = blitSize;
+
+	_frames[_currentFrame].commandBuffer.blitImage
+	(
+		srcImage, vk::ImageLayout::eTransferSrcOptimal,
+		_screenshotImage.image, vk::ImageLayout::eTransferDstOptimal,
+		imageBlitRegion,
+		vk::Filter::eNearest
+	);
+
+	TransitionImageLayout(srcImage,
+		vk::ImageLayout::eTransferSrcOptimal,
+		vk::ImageLayout::ePresentSrcKHR,
+		vk::AccessFlagBits2::eTransferRead,						// srcAccessMask
+		vk::AccessFlagBits2::eMemoryRead,                       // dstAccessMask
+		vk::PipelineStageFlagBits2::eTransfer,					// srcStage
+		vk::PipelineStageFlagBits2::eNone,						// dstStage
+		vk::ImageAspectFlagBits::eColor);
+
+	TransitionImageLayout(_screenshotImage.image,
+		vk::ImageLayout::eTransferDstOptimal,
+		vk::ImageLayout::eGeneral,
+		vk::AccessFlagBits2::eTransferWrite,					// srcAccessMask
+		vk::AccessFlagBits2::eHostRead,							// dstAccessMask
+		vk::PipelineStageFlagBits2::eTransfer,					// srcStage
+		vk::PipelineStageFlagBits2::eHost,						// dstStage
+		vk::ImageAspectFlagBits::eColor);
 }
 
 void VulkanRenderer::ConvertEquirectToCubeMap()

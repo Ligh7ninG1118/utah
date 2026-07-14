@@ -391,11 +391,6 @@ void UtahCtx::ToggleCursorMode()
 		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
-void UtahCtx::SetRequestShaderReload(bool val)
-{
-	_hasRequestedShaderReload = val;
-}
-
 void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
 	UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
@@ -423,6 +418,11 @@ void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int ac
 	if (key == GLFW_KEY_F5 && action == GLFW_RELEASE)
 	{
 		ctx->SetRequestShaderReload(true);
+	}
+
+	if (key == GLFW_KEY_F12 && action == GLFW_RELEASE)
+	{
+		ctx->SetRequestScreenshot(true);
 	}
 
 	if (key == GLFW_KEY_F && action == GLFW_RELEASE)

@@ -86,6 +86,8 @@ private:
 		vk::KHRSpirv14ExtensionName,
 		vk::KHRSynchronization2ExtensionName,
 		vk::KHRCreateRenderpass2ExtensionName,
+		vk::KHRMapMemory2ExtensionName,
+		vk::KHRMaintenance5ExtensionName,
 #if USE_NSIGHT_AFTERMATH
 		vk::NVDeviceDiagnosticsConfigExtensionName,
 		vk::NVDeviceDiagnosticCheckpointsExtensionName,
