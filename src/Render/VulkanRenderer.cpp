@@ -73,7 +73,6 @@ void VulkanRenderer::Initialize()
 
 	CreateCommandPool();
 	CreateColorResources();
-	CreateHDRColorSampler();
 	CreateDepthResources();
 
 	_textureManger.Initialize(this, &_vkCtx);
@@ -84,7 +83,7 @@ void VulkanRenderer::Initialize()
 	TextureHandle helmetNormalTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_normal.jpg", "helmet_normal", TextureColorSpace::Linear);
 	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
 
-	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR);
+	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
 	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target", 2048);
 	convolutionHandle = _textureManger.CreateCubemapRenderTarget("convolution_render_target", 32);
 	prefilterHandle = _textureManger.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
@@ -392,7 +391,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	// Reverse Z, flip near and far plane
 
 	std::vector<glm::mat4> viewProjMatrices;
-	viewProjMatrices.reserve(_dirLights.size() + _spotLights.size());
+	viewProjMatrices.reserve(_shadowMapImages.size() + _pointLights.size() * 6);
 
 	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
@@ -416,6 +415,9 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 		viewProjMatrices.emplace_back(proj * view);
 	}
+
+	// pad unused 2d slots
+	viewProjMatrices.resize(std::max(viewProjMatrices.size(), _shadowMapImages.size()));
 
 	for (size_t i = 0; i < _pointLights.size(); i++)
 	{
@@ -468,8 +470,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 		.irradianceIndex = convolutionHandle.index,
 		.prefilteredIndex = prefilterHandle.index,
 		.brdfLUTIndex = brdfLUTHandle.index,
-		.samplerIndex = 0,
-		.prefilteredMaxMip = 4,
+		.prefilteredMaxMip = PREFILTER_MIP_LEVELS - 1,
 	};
 
 	memcpy(frame.Mapped(GlobalBinding::SceneIBLUBO), &sceneIBL, sizeof(sceneIBL));
@@ -649,19 +650,13 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} });
-	// 11: hdr sampler
-	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::HDRSampler),
-										.type = vk::DescriptorType::eSampler,
-										.count = 1,
-										.stageFlags = vk::ShaderStageFlagBits::eFragment,
-										.bindingFlags = {} });
-	// 12: skybox cubemap
+	// 11: skybox cubemap
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SkyboxCubemap),
 										.type = vk::DescriptorType::eSampledImage,
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
-	// 13: Scene IBL UBO
+	// 12: Scene IBL UBO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SceneIBLUBO),
 										.type = vk::DescriptorType::eUniformBuffer,
 										.count = 1,
@@ -841,9 +836,6 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageView = _hdrColorImageView,
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
-		vk::DescriptorImageInfo hdrSamplerInfo = vk::DescriptorImageInfo{
-											.sampler = _hdrSampler, };
-
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
 											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
@@ -896,15 +888,6 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = &hdrImageInfo
-			});
-
-		writes.push_back(vk::WriteDescriptorSet{
-				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::HDRSampler),
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eSampler,
-				.pImageInfo = &hdrSamplerInfo
 			});
 
 		writes.push_back(vk::WriteDescriptorSet{
@@ -1477,9 +1460,9 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	cmd.begin({});
 
-	//size_t casterCount = _dirLights.size() + _spotLights.size();
+	size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
 	// Shadow map BEGIN
-	for (size_t j = 0; j < _shadowMapImages.size(); j++)
+	for (size_t j = 0; j < casterCount; j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_shadowMapImages[j].image,
@@ -1575,7 +1558,7 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	// Shadow map END
 
 	// Shadow Cube map BEGIN
-	for (size_t j = 0; j < _pointLights.size(); j++)
+	for (size_t j = 0; j < std::min(_pointLights.size(), _shadowCubeMapImages.size()); j++)
 	{
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_shadowCubeMapImages[j].image,
@@ -2033,19 +2016,22 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	cmd.endRendering();
 
-	// After rendering, transition the swapchain image to PRESENT_SRC
-	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::ePresentSrcKHR,
-		vk::AccessFlagBits2::eColorAttachmentWrite,                // srcAccessMask
-		{},                                                        // dstAccessMask
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
-		vk::PipelineStageFlagBits2::eNone,							// dstStage
-		vk::ImageAspectFlagBits::eColor);
-
+	
 	if (_programCtx.GetRequestScreenshot())
 	{
 		CaptureScreenshot(imageIndex);
+	}
+	else
+	{
+		// After rendering, transition the swapchain image to PRESENT_SRC
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::ePresentSrcKHR,
+			vk::AccessFlagBits2::eColorAttachmentWrite,                // srcAccessMask
+			{},                                                        // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
+			vk::PipelineStageFlagBits2::eNone,							// dstStage
+			vk::ImageAspectFlagBits::eColor);
 	}
 
 	cmd.end();
@@ -2516,24 +2502,6 @@ void VulkanRenderer::CreateColorResources()
 	_hdrColorImageView = CreateImageView(_hdrColorImage.image, hdrFormat, vk::ImageAspectFlagBits::eColor, 1);
 }
 
-void VulkanRenderer::CreateHDRColorSampler()
-{
-	vk::PhysicalDeviceProperties properties = _vkCtx.GetPhysicalDevice().getProperties();
-	vk::SamplerCreateInfo samplerInfo{ .magFilter = vk::Filter::eLinear,
-										 .minFilter = vk::Filter::eLinear,
-										 .mipmapMode = vk::SamplerMipmapMode::eLinear,
-										 .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-										 .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-										 .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-										 .mipLodBias = 0.0f,
-										 .anisotropyEnable = vk::False,
-										 .compareEnable = vk::False,
-										 .maxLod = vk::LodClampNone };
-
-	//TODO: Need to separate this? No need to recreate this, and descriptor is not set to update after bind, could cause bug
-	_hdrSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
-}
-
 void VulkanRenderer::CreateShadowMapResources()
 {
 	//TODO: Calculate shadow caster count
@@ -2615,6 +2583,8 @@ void VulkanRenderer::SaveScreenshot()
 		*_vkCtx.GetDevice().getDispatcher()
 	);
 
+	std::filesystem::create_directories("screenshots");
+
 	auto now = std::chrono::system_clock::now();
 	// Truncate to nearest whole second; Explicit use "-" to connect time
 	std::string timeStr = std::format("{:%F-%H-%M-%S}", floor<std::chrono::seconds>(now));
@@ -2653,7 +2623,7 @@ void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
 		VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
 	TransitionImageLayout(srcImage,
-		vk::ImageLayout::ePresentSrcKHR,
+		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::eTransferSrcOptimal,
 		vk::AccessFlagBits2::eMemoryRead,						// srcAccessMask
 		vk::AccessFlagBits2::eTransferRead,                     // dstAccessMask
@@ -2696,7 +2666,7 @@ void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
 		vk::ImageLayout::eTransferSrcOptimal,
 		vk::ImageLayout::ePresentSrcKHR,
 		vk::AccessFlagBits2::eTransferRead,						// srcAccessMask
-		vk::AccessFlagBits2::eMemoryRead,                       // dstAccessMask
+		{},														// dstAccessMask
 		vk::PipelineStageFlagBits2::eTransfer,					// srcStage
 		vk::PipelineStageFlagBits2::eNone,						// dstStage
 		vk::ImageAspectFlagBits::eColor);

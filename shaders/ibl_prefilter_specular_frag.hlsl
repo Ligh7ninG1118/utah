@@ -4,6 +4,7 @@
 struct PushConstants
 {
     uint envMapIndex;
+    // obsolete, using static sampler index now
     uint samplerIndex;
     float roughness;
 };
@@ -69,7 +70,7 @@ float4 main(PSInput input) : SV_TARGET
         if (NdotL > 0.0f)
         {
             // source cubemap has no mip chain; sample mip 0 directly. some firefly noise at high roughness is acceptable.
-            prefilteredColor += textureCubes[pc.envMapIndex].SampleLevel(textureSamplers[pc.samplerIndex], L, 0.0f).rgb * NdotL;
+            prefilteredColor += textureCubes[pc.envMapIndex].SampleLevel(textureSamplers[SAMPLER_CLAMP_EDGE], L, 0.0f).rgb * NdotL;
             totalWeight += NdotL;
         }
     }

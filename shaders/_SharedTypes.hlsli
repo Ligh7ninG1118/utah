@@ -87,7 +87,6 @@ struct SceneIBLUBO
     uint irradianceIndex;
     uint prefilteredIndex;
     uint brdfLUTIndex;
-    uint samplerIndex;
     uint prefilteredMaxMip;
 };
 

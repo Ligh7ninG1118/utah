@@ -95,9 +95,8 @@ enum class GlobalBinding : uint32_t
 	ShadowMapSampler = 8,
 	ShadowCubeMaps = 9,
 	HDROutput = 10,
-	HDRSampler = 11,
-	SkyboxCubemap = 12,
-	SceneIBLUBO = 13,
+	SkyboxCubemap = 11,
+	SceneIBLUBO = 12,
 	Count
 };
 
@@ -257,8 +256,6 @@ private:
 	// Multiple Sampling
 	vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
 	void CreateColorResources();
-	// Separate from the above function since no need to recreate
-	void CreateHDRColorSampler();
 
 	// Shadow Map
 	void CreateShadowMapResources();
@@ -300,7 +297,6 @@ private:
 
 	AllocatedImage _hdrColorImage{};
 	vk::raii::ImageView _hdrColorImageView = nullptr;
-	vk::raii::Sampler _hdrSampler = nullptr;
 
 
 	AllocatedImage		   _depthImage{};

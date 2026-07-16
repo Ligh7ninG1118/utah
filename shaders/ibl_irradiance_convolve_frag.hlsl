@@ -5,6 +5,7 @@ struct PushConstants
 {
     // reuse the same PC layout
 	uint envMapIndex;
+    // obsolete, using static sampler index now
 	uint samplerIndex;
 };
 
@@ -38,7 +39,7 @@ float4 main(PSInput input) : SV_TARGET
 			float3 tangentSample = float3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
 			float3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal;
 			
-			irradiance += textureCubes[pc.envMapIndex].Sample(textureSamplers[pc.samplerIndex], sampleVec).rgb * cos(theta) * sin(theta);
+            irradiance += textureCubes[pc.envMapIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], sampleVec).rgb * cos(theta) * sin(theta);
 			nrSamples++;
 		}
 	}

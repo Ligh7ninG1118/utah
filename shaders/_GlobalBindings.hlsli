@@ -19,11 +19,16 @@
 [[vk::binding(9, 0)]] TextureCube shadowCubeMaps[];
 
 [[vk::binding(10, 0)]] Texture2D hdrTexture;
-[[vk::binding(11, 0)]] SamplerState hdrSampler;
-[[vk::binding(12, 0)]] TextureCube skyboxCubemap;
+[[vk::binding(11, 0)]] TextureCube skyboxCubemap;
 
-[[vk::binding(13, 0)]] ConstantBuffer<SceneIBLUBO> sceneIBL;
+[[vk::binding(12, 0)]] ConstantBuffer<SceneIBLUBO> sceneIBL;
 
 // PushConstant, for now, is defined in individual shaders based on usage
+
+
+// Stay in sync with TextureManager::SamplerType
+static const uint SAMPLER_REPEAT_ANISO = 0;
+static const uint SAMPLER_CLAMP_EDGE = 1;
+static const uint SAMPLER_REPEAT_U_CLAMP_V = 2;
 
 #endif

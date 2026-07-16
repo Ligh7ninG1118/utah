@@ -9,5 +9,5 @@ struct PSInput
 
 float4 main(PSInput input) : SV_TARGET
 {
-    return skyboxCubemap.Sample(textureSamplers[0], input.uv);
+    return skyboxCubemap.Sample(textureSamplers[SAMPLER_CLAMP_EDGE], input.uv);
 }

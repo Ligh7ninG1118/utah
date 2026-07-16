@@ -61,7 +61,6 @@ struct alignas(16) SceneIBLUBO
 	uint32_t irradianceIndex;
 	uint32_t prefilteredIndex;
 	uint32_t brdfLUTIndex;
-	uint32_t samplerIndex;
 	uint32_t prefilteredMaxMip;
 };
 

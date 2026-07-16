@@ -18,7 +18,7 @@ float4 main(PSInput input) : SV_TARGET
 {
     const float startCompression = 0.8f - 0.04f;
     const float desaturation = 0.15f;
-    float3 color = hdrTexture.Sample(hdrSampler, input.uv).rgb;
+    float3 color = hdrTexture.Sample(textureSamplers[SAMPLER_CLAMP_EDGE], input.uv).rgb;
     
     float x = min(color.r, min(color.g, color.b));
     float offset = x <= 0.08f ? x - 6.25f * x * x : 0.04f;

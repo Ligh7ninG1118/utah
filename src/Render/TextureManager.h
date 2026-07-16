@@ -24,6 +24,17 @@ enum class TextureColorSpace
 	Linear  //normal, ao, spec, etc.
 };
 
+enum class SamplerType : uint32_t
+{
+	RepeatAniso = 0,
+	ClampEdge,
+	RepeatUClampV,
+
+	Count
+};
+
+static_assert(static_cast<uint32_t>(SamplerType::Count) <= MAX_TEXTURE_SAMPLERS);
+
 class TextureManager
 {
 public:
@@ -32,7 +43,8 @@ public:
 
 	void Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx);
 
-	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
+	TextureHandle ImportTexture(const std::string& texPath, const std::string& name, 
+		TextureColorSpace colorSpace = TextureColorSpace::sRGB, SamplerType samplerType = SamplerType::RepeatAniso);
 	TextureHandle ImportCubemapTexture(const std::array<std::string, 6>& texPaths, const std::string& name, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 	TextureHandle CreateDefaultTexture(uint32_t colorValue, TextureColorSpace colorSpace, const std::string& name);
 	TextureHandle CreateCubemapRenderTarget(const std::string& name, uint32_t resolution);
@@ -42,6 +54,8 @@ public:
 	[[nodiscard]] const Texture& GetTexture(uint32_t index) const { return _textures[index]; }
 	[[nodiscard]] vk::ImageView GetTextureImageView(uint32_t index) const { return *_textures[index].texImageView; }
 	[[nodiscard]] vk::Sampler GetTextureSampler(uint32_t index) const { return *_samplers[index]; }
+	[[nodiscard]] vk::Sampler GetTextureSamplerViaType(SamplerType type) const { return *_samplers[static_cast<uint32_t>(type)]; }
+
 
 	[[nodiscard]] TextureHandle GetHandle(const std::string& name) const;
 	[[nodiscard]] TextureHandle GetSkyboxHandle() const { return _skyboxTexHandle; };
@@ -50,7 +64,7 @@ public:
 	[[nodiscard]] size_t GetTextureSamplersCount() const { return _samplers.size(); }
 
 private:
-	void CreateTextureSampler();
+	void CreateTextureSamplers();
 
 	TextureHandle RegisterName(const std::string& name);
 

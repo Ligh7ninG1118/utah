@@ -25,7 +25,7 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	_pRenderer = renderer;
 	_pVkCtxRef = vkCtx;
 
-	CreateTextureSampler();
+	CreateTextureSamplers();
 	// little endian
 	// albedo
 	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::sRGB, "white");
@@ -45,7 +45,7 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 											"textures/skybox test z neg.png", }, "skybox_test");
 }
 
-TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace)
+TextureHandle TextureManager::ImportTexture(const std::string& texPath, const std::string& name, TextureColorSpace colorSpace, SamplerType samplerType)
 {
 	if (_pRenderer == nullptr)
 	{
@@ -124,7 +124,7 @@ TextureHandle TextureManager::ImportTexture(const std::string& texPath, const st
 	_textures.emplace_back(
 		textureImage, 
 		std::move(textureImageView), 
-		0 /*use default linear repeat sampler*/);
+		static_cast<uint32_t>(samplerType));
 
     return RegisterName(name);
 }
@@ -226,7 +226,7 @@ TextureHandle TextureManager::ImportCubemapTexture(const std::array<std::string,
 	_textures.emplace_back(
 		textureImage,
 		std::move(textureImageView),
-		0 /*use default linear repeat sampler*/);
+		static_cast<uint32_t>(SamplerType::RepeatAniso));
 
 	return RegisterName(name);
 }
@@ -265,7 +265,7 @@ TextureHandle TextureManager::CreateDefaultTexture(uint32_t colorValue, TextureC
 	_pRenderer->DestroyBuffer(staging);
 
 	vk::raii::ImageView view = _pRenderer->CreateImageView(img.image, format, vk::ImageAspectFlagBits::eColor, 1);
-	_textures.emplace_back(img, std::move(view), 0);
+	_textures.emplace_back(img, std::move(view), static_cast<uint32_t>(SamplerType::RepeatAniso));
 	return RegisterName(name);
 }
 
@@ -298,7 +298,7 @@ TextureHandle TextureManager::CreateCubemapRenderTarget(const std::string& name,
 	_textures.emplace_back(
 		textureImage,
 		std::move(textureImageView),
-		0 /*use default linear repeat sampler*/);
+		static_cast<uint32_t>(SamplerType::ClampEdge));
 
 	return RegisterName(name);
 }
@@ -328,7 +328,7 @@ TextureHandle TextureManager::CreateCubemapRenderTargetWithMips(const std::strin
 	_textures.emplace_back(
 		textureImage,
 		std::move(textureImageView),
-		0);
+		static_cast<uint32_t>(SamplerType::ClampEdge));
 
 	return RegisterName(name);
 }
@@ -350,29 +350,69 @@ TextureHandle TextureManager::Create2DRenderTarget(const std::string& name, uint
 	_textures.emplace_back(
 		textureImage,
 		std::move(textureImageView),
-		0);
+		static_cast<uint32_t>(SamplerType::ClampEdge));
 
 	return RegisterName(name);
 }
 
 // Only create one sampler (linear repeat) for now
-void TextureManager::CreateTextureSampler()
+void TextureManager::CreateTextureSamplers()
 {
 	vk::PhysicalDeviceProperties properties = _pVkCtxRef->GetPhysicalDevice().getProperties();
-	vk::SamplerCreateInfo        samplerInfo{ .magFilter = vk::Filter::eLinear,
-											 .minFilter = vk::Filter::eLinear,
-											 .mipmapMode = vk::SamplerMipmapMode::eLinear,
-											 .addressModeU = vk::SamplerAddressMode::eRepeat,
-											 .addressModeV = vk::SamplerAddressMode::eRepeat,
-											 .addressModeW = vk::SamplerAddressMode::eRepeat,
-											 .mipLodBias = 0.0f,
-											 .anisotropyEnable = vk::True,
-											 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-											 .compareEnable = vk::False,
-											 .compareOp = vk::CompareOp::eAlways,
-											 .maxLod = vk::LodClampNone};
 
-	_samplers.emplace_back(_pVkCtxRef->GetDevice(), samplerInfo);
+	for (uint32_t i = 0; i < static_cast<uint32_t>(SamplerType::Count); i++)
+	{
+		vk::SamplerCreateInfo samplerInfo;
+
+		switch (static_cast<SamplerType>(i))
+		{
+		case SamplerType::RepeatAniso:
+			samplerInfo.magFilter = vk::Filter::eLinear;
+			samplerInfo.minFilter = vk::Filter::eLinear;
+			samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+			samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.mipLodBias = 0.0f;
+			samplerInfo.anisotropyEnable = vk::True;
+			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+			samplerInfo.compareEnable = vk::False;
+			samplerInfo.compareOp = vk::CompareOp::eAlways;
+			samplerInfo.maxLod = vk::LodClampNone;
+			break;
+		case SamplerType::ClampEdge:
+			samplerInfo.magFilter = vk::Filter::eLinear;
+			samplerInfo.minFilter = vk::Filter::eLinear;
+			samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+			samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+			samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+			samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+			samplerInfo.mipLodBias = 0.0f;
+			samplerInfo.anisotropyEnable = vk::False;
+			samplerInfo.compareEnable = vk::False;
+			samplerInfo.maxLod = vk::LodClampNone;
+			break;
+		case SamplerType::RepeatUClampV:
+			samplerInfo.magFilter = vk::Filter::eLinear;
+			samplerInfo.minFilter = vk::Filter::eLinear;
+			samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+			samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+			samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.mipLodBias = 0.0f;
+			samplerInfo.anisotropyEnable = vk::True;
+			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+			samplerInfo.compareEnable = vk::False;
+			samplerInfo.compareOp = vk::CompareOp::eAlways;
+			samplerInfo.maxLod = vk::LodClampNone;
+			break;
+		default:
+			continue;
+		}
+
+		_samplers.emplace_back(_pVkCtxRef->GetDevice(), samplerInfo);
+	}
+
 }
 
 TextureHandle TextureManager::GetHandle(const std::string& name) const

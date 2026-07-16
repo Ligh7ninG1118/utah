@@ -259,12 +259,12 @@ float4 main(PSInput input) : SV_Target
     float3 kD = 1.0f - kS;
     kD *= 1.0f - metallic;
     
-    float3 irradiance = textureCubes[sceneIBL.irradianceIndex].Sample(hdrSampler, N).rgb;
+    float3 irradiance = textureCubes[sceneIBL.irradianceIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], N).rgb;
     float3 diffuse = irradiance * albedo;
     
     float3 R = reflect(-V, N);
-    float3 prefilteredColor = textureCubes[sceneIBL.prefilteredIndex].SampleLevel(hdrSampler, R, roughness * sceneIBL.prefilteredMaxMip).rgb;
-    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(hdrSampler, float2(max(dot(N, V), 0.0f), roughness)).rg;
+    float3 prefilteredColor = textureCubes[sceneIBL.prefilteredIndex].SampleLevel(textureSamplers[SAMPLER_CLAMP_EDGE], R, roughness * sceneIBL.prefilteredMaxMip).rgb;
+    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], float2(max(dot(N, V), 0.0f), roughness)).rg;
     float3 specularIBL = prefilteredColor * (kS * brdf.r + brdf.g);
     
     float3 ambient = (kD * diffuse + specularIBL) * ao * sceneIBL.intensity + sceneIBL.ambientColor * albedo * ao;
