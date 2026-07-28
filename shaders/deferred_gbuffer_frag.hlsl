@@ -17,6 +17,8 @@ struct PSOutput
     float4 Position : SV_Target0;
     float4 Normal : SV_Target1;
     float4 Albedo : SV_Target2;
+    float4 ORM : SV_Target3;
+    float4 Emissive : SV_Target4;
 };
 
 
@@ -45,12 +47,7 @@ PSOutput main(PSInput input)
    
     albedo *= mat.baseColorFactor.rgb;
     emissive *= mat.emissiveFactor;
-    
-    
-    PSOutput output = (PSOutput)0;
-    
-    output.Position = float4(input.worldPos, 1.0f);
-    
+
     float3 N = normalize(input.normal);
     if (input.tangent.w != 0.0f)
     {
@@ -61,9 +58,12 @@ PSOutput main(PSInput input)
         N = normalize(T * nTangent.x + B * nTangent.y + N * nTangent.z);
     }
     
+    PSOutput output = (PSOutput) 0;
+    output.Position = float4(input.worldPos, 1.0f);
     output.Normal = float4(N, 1.0f);
-    
     output.Albedo = float4(albedo, 1.0f);
+    output.ORM = float4(ao, roughness, metallic, 1.0f);
+    output.Emissive = float4(emissive, 1.0f);
     
     return output;
 }

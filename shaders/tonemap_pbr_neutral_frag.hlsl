@@ -16,8 +16,6 @@ float3 LinearToSRGB(float3 c)
 
 float4 main(PSInput input) : SV_TARGET
 {
-    return gBufferColorTargets[0].Load(int3(input.position.x, input.position.y, 0));
-    
     const float startCompression = 0.8f - 0.04f;
     const float desaturation = 0.15f;
     float3 color = hdrTexture.Sample(textureSamplers[SAMPLER_CLAMP_EDGE], input.uv).rgb;

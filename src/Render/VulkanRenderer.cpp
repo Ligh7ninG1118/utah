@@ -206,8 +206,8 @@ void VulkanRenderer::DrawFrame()
 
 		frame.commandBuffer.reset();
 		//RecordCommandBufferShadowMapView(imageIndex);
-		//RecordCommandBuffer(imageIndex);
-		RecordCommandBufferDeferredRendering(imageIndex);
+		RecordCommandBuffer(imageIndex);
+		//RecordCommandBufferDeferredRendering(imageIndex);
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
@@ -997,6 +997,7 @@ void VulkanRenderer::CreatePipelines()
 	_brdfLutPipelineIndex = CreateBRDFLUTPipeline("shaderBin/tonemap_vert.spv", "shaderBin/ibl_brdf_lut_frag.spv", *_globalPipelineLayout);
 
 	_deferredGBufferPipelineIndex = CreateDeferredGBufferPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/deferred_gbuffer_frag.spv", *_globalPipelineLayout);
+	_deferredLightingPipelineIndex = CreateDeferredLightingPipeline("shaderBin/tonemap_vert.spv", "shaderBin/deferred_lighting_pbr_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1583,6 +1584,81 @@ uint32_t VulkanRenderer::CreateDeferredGBufferPipeline(const std::string& vertPa
 		{.colorAttachmentCount = static_cast<uint32_t>(_gBufferColorTargetFormats.size()),
 		 .pColorAttachmentFormats = _gBufferColorTargetFormats.data(),
 		 .depthAttachmentFormat = depthFormat} };
+
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
+uint32_t VulkanRenderer::CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{ };
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::False,
+														 .depthWriteEnable = vk::False, };
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	const vk::Format& hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &hdrFormat,
+		 .depthAttachmentFormat = vk::Format::eUndefined} };
 
 
 	_pipelines.push_back(PipelineEntry{
@@ -2344,6 +2420,69 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 		vk::PipelineStageFlagBits2::eFragmentShader,
 		vk::ImageAspectFlagBits::eDepth);*/
 
+
+
+	// Lighting pass
+	{
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		const PipelineEntry& pso = _pipelines[_deferredLightingPipelineIndex];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.draw(3, 1, 0, 0);
+
+		cmd.endRendering();
+	}
+
+	// HDR scene image: color-attachment-write -> shader-read, so the tonemap pass can sample it
+	TransitionImageLayout(_hdrColorImage.image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eColor);
 
 	// Tone map pass
 	{

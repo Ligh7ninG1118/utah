@@ -107,6 +107,8 @@ enum class GBufferColorTargetType : uint32_t
 	Position = 0,
 	Normal,
 	Albedo,
+	ORM,
+	Emissive,
 
 	Count
 };
@@ -242,6 +244,7 @@ private:
 	uint32_t CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 
 	// Command Pool & Buffers
@@ -309,6 +312,8 @@ private:
 	uint32_t _prefilterPipelineIndex = INVALID_HANDLE;
 	uint32_t _brdfLutPipelineIndex = INVALID_HANDLE;
 	uint32_t _deferredGBufferPipelineIndex = INVALID_HANDLE;
+	uint32_t _deferredLightingPipelineIndex = INVALID_HANDLE;
+
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -392,5 +397,7 @@ private:
 		vk::Format::eR16G16B16A16Sfloat,	// Position
 		vk::Format::eR16G16B16A16Sfloat,	// Normal
 		vk::Format::eR8G8B8A8Srgb,			// Albedo
+		vk::Format::eR8G8B8A8Unorm,			// ORM
+		vk::Format::eR16G16B16A16Sfloat,	// Emissive
 	};
 };
