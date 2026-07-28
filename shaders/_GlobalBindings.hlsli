@@ -23,6 +23,9 @@
 
 [[vk::binding(12, 0)]] ConstantBuffer<SceneIBLUBO> sceneIBL;
 
+[[vk::binding(13, 0)]] Texture2D gBufferColorTargets[];
+[[vk::binding(14, 0)]] Texture2D gBufferDepthTarget;
+
 // PushConstant, for now, is defined in individual shaders based on usage
 
 
@@ -30,5 +33,11 @@
 static const uint SAMPLER_REPEAT_ANISO = 0;
 static const uint SAMPLER_CLAMP_EDGE = 1;
 static const uint SAMPLER_REPEAT_U_CLAMP_V = 2;
+
+
+// Stay in sync with VulkanRenderer::GBufferColorTargetType
+static const uint G_BUFFER_COLOR_TARGET_POSITION = 0;
+static const uint G_BUFFER_COLOR_TARGET_NORMAL = 1;
+static const uint G_BUFFER_COLOR_TARGET_ALBEDO = 2;
 
 #endif

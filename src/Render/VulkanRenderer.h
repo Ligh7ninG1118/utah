@@ -97,6 +97,17 @@ enum class GlobalBinding : uint32_t
 	HDROutput = 10,
 	SkyboxCubemap = 11,
 	SceneIBLUBO = 12,
+	GBufferColorTargets = 13,
+	GBufferDepthTarget = 14,
+	Count
+};
+
+enum class GBufferColorTargetType : uint32_t
+{
+	Position = 0,
+	Normal,
+	Albedo,
+
 	Count
 };
 
@@ -230,12 +241,17 @@ private:
 	uint32_t CreateHDRGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
 	void CreateCommandBuffers();
 	//void RecordCommandBufferShadowMapView(uint32_t imageIndex);
 	void RecordCommandBuffer(uint32_t imageIndex);
+
+	void RecordCommandBufferDeferredRendering(uint32_t imageIndex);
+
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
 
@@ -265,6 +281,9 @@ private:
 	void SaveScreenshot();
 	void CaptureScreenshot(uint32_t imageIndex);
 
+	// Deferred Rendering
+	void CreateGBufferImages();
+
 	// Variables
 	// Ref to windows and program context
 	UtahCtx& _programCtx;
@@ -289,6 +308,7 @@ private:
 	uint32_t _convolutionPipelineIndex = INVALID_HANDLE;
 	uint32_t _prefilterPipelineIndex = INVALID_HANDLE;
 	uint32_t _brdfLutPipelineIndex = INVALID_HANDLE;
+	uint32_t _deferredGBufferPipelineIndex = INVALID_HANDLE;
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
@@ -345,7 +365,6 @@ private:
 	std::vector<DirectionalLightGPU> _dirLights;
 	std::vector<SpotLightGPU> _spotLights;
 
-
 	void ConvertEquirectToCubeMap();
 	void ConvolveIrradianceMap();
 	void PrefilterEnvironmentMap();
@@ -362,4 +381,16 @@ private:
 	static constexpr uint32_t BRDF_LUT_RESOLUTION = 512;
 
 	AllocatedImage _screenshotImage;
+
+	std::vector<AllocatedImage> _gBufferColorTargetImages;
+	std::vector<vk::raii::ImageView> _gBufferColorTargetImageViews;
+
+	AllocatedImage		   _gBufferDepthImage{};
+	vk::raii::ImageView    _gBufferDepthImageView = nullptr;
+
+	std::vector<vk::Format> _gBufferColorTargetFormats = {
+		vk::Format::eR16G16B16A16Sfloat,	// Position
+		vk::Format::eR16G16B16A16Sfloat,	// Normal
+		vk::Format::eR8G8B8A8Srgb,			// Albedo
+	};
 };

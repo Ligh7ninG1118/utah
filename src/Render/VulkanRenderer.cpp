@@ -52,6 +52,15 @@ VulkanRenderer::~VulkanRenderer()
 	DestroyImage(_hdrColorImage);
 	DestroyImage(_depthImage);
 
+	for (size_t i = 0; i < _gBufferColorTargetImageViews.size(); i++)
+	{
+		_gBufferColorTargetImageViews[i] = nullptr;
+		DestroyImage(_gBufferColorTargetImages[i]);
+	}
+
+	_gBufferDepthImageView = nullptr;
+	DestroyImage(_gBufferDepthImage);
+
 	for (auto& frame : _frames)
 		for (auto& buffer : frame.globalBuffers)
 			DestroyBuffer(buffer);
@@ -74,6 +83,7 @@ void VulkanRenderer::Initialize()
 	CreateCommandPool();
 	CreateColorResources();
 	CreateDepthResources();
+	CreateGBufferImages();
 
 	_textureManger.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
@@ -111,8 +121,6 @@ void VulkanRenderer::Initialize()
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
-
-
 
 	auto matGPUs = _materialManager.ConvertMaterialsToGPU();
 
@@ -196,7 +204,8 @@ void VulkanRenderer::DrawFrame()
 
 		frame.commandBuffer.reset();
 		//RecordCommandBufferShadowMapView(imageIndex);
-		RecordCommandBuffer(imageIndex);
+		//RecordCommandBuffer(imageIndex);
+		RecordCommandBufferDeferredRendering(imageIndex);
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
@@ -663,6 +672,18 @@ void VulkanRenderer::InitBindingDescs()
 										.bufferSize = sizeof(SceneIBLUBO),
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} }); //TODO: Should I use update after bind here? If it does than camera needs it too
+	// 13: G Buffer Color Targets
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::GBufferColorTargets),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = static_cast<uint32_t>(GBufferColorTargetType::Count),
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
+	// 14: G Buffer Depth Target
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::GBufferDepthTarget),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = 1,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -840,6 +861,23 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
+
+		size_t gBufferColorTargetCount = _gBufferColorTargetImageViews.size();
+		std::vector<vk::DescriptorImageInfo> gBufferColorTargetInfos;
+		gBufferColorTargetInfos.reserve(gBufferColorTargetCount);
+		for (size_t i = 0; i < gBufferColorTargetCount; i++)
+		{
+			// skip sampler field, defined in separate image info
+			gBufferColorTargetInfos.push_back(vk::DescriptorImageInfo{
+											.imageView = _gBufferColorTargetImageViews[i],
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+		}
+
+		vk::DescriptorImageInfo gBufferDepthTargetInfo = vk::DescriptorImageInfo{
+											.imageView = _gBufferDepthImageView,
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+
+
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::Textures),
@@ -899,6 +937,24 @@ void VulkanRenderer::CreateDescriptorSets()
 				.pImageInfo = &skyboxCubemapInfo
 			});
 
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::GBufferColorTargets),
+				.dstArrayElement = 0,
+				.descriptorCount = static_cast<uint32_t>(gBufferColorTargetCount),
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = gBufferColorTargetInfos.data()
+			});
+
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::GBufferDepthTarget),
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = &gBufferDepthTargetInfo
+			});
+
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
 	}
 }
@@ -937,6 +993,8 @@ void VulkanRenderer::CreatePipelines()
 	_convolutionPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_irradiance_convolve_frag.spv", *_globalPipelineLayout);
 	_prefilterPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_prefilter_specular_frag.spv", *_globalPipelineLayout);
 	_brdfLutPipelineIndex = CreateBRDFLUTPipeline("shaderBin/tonemap_vert.spv", "shaderBin/ibl_brdf_lut_frag.spv", *_globalPipelineLayout);
+
+	_deferredGBufferPipelineIndex = CreateDeferredGBufferPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/deferred_gbuffer_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1426,6 +1484,104 @@ uint32_t VulkanRenderer::CreateBRDFLUTPipeline(const std::string& vertPath, cons
 		{.colorAttachmentCount = 1,
 		 .pColorAttachmentFormats = &hdrFormat,
 		 .depthAttachmentFormat = vk::Format::eUndefined} };
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
+uint32_t VulkanRenderer::CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	auto bindingDescription = Vertex::GetBindingDescription();
+	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+		.pVertexAttributeDescriptions = attributeDescriptions.data() };
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
+														 .depthWriteEnable = vk::True,
+														 .depthCompareOp = vk::CompareOp::eLess,
+														 .depthBoundsTestEnable = vk::False,
+														 .stencilTestEnable = vk::False };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	vk::Format depthFormat = FindDepthFormat();
+
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	std::vector< vk::PipelineColorBlendAttachmentState> colorBlendAttachments;
+	colorBlendAttachments.reserve(_gBufferColorTargetFormats.size());
+	
+	for (size_t i = 0; i < _gBufferColorTargetFormats.size(); i++)
+	{
+		colorBlendAttachments.push_back(colorBlendAttachment);
+	}
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size()),
+														.pAttachments = colorBlendAttachments.data() };
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = static_cast<uint32_t>(_gBufferColorTargetFormats.size()),
+		 .pColorAttachmentFormats = _gBufferColorTargetFormats.data(),
+		 .depthAttachmentFormat = depthFormat} };
+
 
 	_pipelines.push_back(PipelineEntry{
 		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
@@ -2017,6 +2173,231 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 	cmd.endRendering();
 
 	
+	if (_programCtx.GetRequestScreenshot())
+	{
+		CaptureScreenshot(imageIndex);
+	}
+	else
+	{
+		// After rendering, transition the swapchain image to PRESENT_SRC
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::ePresentSrcKHR,
+			vk::AccessFlagBits2::eColorAttachmentWrite,                // srcAccessMask
+			{},                                                        // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
+			vk::PipelineStageFlagBits2::eNone,							// dstStage
+			vk::ImageAspectFlagBits::eColor);
+	}
+
+	cmd.end();
+}
+
+void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
+{
+	const vk::raii::CommandBuffer& cmd = _frames[_currentFrame].commandBuffer;
+
+	cmd.begin({});
+
+
+	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+	{
+		TransitionImageLayout(_gBufferColorTargetImages[i].image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+	}
+
+	TransitionImageLayout(_gBufferDepthImage.image,
+		vk::ImageLayout::eUndefined,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::ImageAspectFlagBits::eDepth);
+
+	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	// Reverse Z, cleared 0.0f instead
+	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
+
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+
+	std::vector< vk::RenderingAttachmentInfo> colorAttachments;
+	colorAttachments.reserve(_gBufferColorTargetImageViews.size());
+
+	for (size_t i = 0; i < _gBufferColorTargetImageViews.size(); i++)
+	{
+		vk::RenderingAttachmentInfo attachment = { .imageView = _gBufferColorTargetImageViews[i],
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+		colorAttachments.push_back(attachment);
+	}
+
+	// Depth attachment
+	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _gBufferDepthImageView,
+												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eDontCare,
+												   .clearValue = clearDepth };
+
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
+									   .pColorAttachments = colorAttachments.data(),
+									   .pDepthAttachment = &depthAttachment };
+
+	cmd.beginRendering(renderingInfo);
+
+
+	size_t offset = 0;
+
+	for (size_t i = 0; i < _drawList.size(); i++)
+	{
+		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
+		const PipelineEntry& pso = _pipelines[_deferredGBufferPipelineIndex];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.setCullMode(vk::CullModeFlagBits::eBack);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
+
+		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+
+		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+	offset += _drawList.size();
+
+	cmd.endRendering();
+
+	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+	{
+		TransitionImageLayout(_gBufferColorTargetImages[i].image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eColor);
+	}
+
+	/*TransitionImageLayout(_gBufferDepthImage.image,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eDepth);*/
+
+
+	// Tone map pass
+	{
+		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},                                                        // srcAccessMask (no need to wait for previous operations)
+			vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
+			vk::ImageAspectFlagBits::eColor);
+
+		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _pSwapChainCtx->GetSwapChainImageView(imageIndex),
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		const PipelineEntry& pso = _pipelines[_hdrOutputPipelineIndex];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.draw(3, 1, 0, 0);
+
+	}
+
+	ImGui::Render();
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
+
+	cmd.endRendering();
+
 	if (_programCtx.GetRequestScreenshot())
 	{
 		CaptureScreenshot(imageIndex);
@@ -2679,6 +3060,35 @@ void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
 		vk::PipelineStageFlagBits2::eTransfer,					// srcStage
 		vk::PipelineStageFlagBits2::eHost,						// dstStage
 		vk::ImageAspectFlagBits::eColor);
+}
+
+void VulkanRenderer::CreateGBufferImages()
+{
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	assert(static_cast<size_t>(GBufferColorTargetType::Count) == _gBufferColorTargetFormats.size());
+
+	_gBufferColorTargetImages.reserve(_gBufferColorTargetFormats.size());
+	_gBufferColorTargetImageViews.reserve(_gBufferColorTargetFormats.size());
+
+	for (size_t i = 0; i < _gBufferColorTargetFormats.size(); i++)
+	{
+		_gBufferColorTargetImages.emplace_back(
+			CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, _gBufferColorTargetFormats[i],
+				vk::ImageTiling::eOptimal,
+				vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment)); //Also need transient?
+
+		_gBufferColorTargetImageViews.emplace_back(
+			CreateImageView(_gBufferColorTargetImages[i].image, _gBufferColorTargetFormats[i], vk::ImageAspectFlagBits::eColor, 1));
+	}
+
+	vk::Format depthFormat = FindDepthFormat();
+
+	_gBufferDepthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, depthFormat,
+		vk::ImageTiling::eOptimal, 
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eDepthStencilAttachment);
+
+	_gBufferDepthImageView = CreateImageView(_gBufferDepthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
 void VulkanRenderer::ConvertEquirectToCubeMap()

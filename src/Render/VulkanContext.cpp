@@ -315,14 +315,14 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanContext::DebugCallback(vk::DebugUtilsMess
 
 	if (isShaderPrintf)
 	{
-		std::cout << "[shader] " << pCallbackData->pMessage << std::endl;
+		std::cout << "[shader] " << pCallbackData->pMessage << "\n" << std::endl;
 		return vk::False;
 	}
 
 	if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ||
 		severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 	{
-		std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
+		std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << "\n"<< std::endl;
 	}
 	return vk::False;
 }
