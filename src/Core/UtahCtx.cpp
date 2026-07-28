@@ -55,6 +55,8 @@ void UtahCtx::InitWindow()
 	glfwSetCursorPosCallback(_pWindow, MousePositionCallback);
 	glfwSetKeyCallback(_pWindow, KeyInputCallback);
 
+
+#if USE_DEAR_IMGUI_INTERFACE
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
@@ -62,6 +64,7 @@ void UtahCtx::InitWindow()
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
 	ImGui::StyleColorsDark();
+#endif
 }
 
 void UtahCtx::InitSystems()
@@ -323,12 +326,14 @@ void UtahCtx::MainLoop()
 			_telemetryDeltaTime = deltaTime;
 		}
 
+#if USE_DEAR_IMGUI_INTERFACE
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImGui::Begin("Telemetry", 0, ImGuiWindowFlags_AlwaysAutoResize);
 		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
 		ImGui::End();
+#endif
 
 		/*auto& poolOwner = _registry.GetPool<PointLightCPU>()->GetEntities();
 		auto* tfPool = _registry.GetPool<TransformComponent>();
@@ -366,7 +371,10 @@ void UtahCtx::MainLoop()
 void UtahCtx::CleanUp()
 {
 	_pRenderSystem->WaitForRendererIdle();
+
+#if USE_DEAR_IMGUI_INTERFACE
 	ImGui_ImplVulkan_Shutdown();
+#endif
 
 	_registry.Clear();
 
@@ -374,8 +382,10 @@ void UtahCtx::CleanUp()
 		delete sys;
 	_systems.clear();
 
+#if USE_DEAR_IMGUI_INTERFACE
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+#endif
 
 	glfwDestroyWindow(_pWindow);
 

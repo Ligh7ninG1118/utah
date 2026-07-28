@@ -105,7 +105,9 @@ void VulkanRenderer::Initialize()
 	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
 	_meshManager.ImportMeshGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
 
+#if USE_DEAR_IMGUI_INTERFACE
 	InitImGUI();
+#endif
 	CreateShadowMapResources();
 
 	CreateUniformBuffers();
@@ -2167,8 +2169,10 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	}
 
+#if USE_DEAR_IMGUI_INTERFACE
 	ImGui::Render();
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
+#endif
 
 	cmd.endRendering();
 
@@ -2393,8 +2397,10 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 
 	}
 
+#if USE_DEAR_IMGUI_INTERFACE
 	ImGui::Render();
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
+#endif
 
 	cmd.endRendering();
 

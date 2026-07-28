@@ -5,8 +5,9 @@
 #include <unordered_map>
 #include <typeindex>
 #include <cassert>
-
 #include "Registry.h"
+
+#define USE_DEAR_IMGUI_INTERFACE 1
 
 
 class System;
