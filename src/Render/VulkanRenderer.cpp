@@ -206,8 +206,8 @@ void VulkanRenderer::DrawFrame()
 
 		frame.commandBuffer.reset();
 		//RecordCommandBufferShadowMapView(imageIndex);
-		RecordCommandBuffer(imageIndex);
-		//RecordCommandBufferDeferredRendering(imageIndex);
+		//RecordCommandBuffer(imageIndex);
+		RecordCommandBufferDeferredRendering(imageIndex);
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo   submitInfo{ .waitSemaphoreCount = 1,
@@ -982,7 +982,7 @@ void VulkanRenderer::CreatePipelines()
 {
 	_pipelines.clear();
 
-	_pbrPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/pbr_frag.spv", *_globalPipelineLayout);
+	_pbrPipeline = CreateGraphicsPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/forward_pbr_frag.spv", *_globalPipelineLayout);
 	_debugPipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);

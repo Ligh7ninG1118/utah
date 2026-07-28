@@ -1,5 +1,4 @@
-#ifndef SHAREDTYPES_HLSLI
-#define SHAREDTYPES_HLSLI
+#pragma once
 
 // Constants
 static const uint MAX_POINT_LIGHTS = 32;
@@ -89,5 +88,3 @@ struct SceneIBLUBO
     uint brdfLUTIndex;
     uint prefilteredMaxMip;
 };
-
-#endif
