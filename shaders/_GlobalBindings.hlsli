@@ -23,7 +23,7 @@
 [[vk::binding(12, 0)]] ConstantBuffer<SceneIBLUBO> sceneIBL;
 
 [[vk::binding(13, 0)]] Texture2D gBufferColorTargets[];
-[[vk::binding(14, 0)]] Texture2D gBufferDepthTarget;
+[[vk::binding(14, 0)]] Texture2D depthTarget;
 
 // PushConstant, for now, is defined in individual shaders based on usage
 

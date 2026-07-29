@@ -1,4 +1,5 @@
 #pragma once
+#include "_SharedTypes.hlsli"
 
 float DistributionGGX(float3 N, float3 H, float roughness)
 {

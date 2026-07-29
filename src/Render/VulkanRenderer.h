@@ -98,7 +98,7 @@ enum class GlobalBinding : uint32_t
 	SkyboxCubemap = 11,
 	SceneIBLUBO = 12,
 	GBufferColorTargets = 13,
-	GBufferDepthTarget = 14,
+	DepthTarget = 14,
 	Count
 };
 
@@ -273,7 +273,9 @@ private:
 	[[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
 	// Multiple Sampling
-	vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
+	// Deprecated
+	//vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
+
 	void CreateColorResources();
 
 	// Shadow Map
@@ -317,9 +319,6 @@ private:
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
 
-	AllocatedImage		   _colorImage{};
-	vk::raii::ImageView    _colorImageView = nullptr;
-
 	AllocatedImage _hdrColorImage{};
 	vk::raii::ImageView _hdrColorImageView = nullptr;
 
@@ -359,8 +358,6 @@ private:
 
 	bool _framebufferResized = false;
 
-	vk::SampleCountFlagBits _msaaSamples = vk::SampleCountFlagBits::e1;
-
 	std::vector<struct DrawJob> _drawList;
 	std::vector<glm::mat4> _debugAABBDrawList;
 
@@ -389,9 +386,6 @@ private:
 
 	std::vector<AllocatedImage> _gBufferColorTargetImages;
 	std::vector<vk::raii::ImageView> _gBufferColorTargetImageViews;
-
-	AllocatedImage		   _gBufferDepthImage{};
-	vk::raii::ImageView    _gBufferDepthImageView = nullptr;
 
 	std::vector<vk::Format> _gBufferColorTargetFormats = {
 		vk::Format::eR16G16B16A16Sfloat,	// Position

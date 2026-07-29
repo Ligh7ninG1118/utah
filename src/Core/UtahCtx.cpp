@@ -291,21 +291,36 @@ void UtahCtx::InitDemo2()
 	}
 
 	// Point lights
-	for (int i = 0; i < 2; i++)
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
 		t._pos.y = 2.0f;
-		t._pos.x = i * 3.0f;
+		t._pos.x = -3.0f;
 
 		PointLightCPU p;
-		p.color = glm::vec3(1.0f);
-		p.intensity = 5.0f;
+		p.color = glm::vec3(1.0f, 0.0f, 0.0f);
+		p.intensity = 15.0f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
+
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.y = 2.0f;
+		t._pos.x = 3.0f;
+
+		PointLightCPU p;
+		p.color = glm::vec3(0.0f, 0.0f, 1.0f);
+		p.intensity = 15.0f;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<PointLightCPU>(e, std::move(p));
+	}
+
 }
 
 void UtahCtx::MainLoop()
@@ -326,12 +341,15 @@ void UtahCtx::MainLoop()
 			_telemetryDeltaTime = deltaTime;
 		}
 
+		CameraComponent& cam = _registry.GetPool<CameraComponent>()->GetPool()[0];
+
 #if USE_DEAR_IMGUI_INTERFACE
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImGui::Begin("Telemetry", 0, ImGuiWindowFlags_AlwaysAutoResize);
 		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
+		ImGui::Text("POS: (%.2f, %.2f, %.2f)\t\tROT: (%.2f, %.2f, %.2f)\n", cam._pos.x, cam._pos.y, cam._pos.z, cam._rot.x, cam._rot.y, cam._rot.z);
 		ImGui::End();
 #endif
 
@@ -348,10 +366,9 @@ void UtahCtx::MainLoop()
 
 		_pFlyCamera->Update(deltaTime);
 
-		// Flashlight: slave the spot light to the camera before lights are gathered
+		// Flashlight: attach the spot light to the camera before lights are gathered
 		if(!_holdMode)
 		{
-			CameraComponent& cam = _registry.GetPool<CameraComponent>()->GetPool()[0];
 			auto* spotPool = _registry.GetPool<SpotLightCPU>();
 			auto* tfPool = _registry.GetPool<TransformComponent>();
 

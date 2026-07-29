@@ -22,6 +22,7 @@ VSOutput main(VSInput input)
     
     float4 pos = mul(cam.proj, float4(mul(viewRot, input.inPos), 1.0f));
     
+    // Reverse-Z, 0.0f of z = far plane
     o.position = float4(pos.xy, 0.0f, pos.w);
     
     return o;

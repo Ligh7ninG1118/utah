@@ -45,10 +45,8 @@ VulkanRenderer::~VulkanRenderer()
 		DestroyImage(_shadowCubeMapImages[i]);
 	}
 
-	_colorImageView = nullptr;
 	_hdrColorImageView = nullptr;
 	_depthImageView = nullptr;
-	DestroyImage(_colorImage);
 	DestroyImage(_hdrColorImage);
 	DestroyImage(_depthImage);
 
@@ -57,9 +55,6 @@ VulkanRenderer::~VulkanRenderer()
 		_gBufferColorTargetImageViews[i] = nullptr;
 		DestroyImage(_gBufferColorTargetImages[i]);
 	}
-
-	_gBufferDepthImageView = nullptr;
-	DestroyImage(_gBufferDepthImage);
 
 	for (auto& frame : _frames)
 		for (auto& buffer : frame.globalBuffers)
@@ -72,7 +67,6 @@ void VulkanRenderer::Initialize()
 
 	_vkCtx.Initialize(_programCtx.GetContextWindow());
 
-	_msaaSamples = GetMaxUsableSampleCount();
 	_pSwapChainCtx = std::make_unique<SwapChainContext>(_vkCtx);
 
 	InitBindingDescs();
@@ -505,29 +499,10 @@ void VulkanRenderer::FramebufferResizeCallback(GLFWwindow* window, int width, in
 void VulkanRenderer::CleanupSwapChain()
 {
 	// Image views must be destroyed before the underlying VMA-allocated images.
-	_colorImageView = nullptr;
 	_hdrColorImageView = nullptr;
 	_depthImageView = nullptr;
-	DestroyImage(_colorImage);
 	DestroyImage(_hdrColorImage);
 	DestroyImage(_depthImage);
-
-	// No need to recreate shadow resources since it's window independent
-	/*for (int i = 0; i < _shadowMapImages.size(); i++)
-	{
-		_shadowMapImageViews[i] = nullptr;
-		DestroyImage(_shadowMapImages[i]);
-	}
-	_shadowMapImageViews.clear();
-	_shadowMapImages.clear();
-
-	for (int i = 0; i < _shadowCubeMapImages.size(); i++)
-	{
-		_shadowCubeMapImageViews[i] = nullptr;
-		DestroyImage(_shadowCubeMapImages[i]);
-	}
-	_shadowCubeMapImageViews.clear();
-	_shadowCubeMapImages.clear();*/
 }
 
 //TODO: Doesnt work, will cause device lost on resize
@@ -681,7 +656,7 @@ void VulkanRenderer::InitBindingDescs()
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 	// 14: G Buffer Depth Target
-	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::GBufferDepthTarget),
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::DepthTarget),
 										.type = vk::DescriptorType::eSampledImage,
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
@@ -875,8 +850,8 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
 		}
 
-		vk::DescriptorImageInfo gBufferDepthTargetInfo = vk::DescriptorImageInfo{
-											.imageView = _gBufferDepthImageView,
+		vk::DescriptorImageInfo depthTargetInfo = vk::DescriptorImageInfo{
+											.imageView = _depthImageView,
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 
@@ -950,11 +925,11 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::GBufferDepthTarget),
+				.dstBinding = ToIdx(GlobalBinding::DepthTarget),
 				.dstArrayElement = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = &gBufferDepthTargetInfo
+				.pImageInfo = &depthTargetInfo
 			});
 
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
@@ -988,16 +963,16 @@ void VulkanRenderer::CreatePipelines()
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
-	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/tonemap_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
+	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
 	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
 	_equirectToCubePipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_equirect_to_cube_frag.spv", *_globalPipelineLayout);
 
 	_convolutionPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_irradiance_convolve_frag.spv", *_globalPipelineLayout);
 	_prefilterPipelineIndex = CreateEquirectToCubePipeline("shaderBin/ibl_equirect_to_cube_vert.spv", "shaderBin/ibl_prefilter_specular_frag.spv", *_globalPipelineLayout);
-	_brdfLutPipelineIndex = CreateBRDFLUTPipeline("shaderBin/tonemap_vert.spv", "shaderBin/ibl_brdf_lut_frag.spv", *_globalPipelineLayout);
+	_brdfLutPipelineIndex = CreateBRDFLUTPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ibl_brdf_lut_frag.spv", *_globalPipelineLayout);
 
 	_deferredGBufferPipelineIndex = CreateDeferredGBufferPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/deferred_gbuffer_frag.spv", *_globalPipelineLayout);
-	_deferredLightingPipelineIndex = CreateDeferredLightingPipeline("shaderBin/tonemap_vert.spv", "shaderBin/deferred_lighting_pbr_frag.spv", *_globalPipelineLayout);
+	_deferredLightingPipelineIndex = CreateDeferredLightingPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/deferred_lighting_pbr_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1051,7 +1026,7 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 		rasterizer.polygonMode = vk::PolygonMode::eLine;
 	}
 
-	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = _msaaSamples,
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
 														  .sampleShadingEnable = vk::False };
 	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
 														 .depthWriteEnable = vk::True,
@@ -1896,15 +1871,6 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::ImageAspectFlagBits::eColor);
 
-	// Transition the multisampled color image to COLOR_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(_colorImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
 	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
 	TransitionImageLayout(_depthImage.image,
 		vk::ImageLayout::eUndefined,
@@ -1921,12 +1887,10 @@ void VulkanRenderer::RecordCommandBuffer(uint32_t imageIndex)
 
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
-	// Color attachment (multisampled) with resolve attachment
-	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _colorImageView,
+	// Directly render onto hdr color image (no multisampling)
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-												   .resolveMode = vk::ResolveModeFlagBits::eAverage,
-												   .resolveImageView = _hdrColorImageView,
-												   .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
 												   .storeOp = vk::AttachmentStoreOp::eStore,
 												   .clearValue = clearColor };
@@ -2279,6 +2243,198 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 
 	cmd.begin({});
 
+	size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+	// Shadow map BEGIN
+	for (size_t j = 0; j < casterCount; j++)
+	{
+		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+		TransitionImageLayout(_shadowMapImages[j].image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		// Reverse Z, cleared 0.0f instead
+		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
+
+		// Depth attachment
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageViews[j],
+													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+													   .loadOp = vk::AttachmentLoadOp::eClear,
+													   .storeOp = vk::AttachmentStoreOp::eStore,
+													   .clearValue = clearDepth };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
+										   .layerCount = 1,
+										   .colorAttachmentCount = 0,
+										   .pColorAttachments = nullptr,
+										   .pDepthAttachment = &depthAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		for (uint32_t i = 0; i < _drawList.size(); i++)
+		{
+			const PipelineEntry& pso = _pipelines[_shadowPipelineIndex];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::True);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			// Reuse second slot (uint index) to indicate which view proj matrix to use
+			PerDrawPC pc{ i, j };
+
+			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		cmd.endRendering();
+
+		// Make the depth readable (sampling / ImGui display)
+		TransitionImageLayout(_shadowMapImages[j].image,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eDepth);
+	}
+	// Shadow map END
+
+	// Shadow Cube map BEGIN
+	for (size_t j = 0; j < std::min(_pointLights.size(), _shadowCubeMapImages.size()); j++)
+	{
+		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+		TransitionImageLayout(_shadowCubeMapImages[j].image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		// Reverse Z, cleared 0.0f instead
+		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
+
+		// Depth attachment
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowCubeMapImageViews[j],
+													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+													   .loadOp = vk::AttachmentLoadOp::eClear,
+													   .storeOp = vk::AttachmentStoreOp::eStore,
+													   .clearValue = clearDepth };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
+										   .layerCount = 6,
+										   .viewMask = 0b00111111,
+										   .colorAttachmentCount = 0,
+										   .pColorAttachments = nullptr,
+										   .pDepthAttachment = &depthAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		for (uint32_t i = 0; i < _drawList.size(); i++)
+		{
+			const PipelineEntry& pso = _pipelines[_shadowCubeMapPipelineIndex];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					static_cast<float>(SHADOW_MAP_RESOLUTION),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::True);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			PerDrawPC pc{ i, _shadowMapImages.size() + j * 6 };
+
+			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		cmd.endRendering();
+
+		TransitionImageLayout(_shadowCubeMapImages[j].image,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eDepth);
+	}
+	// Shadow Cube map END
+
 
 	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
 	{
@@ -2292,7 +2448,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 			vk::ImageAspectFlagBits::eColor);
 	}
 
-	TransitionImageLayout(_gBufferDepthImage.image,
+	TransitionImageLayout(_depthImage.image,
 		vk::ImageLayout::eUndefined,
 		vk::ImageLayout::eDepthAttachmentOptimal,
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -2323,7 +2479,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 	}
 
 	// Depth attachment
-	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _gBufferDepthImageView,
+	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
 												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
 												   .storeOp = vk::AttachmentStoreOp::eDontCare,
@@ -2411,16 +2567,14 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 			vk::ImageAspectFlagBits::eColor);
 	}
 
-	/*TransitionImageLayout(_gBufferDepthImage.image,
+	TransitionImageLayout(_depthImage.image,
 		vk::ImageLayout::eDepthAttachmentOptimal,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 		vk::AccessFlagBits2::eShaderRead,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eDepth);*/
-
-
+		vk::ImageAspectFlagBits::eDepth);
 
 	// Lighting pass
 	{
@@ -2472,7 +2626,213 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 		cmd.draw(3, 1, 0, 0);
 
 		cmd.endRendering();
+
 	}
+
+	TransitionImageLayout(_depthImage.image,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::AccessFlagBits2::eShaderRead,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::ImageAspectFlagBits::eDepth);
+
+
+	
+
+	// Draw skybox
+	{
+		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eDontCare,
+												   .storeOp = vk::AttachmentStoreOp::eStore};
+
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
+												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eDontCare,
+												   .storeOp = vk::AttachmentStoreOp::eDontCare };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment,
+									   .pDepthAttachment = &depthAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		const PipelineEntry& pso = _pipelines[_skyboxPipelineIndex];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::False);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		PerDrawPC pc{ 0, 0 };
+
+		const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+
+		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+
+	// Draw debug AABB boxs
+	for (size_t i = 0; i < _debugAABBDrawList.size(); i++)
+	{
+		const Material& mat = _materialManager.GetMaterial(_debugAABBMaterial);
+		const PipelineEntry& pso = _pipelines[mat.pipeline];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.setCullMode(vk::CullModeFlagBits::eBack);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		PerDrawPC pc{ i + offset, _debugAABBMaterial.index };
+
+		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+
+		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+	offset += _debugAABBDrawList.size();
+
+	// debug lights
+	for (uint32_t i = 0; i < _dirLights.size() + _spotLights.size() + _pointLights.size(); i++)
+	{
+		const Material& mat = _materialManager.GetMaterial(_debugLightMaterial);
+		const PipelineEntry& pso = _pipelines[mat.pipeline];
+
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
+
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
+
+		cmd.setCullMode(vk::CullModeFlagBits::eBack);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+		// And topology removed from dynamic states
+		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+		PerDrawPC pc{ i + offset, _debugLightMaterial.index };
+
+		// For point lights, use icosphere; pyramid for spot/directional
+		DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;
+
+		const Mesh& mesh = _meshManager.GetDebugMesh(meshType);
+
+		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
+
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	}
+
+	cmd.endRendering();
+
 
 	// HDR scene image: color-attachment-write -> shader-read, so the tonemap pass can sample it
 	TransitionImageLayout(_hdrColorImage.image,
@@ -2806,8 +3166,9 @@ void VulkanRenderer::CreateDepthResources()
 	vk::Format depthFormat = FindDepthFormat();
 	auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
-	_depthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, _msaaSamples, depthFormat,
-		vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment);
+	_depthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, depthFormat,
+		vk::ImageTiling::eOptimal, 
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eDepthStencilAttachment);
 
 	_depthImageView = CreateImageView(_depthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
@@ -2985,28 +3346,29 @@ std::vector<char> VulkanRenderer::ReadFile(const std::string& filename)
 	return shaderModule;
 }
 
-vk::SampleCountFlagBits VulkanRenderer::GetMaxUsableSampleCount() const
-{
-	vk::PhysicalDeviceProperties physicalDeviceProperties = _vkCtx.GetPhysicalDevice().getProperties();
-
-	vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts &
-		physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-
-	if (counts & vk::SampleCountFlagBits::e64)
-		return vk::SampleCountFlagBits::e64;
-	if (counts & vk::SampleCountFlagBits::e32)
-		return vk::SampleCountFlagBits::e32;
-	if (counts & vk::SampleCountFlagBits::e16)
-		return vk::SampleCountFlagBits::e16;
-	if (counts & vk::SampleCountFlagBits::e8)
-		return vk::SampleCountFlagBits::e8;
-	if (counts & vk::SampleCountFlagBits::e4)
-		return vk::SampleCountFlagBits::e4;
-	if (counts & vk::SampleCountFlagBits::e2)
-		return vk::SampleCountFlagBits::e2;
-
-	return vk::SampleCountFlagBits::e1;
-}
+// Deprecated
+//vk::SampleCountFlagBits VulkanRenderer::GetMaxUsableSampleCount() const
+//{
+//	vk::PhysicalDeviceProperties physicalDeviceProperties = _vkCtx.GetPhysicalDevice().getProperties();
+//
+//	vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts &
+//		physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+//
+//	if (counts & vk::SampleCountFlagBits::e64)
+//		return vk::SampleCountFlagBits::e64;
+//	if (counts & vk::SampleCountFlagBits::e32)
+//		return vk::SampleCountFlagBits::e32;
+//	if (counts & vk::SampleCountFlagBits::e16)
+//		return vk::SampleCountFlagBits::e16;
+//	if (counts & vk::SampleCountFlagBits::e8)
+//		return vk::SampleCountFlagBits::e8;
+//	if (counts & vk::SampleCountFlagBits::e4)
+//		return vk::SampleCountFlagBits::e4;
+//	if (counts & vk::SampleCountFlagBits::e2)
+//		return vk::SampleCountFlagBits::e2;
+//
+//	return vk::SampleCountFlagBits::e1;
+//}
 
 void VulkanRenderer::CreateColorResources()
 {
@@ -3014,12 +3376,6 @@ void VulkanRenderer::CreateColorResources()
 	vk::Format hdrFormat = vk::Format::eR16G16B16A16Sfloat;
 
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
-
-	_colorImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, _msaaSamples, hdrFormat,
-		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment);
-
-	_colorImageView = CreateImageView(_colorImage.image, hdrFormat, vk::ImageAspectFlagBits::eColor, 1);
 
 	_hdrColorImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, hdrFormat,
 		vk::ImageTiling::eOptimal,
@@ -3226,14 +3582,6 @@ void VulkanRenderer::CreateGBufferImages()
 		_gBufferColorTargetImageViews.emplace_back(
 			CreateImageView(_gBufferColorTargetImages[i].image, _gBufferColorTargetFormats[i], vk::ImageAspectFlagBits::eColor, 1));
 	}
-
-	vk::Format depthFormat = FindDepthFormat();
-
-	_gBufferDepthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, depthFormat,
-		vk::ImageTiling::eOptimal, 
-		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eDepthStencilAttachment);
-
-	_gBufferDepthImageView = CreateImageView(_gBufferDepthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
 void VulkanRenderer::ConvertEquirectToCubeMap()
