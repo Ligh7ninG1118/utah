@@ -260,11 +260,11 @@ void UtahCtx::InitDemo2()
 		Entity flyCam = _registry.CreateEntity();
 
 		CameraComponent c;
-		c._pos.x = -2.0f;
-		c._pos.y = 2.0f;
-		c._pos.z = 3.5f;
-		c._rot.y = -70.0f;
-		c._rot.z = -30.f;
+		c._pos.x = -0.0452f;
+		c._pos.y = 1.1071f;
+		c._pos.z = -1.0837f;
+		c._rot.y = 91.9990f;
+		c._rot.z = -47.4001;
 
 		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 	}

@@ -1611,12 +1611,17 @@ uint32_t VulkanRenderer::CreateDeferredLightingPipeline(const std::string& vertP
 
 	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor };
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp};
 
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
 
 	const vk::Format& hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+	vk::Format depthFormat = FindDepthFormat();
+
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
 		{.stageCount = 2,
@@ -1633,7 +1638,7 @@ uint32_t VulkanRenderer::CreateDeferredLightingPipeline(const std::string& vertP
 		 .renderPass = nullptr},
 		{.colorAttachmentCount = 1,
 		 .pColorAttachmentFormats = &hdrFormat,
-		 .depthAttachmentFormat = vk::Format::eUndefined} };
+		 .depthAttachmentFormat = depthFormat} };
 
 
 	_pipelines.push_back(PipelineEntry{
@@ -2482,7 +2487,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
 												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
-												   .storeOp = vk::AttachmentStoreOp::eDontCare,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
 												   .clearValue = clearDepth };
 
 	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
@@ -2569,11 +2574,11 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 
 	TransitionImageLayout(_depthImage.image,
 		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::ImageLayout::eDepthReadOnlyOptimal,
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
+		vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::ImageAspectFlagBits::eDepth);
 
 	// Lighting pass
@@ -2593,10 +2598,16 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 												   .storeOp = vk::AttachmentStoreOp::eStore,
 												   .clearValue = clearColor };
 
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
+												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
+												   .storeOp = vk::AttachmentStoreOp::eNone };
+
 		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,
-									   .pColorAttachments = &colorAttachment };
+									   .pColorAttachments = &colorAttachment,
+									   .pDepthAttachment = &depthAttachment };
 
 		cmd.beginRendering(renderingInfo);
 
@@ -2616,6 +2627,11 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 				vk::Offset2D(0, 0),
 				swapChainExtent));
 
+		cmd.setDepthTestEnable(vk::False);
+		cmd.setDepthWriteEnable(vk::False);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
 			pso.layout,
@@ -2629,29 +2645,17 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 
 	}
 
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
-
-	
-
 	// Draw skybox
 	{
 		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eDontCare,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
 												   .storeOp = vk::AttachmentStoreOp::eStore};
 
 		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
-												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eDontCare,
-												   .storeOp = vk::AttachmentStoreOp::eDontCare };
+												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
+												   .storeOp = vk::AttachmentStoreOp::eNone };
 
 		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
@@ -2737,7 +2741,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 		cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::False);
 		// Reverse Z, use Greater instead
 		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
 
@@ -2795,7 +2799,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 		cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::False);
 		// Reverse Z, use Greater instead
 		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
 

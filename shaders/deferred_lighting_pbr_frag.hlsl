@@ -78,7 +78,7 @@ float4 main(PSInput input) : SV_TARGET
 {
     //Texture2D::Load(x, y, miplevel)
     float3 position = gBufferColorTargets[G_BUFFER_COLOR_TARGET_POSITION].Load(int3(input.position.x, input.position.y, 0)).rgb;
-    float3 normal = gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(int3(input.position.x, input.position.y, 0)).rgb;
+    float3 normal = normalize(gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(int3(input.position.x, input.position.y, 0)).rgb);
     float3 albedo = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ALBEDO].Load(int3(input.position.x, input.position.y, 0)).rgb;
     float3 orm = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ORM].Load(int3(input.position.x, input.position.y, 0)).rgb;
     float ao = orm.r;
