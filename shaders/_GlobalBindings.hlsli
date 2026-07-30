@@ -1,3 +1,5 @@
+#ifndef UTAH_GLOBAL_BINDINGS_HLSLI
+#define UTAH_GLOBAL_BINDINGS_HLSLI
 #pragma once
 
 #include "_SharedTypes.hlsli"
@@ -38,3 +40,5 @@ static const uint G_BUFFER_COLOR_TARGET_NORMAL      = 1;
 static const uint G_BUFFER_COLOR_TARGET_ALBEDO      = 2;
 static const uint G_BUFFER_COLOR_TARGET_ORM         = 3;
 static const uint G_BUFFER_COLOR_TARGET_EMISSIVE    = 4;
+
+#endif

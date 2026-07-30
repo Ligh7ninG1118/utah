@@ -1,4 +1,7 @@
+#ifndef UTAH_BRDF_HLSLI
+#define UTAH_BRDF_HLSLI
 #pragma once
+
 #include "_SharedTypes.hlsli"
 
 float DistributionGGX(float3 N, float3 H, float roughness)
@@ -44,3 +47,5 @@ float3 FresnelSchlick(float cosTheta, float3 F0, float roughness)
 {
     return F0 + (max((float3) (1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
+
+#endif

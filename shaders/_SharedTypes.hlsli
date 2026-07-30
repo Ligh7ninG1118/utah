@@ -1,3 +1,5 @@
+#ifndef UTAH_SHARED_TYPES_HLSLI
+#define UTAH_SHARED_TYPES_HLSLI
 #pragma once
 
 // Constants
@@ -88,3 +90,5 @@ struct SceneIBLUBO
     uint brdfLUTIndex;
     uint prefilteredMaxMip;
 };
+
+#endif
