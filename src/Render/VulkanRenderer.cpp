@@ -852,7 +852,7 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		vk::DescriptorImageInfo depthTargetInfo = vk::DescriptorImageInfo{
 											.imageView = _depthImageView,
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+											.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal };
 
 
 		writes.push_back(vk::WriteDescriptorSet{
@@ -2258,7 +2258,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			{},
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::ImageAspectFlagBits::eDepth);
 
@@ -2354,7 +2354,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			{},
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::ImageAspectFlagBits::eDepth);
 
@@ -2440,129 +2440,392 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 	}
 	// Shadow Cube map END
 
-
-	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
-	{
-		TransitionImageLayout(_gBufferColorTargetImages[i].image,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eColorAttachmentOptimal,
-			vk::AccessFlagBits2::eColorAttachmentWrite,
-			vk::AccessFlagBits2::eColorAttachmentWrite,
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::ImageAspectFlagBits::eColor);
-	}
-
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
+	// Shared by late passes
 	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
-
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+	// offset in model matrix (ObjectSSBO), shared by objects & debug draws
+	size_t offset = 0;
 
-
-	std::vector< vk::RenderingAttachmentInfo> colorAttachments;
-	colorAttachments.reserve(_gBufferColorTargetImageViews.size());
-
-	for (size_t i = 0; i < _gBufferColorTargetImageViews.size(); i++)
+	// G Buffer Pass BEGIN
 	{
-		vk::RenderingAttachmentInfo attachment = { .imageView = _gBufferColorTargetImageViews[i],
+		// Rendering onto color & depth targets, transit to attachment layout
+		for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+		{
+			TransitionImageLayout(_gBufferColorTargetImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				{},	// no memory dependency
+				vk::AccessFlagBits2::eColorAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader, // read by last frame's lighting pass
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::ImageAspectFlagBits::eColor);
+		}
+
+		TransitionImageLayout(_depthImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			{}, // no memory dependency
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		// Multiple color attachments
+		std::vector< vk::RenderingAttachmentInfo> colorAttachments;
+		colorAttachments.reserve(_gBufferColorTargetImageViews.size());
+
+		for (size_t i = 0; i < _gBufferColorTargetImageViews.size(); i++)
+		{
+			vk::RenderingAttachmentInfo attachment = { .imageView = _gBufferColorTargetImageViews[i],
+													   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+													   .resolveMode = vk::ResolveModeFlagBits::eNone,
+													   .loadOp = vk::AttachmentLoadOp::eClear,
+													   .storeOp = vk::AttachmentStoreOp::eStore,
+													   .clearValue = clearColor };
+			colorAttachments.push_back(attachment);
+		}
+
+		// Depth attachment
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
+													   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+													   .loadOp = vk::AttachmentLoadOp::eClear,
+													   .storeOp = vk::AttachmentStoreOp::eStore,
+													   .clearValue = clearDepth };
+
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+										   .layerCount = 1,
+										   .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
+										   .pColorAttachments = colorAttachments.data(),
+										   .pDepthAttachment = &depthAttachment };
+
+		cmd.beginRendering(renderingInfo);
+
+		// Objects
+		for (size_t i = 0; i < _drawList.size(); i++)
+		{
+			const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
+			const PipelineEntry& pso = _pipelines[_deferredGBufferPipelineIndex];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(swapChainExtent.width),
+					static_cast<float>(swapChainExtent.height),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					swapChainExtent));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eBack);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::True);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
+
+			const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		offset += _drawList.size();
+
+		cmd.endRendering();
+	}
+	// G Buffer Pass END
+
+	// Lighting + Skybox + Debug Draws BEGIN
+	{
+		// Sampling from color/depth targets, transit to shader read layout
+		for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+		{
+			TransitionImageLayout(_gBufferColorTargetImages[i].image,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eColorAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eColor);
+		}
+
+		TransitionImageLayout(_depthImage.image,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eDepthReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		// Render onto hdr image
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-												   .resolveMode = vk::ResolveModeFlagBits::eNone,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
 												   .storeOp = vk::AttachmentStoreOp::eStore,
 												   .clearValue = clearColor };
-		colorAttachments.push_back(attachment);
-	}
 
-	// Depth attachment
-	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
-												   .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eClear,
-												   .storeOp = vk::AttachmentStoreOp::eStore,
-												   .clearValue = clearDepth };
+		// Needs depth information, but do not store result
+		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
+												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
+												   .storeOp = vk::AttachmentStoreOp::eNone };
 
-	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
-									   .colorAttachmentCount = static_cast<uint32_t>(colorAttachments.size()),
-									   .pColorAttachments = colorAttachments.data(),
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment,
 									   .pDepthAttachment = &depthAttachment };
 
-	cmd.beginRendering(renderingInfo);
+		cmd.beginRendering(renderingInfo);
 
+		// Deferred Lighting
+		{
+			const PipelineEntry& pso = _pipelines[_deferredLightingPipelineIndex];
 
-	size_t offset = 0;
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
-	for (size_t i = 0; i < _drawList.size(); i++)
-	{
-		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
-		const PipelineEntry& pso = _pipelines[_deferredGBufferPipelineIndex];
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(swapChainExtent.width),
+					static_cast<float>(swapChainExtent.height),
+					0.0f, 1.0f));
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					swapChainExtent));
 
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
+			// Deferred lighting pass, no need for both of these
+			cmd.setDepthTestEnable(vk::False);
+			cmd.setDepthWriteEnable(vk::False);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
 
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
 
-		cmd.setCullMode(vk::CullModeFlagBits::eBack);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::True);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+			cmd.draw(3, 1, 0, 0);
+		}
 
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+		// Skybox
+		{
+			const PipelineEntry& pso = _pipelines[_skyboxPipelineIndex];
 
-		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
-		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(swapChainExtent.width),
+					static_cast<float>(swapChainExtent.height),
+					0.0f, 1.0f));
 
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					swapChainExtent));
 
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			// Test against existing depth info, but do not write
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::False);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
 
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
+			PerDrawPC pc{ 0, 0 };
 
-		cmd.pushConstants<PerDrawPC>(
-			pso.layout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
+			const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
 
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		// Draw debug AABB boxs
+		for (size_t i = 0; i < _debugAABBDrawList.size(); i++)
+		{
+			const Material& mat = _materialManager.GetMaterial(_debugAABBMaterial);
+			const PipelineEntry& pso = _pipelines[mat.pipeline];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(swapChainExtent.width),
+					static_cast<float>(swapChainExtent.height),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					swapChainExtent));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eBack);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			// Test against existing depth info, but do not write
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::False);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+			// And topology removed from dynamic states
+			//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+			PerDrawPC pc{ i + offset, _debugAABBMaterial.index };
+
+			const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		offset += _debugAABBDrawList.size();
+
+		// Draw debug lights
+		for (uint32_t i = 0; i < _dirLights.size() + _spotLights.size() + _pointLights.size(); i++)
+		{
+			const Material& mat = _materialManager.GetMaterial(_debugLightMaterial);
+			const PipelineEntry& pso = _pipelines[mat.pipeline];
+
+			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+			cmd.setViewport(0,
+				vk::Viewport(
+					0.0f, 0.0f,
+					static_cast<float>(swapChainExtent.width),
+					static_cast<float>(swapChainExtent.height),
+					0.0f, 1.0f));
+
+			cmd.setScissor(0,
+				vk::Rect2D(
+					vk::Offset2D(0, 0),
+					swapChainExtent));
+
+			cmd.setCullMode(vk::CullModeFlagBits::eBack);
+			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+			cmd.setDepthTestEnable(vk::True);
+			cmd.setDepthWriteEnable(vk::False);
+			// Reverse Z, use Greater instead
+			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+
+			// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
+			// And topology removed from dynamic states
+			//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
+
+			PerDrawPC pc{ i + offset, _debugLightMaterial.index };
+
+			// For point lights, use icosphere; pyramid for spot/directional
+			DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;
+
+			const Mesh& mesh = _meshManager.GetDebugMesh(meshType);
+
+			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+
+			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+
+			cmd.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				pso.layout,
+				0,
+				*_frames[_currentFrame].globalDescriptorSet,
+				nullptr);
+
+			cmd.pushConstants<PerDrawPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc
+			);
+
+			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		}
+
+		cmd.endRendering();
 	}
+	// Lighting + Skybox + Debug Draws END
 
-	offset += _drawList.size();
 
-	cmd.endRendering();
-
-	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+	// Tone map pass BEGIN
 	{
-		TransitionImageLayout(_gBufferColorTargetImages[i].image,
+		// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
+		TransitionImageLayout(_hdrColorImage.image,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -2570,287 +2833,7 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			vk::PipelineStageFlagBits2::eFragmentShader,
 			vk::ImageAspectFlagBits::eColor);
-	}
 
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eDepthReadOnlyOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
-	// Lighting pass
-	{
-		TransitionImageLayout(_hdrColorImage.image,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eColorAttachmentOptimal,
-			{},
-			vk::AccessFlagBits2::eColorAttachmentWrite,
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::ImageAspectFlagBits::eColor);
-
-		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
-												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eClear,
-												   .storeOp = vk::AttachmentStoreOp::eStore,
-												   .clearValue = clearColor };
-
-		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
-												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eLoad,
-												   .storeOp = vk::AttachmentStoreOp::eNone };
-
-		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
-									   .layerCount = 1,
-									   .colorAttachmentCount = 1,
-									   .pColorAttachments = &colorAttachment,
-									   .pDepthAttachment = &depthAttachment };
-
-		cmd.beginRendering(renderingInfo);
-
-		const PipelineEntry& pso = _pipelines[_deferredLightingPipelineIndex];
-
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		cmd.setDepthTestEnable(vk::False);
-		cmd.setDepthWriteEnable(vk::False);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
-		cmd.draw(3, 1, 0, 0);
-
-		cmd.endRendering();
-
-	}
-
-	// Draw skybox
-	{
-		vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
-												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eLoad,
-												   .storeOp = vk::AttachmentStoreOp::eStore};
-
-		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
-												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-												   .loadOp = vk::AttachmentLoadOp::eLoad,
-												   .storeOp = vk::AttachmentStoreOp::eNone };
-
-		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
-									   .layerCount = 1,
-									   .colorAttachmentCount = 1,
-									   .pColorAttachments = &colorAttachment,
-									   .pDepthAttachment = &depthAttachment };
-
-		cmd.beginRendering(renderingInfo);
-
-		const PipelineEntry& pso = _pipelines[_skyboxPipelineIndex];
-
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		cmd.setCullMode(vk::CullModeFlagBits::eNone);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::False);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
-
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-		PerDrawPC pc{ 0, 0 };
-
-		const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
-
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
-		cmd.pushConstants<PerDrawPC>(
-			pso.layout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
-
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
-	}
-
-
-	// Draw debug AABB boxs
-	for (size_t i = 0; i < _debugAABBDrawList.size(); i++)
-	{
-		const Material& mat = _materialManager.GetMaterial(_debugAABBMaterial);
-		const PipelineEntry& pso = _pipelines[mat.pipeline];
-
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		cmd.setCullMode(vk::CullModeFlagBits::eBack);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::False);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
-
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-		PerDrawPC pc{ i + offset, _debugAABBMaterial.index };
-
-		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
-
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
-		cmd.pushConstants<PerDrawPC>(
-			pso.layout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
-
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
-	}
-
-	offset += _debugAABBDrawList.size();
-
-	// debug lights
-	for (uint32_t i = 0; i < _dirLights.size() + _spotLights.size() + _pointLights.size(); i++)
-	{
-		const Material& mat = _materialManager.GetMaterial(_debugLightMaterial);
-		const PipelineEntry& pso = _pipelines[mat.pipeline];
-
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		cmd.setCullMode(vk::CullModeFlagBits::eBack);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::False);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
-
-		// Since topology can't switch across class (triangle <-> line) for debug draws, only set them at pipeline creation time
-		// And topology removed from dynamic states
-		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
-
-		PerDrawPC pc{ i + offset, _debugLightMaterial.index };
-
-		// For point lights, use icosphere; pyramid for spot/directional
-		DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;
-
-		const Mesh& mesh = _meshManager.GetDebugMesh(meshType);
-
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
-		cmd.pushConstants<PerDrawPC>(
-			pso.layout,
-			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-			0,
-			pc
-		);
-
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
-	}
-
-	cmd.endRendering();
-
-
-	// HDR scene image: color-attachment-write -> shader-read, so the tonemap pass can sample it
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eColor);
-
-	// Tone map pass
-	{
-		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
@@ -2898,15 +2881,17 @@ void VulkanRenderer::RecordCommandBufferDeferredRendering(uint32_t imageIndex)
 
 		cmd.draw(3, 1, 0, 0);
 
-	}
-
 #if USE_DEAR_IMGUI_INTERFACE
-	ImGui::Render();
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
+		ImGui::Render();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
 #endif
 
-	cmd.endRendering();
+		cmd.endRendering();
+	}
+	// Tone map pass END
 
+
+	// If requested screenshot, blit over the image; also handles swapchain image transition
 	if (_programCtx.GetRequestScreenshot())
 	{
 		CaptureScreenshot(imageIndex);
