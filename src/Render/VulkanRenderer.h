@@ -113,6 +113,14 @@ enum class GBufferColorTargetType : uint32_t
 	Count
 };
 
+enum class RenderPath : uint8_t
+{
+	Forward = 0,
+	Deferred,
+
+	Count
+};
+
 inline constexpr uint32_t ToIdx(GlobalBinding b) { return static_cast<uint32_t>(b); }
 
 struct BindingDesc
@@ -250,10 +258,21 @@ private:
 	// Command Pool & Buffers
 	void CreateCommandPool();
 	void CreateCommandBuffers();
-	//void RecordCommandBufferShadowMapView(uint32_t imageIndex);
-	void RecordCommandBuffer(uint32_t imageIndex);
 
-	void RecordCommandBufferDeferredRendering(uint32_t imageIndex);
+	void RecordFrame(uint32_t imageIndex);
+
+	void RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
+	void RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
+
+	void RecordShadowMapPass(const vk::raii::CommandBuffer& cmd);
+	void RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd);
+	void RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd);
+	void RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cmd);
+	void RecordDeferredLightingPass(const vk::raii::CommandBuffer& cmd);
+	void RecordSkyboxPass(const vk::raii::CommandBuffer& cmd);
+	void RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd);
+	void RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
+	void RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
 
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -394,4 +413,6 @@ private:
 		vk::Format::eR8G8B8A8Unorm,			// ORM
 		vk::Format::eR16G16B16A16Sfloat,	// Emissive
 	};
+
+	RenderPath _renderPath = RenderPath::Deferred;
 };
