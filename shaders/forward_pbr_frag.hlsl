@@ -1,6 +1,5 @@
 #include "_GlobalBindings.hlsli"
-#include "_BRDF.hlsli"
-#include "_ShadowMapping.hlsli"
+#include "_Lighting.hlsli"
 
 struct PSInput
 {
@@ -49,112 +48,20 @@ float4 main(PSInput input) : SV_Target
         N = normalize(T * nTangent.x + B * nTangent.y + N * nTangent.z);
     }
     
-    float3 V = normalize(cam.eyePos - input.worldPos);
     
+    Surface s;
+    s.worldPos = input.worldPos;
+    s.N = N;
+    s.V = normalize(cam.eyePos - input.worldPos);
+    s.albedo = albedo;
+    s.emissive = emissive;
+    s.roughness = roughness;
+    s.metallic = metallic;
+    s.ao = ao;
     // Assume base reflectivity to be at 0.04
     // And for metallic surface, lerp between F0 to albedo color
-    float3 F0 = (float3) 0.04f;
-    F0 = lerp(F0, albedo, metallic);
+    s.f0 = lerp((float3) 0.04f, albedo, metallic);
+
     
-    float3 Lo = (float3) 0.0f;
-    for (int i = 0; i < light.pointLightNum; i++)
-    {
-        float3 L = light.pointLights[i].position - input.worldPos;
-        float distance = length(L);
-        L = normalize(L);
-        float3 H = normalize(V + L);
-        
-        float attenuation = pow(saturate(1.0f - pow((distance / light.pointLights[i].range), 4)), 2) / (distance * distance + 0.00001f);
-        float3 radiance = light.pointLights[i].color * light.pointLights[i].intensity * attenuation;
-        
-        float NDF = DistributionGGX(N, H, roughness);
-        float G = GeometrySmith(N, V, L, roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0, roughness);
-        
-        // kS is corresponded in F
-        float3 kS = F;
-        float3 kD = (float3)1.0f - kS;
-        // Metaliic = Absorb refractance = No diffuse
-        kD *= 1.0f - metallic;
-
-        float3 numerator = NDF * G * F;
-        float denominator = 4.0f * max(dot(N, V), 0.0f) * max(dot(N, L), 0.0f) + 0.0001f;
-        float3 specular = numerator / denominator;
-        
-        float NdotL = max(dot(N, L), 0.0f);
-        //Needs the original Lighting vector to reconstruct depth
-        float shadow = ShadowCubeMapCalculation(i, N, -(light.pointLights[i].position - input.worldPos), cam.nearPlane, cam.farPlane);
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL * (1.0f - shadow);
-    }
-    
-    for (int i = 0; i < light.dirLightNum; i++)
-    {
-        float3 L = normalize(-light.dirLights[i].direction);
-        float3 H = normalize(V + L);
-
-        float3 radiance = light.dirLights[i].color * light.dirLights[i].intensity;
-
-        float NDF = DistributionGGX(N, H, roughness);
-        float G = GeometrySmith(N, V, L, roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0, roughness);
-
-        float3 kS = F;
-        float3 kD = (float3) 1.0f - kS;
-        kD *= 1.0f - metallic;
-
-        float3 numerator = NDF * G * F;
-        float denominator = 4.0f * max(dot(N, V), 0.0f) * max(dot(N, L), 0.0f) + 0.0001f;
-        float3 specular = numerator / denominator;
-
-        float NdotL = max(dot(N, L), 0.0f);
-        float shadow = ShadowCalculation(i, input.worldPos, N, L);
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL * (1.0f - shadow);
-    }
-
-    for (int i = 0; i < light.spotLightNum; i++)
-    {
-        float3 L = light.spotLights[i].position - input.worldPos;
-        float distance = length(L);
-        L = normalize(L);
-        float3 H = normalize(V + L);
-
-        float attenuation = 1.0f / (distance * distance);
-        // cutoff / outerCutoff are pre-cos'd on CPU side (CPUTypes.h)
-        float theta = dot(-L, normalize(light.spotLights[i].direction));
-        float epsilon = light.spotLights[i].cutoff - light.spotLights[i].outerCutoff;
-        float coneFalloff = saturate((theta - light.spotLights[i].outerCutoff) / epsilon);
-        float3 radiance = light.spotLights[i].color * light.spotLights[i].intensity * attenuation * coneFalloff;
-
-        float NDF = DistributionGGX(N, H, roughness);
-        float G = GeometrySmith(N, V, L, roughness);
-        float3 F = FresnelSchlick(max(dot(H, V), 0.0f), F0, roughness);
-
-        float3 kS = F;
-        float3 kD = (float3) 1.0f - kS;
-        kD *= 1.0f - metallic;
-
-        float3 numerator = NDF * G * F;
-        float denominator = 4.0f * max(dot(N, V), 0.0f) * max(dot(N, L), 0.0f) + 0.0001f;
-        float3 specular = numerator / denominator;
-
-        float NdotL = max(dot(N, L), 0.0f);
-        float shadow = ShadowCalculation(light.dirLightNum + i, input.worldPos, N, L);
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL * (1.0f - shadow);
-    }
-    
-    float3 kS = FresnelSchlick(max(dot(N, V), 0.0f), F0, roughness);
-    float3 kD = 1.0f - kS;
-    kD *= 1.0f - metallic;
-    
-    float3 irradiance = textureCubes[sceneIBL.irradianceIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], N).rgb;
-    float3 diffuse = irradiance * albedo;
-    
-    float3 R = reflect(-V, N);
-    float3 prefilteredColor = textureCubes[sceneIBL.prefilteredIndex].SampleLevel(textureSamplers[SAMPLER_CLAMP_EDGE], R, roughness * sceneIBL.prefilteredMaxMip).rgb;
-    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], float2(max(dot(N, V), 0.0f), roughness)).rg;
-    float3 specularIBL = prefilteredColor * (kS * brdf.r + brdf.g);
-    
-    float3 ambient = (kD * diffuse + specularIBL) * ao * sceneIBL.intensity + sceneIBL.ambientColor * albedo * ao;
-    
-    return float4(ambient + Lo + emissive, 1.0f);
+    return float4(EvaluateIBL(s) + IntegrateLights(s) + s.emissive, 1.0f);
 }

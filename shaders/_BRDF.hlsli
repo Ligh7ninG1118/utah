@@ -4,6 +4,19 @@
 
 #include "_SharedTypes.hlsli"
 
+struct Surface
+{
+    float3 worldPos;
+    float3 N;
+    float3 V;
+    float3 albedo;
+    float3 f0;
+    float3 emissive;
+    float roughness;
+    float metallic;
+    float ao;
+};
+
 float DistributionGGX(float3 N, float3 H, float roughness)
 {
     // Trowbridge-Reitz GGX
@@ -46,6 +59,28 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
 float3 FresnelSchlick(float cosTheta, float3 F0, float roughness)
 {
     return F0 + (max((float3) (1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+float3 EvaluateBRDF(Surface s, float3 L)
+{
+    L = normalize(L);
+    float3 H = normalize(s.V + L);
+    
+    float NDF = DistributionGGX(s.N, H, s.roughness);
+    float G = GeometrySmith(s.N, s.V, L, s.roughness);
+    float3 F = FresnelSchlick(max(dot(H, s.V), 0.0f), s.f0, s.roughness);
+    
+    // kS is corresponded in F
+    float3 kS = F;
+    float3 kD = (float3) 1.0f - kS;
+    // Metallic = Absorb refractance = No diffuse
+    kD *= 1.0f - s.metallic;
+    
+    float3 numerator = NDF * G * F;
+    float denominator = 4.0f * max(dot(s.N, s.V), 0.0f) * max(dot(s.N, L), 0.0f) + 0.0001f;
+    float3 specular = numerator / denominator;
+    
+    return kD * s.albedo / PI + specular;
 }
 
 #endif
