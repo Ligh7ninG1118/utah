@@ -14,11 +14,10 @@ struct PSInput
 
 struct PSOutput
 {
-    float4 Position : SV_Target0;
+    float4 Albedo : SV_Target0;
     float4 Normal : SV_Target1;
-    float4 Albedo : SV_Target2;
-    float4 ORM : SV_Target3;
-    float4 Emissive : SV_Target4;
+    float4 ORM : SV_Target2;
+    float4 Emissive : SV_Target3;
 };
 
 
@@ -59,7 +58,6 @@ PSOutput main(PSInput input)
     }
     
     PSOutput output = (PSOutput) 0;
-    output.Position = float4(input.worldPos, 1.0f);
     output.Normal = float4(N, 1.0f);
     output.Albedo = float4(albedo, 1.0f);
     output.ORM = float4(ao, roughness, metallic, 1.0f);

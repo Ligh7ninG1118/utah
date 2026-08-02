@@ -310,6 +310,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	CameraUBO camUBO{};
 	camUBO.view = glm::lookAt(_mainCam._pos, _mainCam._pos + _mainCam.GetFrontVector(), glm::vec3(0.0f, 1.0f, 0.0f));
+	camUBO.invView = glm::inverse(camUBO.view);
 	// Swap far and near plane input -> Reverse Z for greater precision
 	camUBO.proj =
 		glm::perspective(glm::radians(_mainCam._verticalFOV), swapChainExtent.width / (float)swapChainExtent.height, _mainCam._farPlane, _mainCam._nearPlane);

@@ -104,9 +104,8 @@ enum class GlobalBinding : uint32_t
 
 enum class GBufferColorTargetType : uint32_t
 {
-	Position = 0,
+	Albedo = 0,
 	Normal,
-	Albedo,
 	ORM,
 	Emissive,
 
@@ -407,9 +406,8 @@ private:
 	std::vector<vk::raii::ImageView> _gBufferColorTargetImageViews;
 
 	std::vector<vk::Format> _gBufferColorTargetFormats = {
-		vk::Format::eR16G16B16A16Sfloat,	// Position
-		vk::Format::eR16G16B16A16Sfloat,	// Normal
 		vk::Format::eR8G8B8A8Srgb,			// Albedo
+		vk::Format::eR16G16B16A16Sfloat,	// Normal
 		vk::Format::eR8G8B8A8Unorm,			// ORM
 		vk::Format::eR16G16B16A16Sfloat,	// Emissive
 	};

@@ -11,7 +11,6 @@ float4 main(PSInput input) : SV_TARGET
 {
     int3 pixel = int3(input.position.xy, 0);
     //Texture2D::Load(x, y, miplevel)
-    float3 position = gBufferColorTargets[G_BUFFER_COLOR_TARGET_POSITION].Load(pixel).rgb;
     float3 normal = normalize(gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(pixel).rgb);
     float3 albedo = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ALBEDO].Load(pixel).rgb;
     float3 orm = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ORM].Load(pixel).rgb;
@@ -21,11 +20,21 @@ float4 main(PSInput input) : SV_TARGET
     float3 emissive = gBufferColorTargets[G_BUFFER_COLOR_TARGET_EMISSIVE].Load(pixel).rgb;
     
     float depth = depthTarget.Load(pixel).r;
+    // reverse z 
+    float projA = cam.nearPlane / (cam.farPlane - cam.nearPlane);
+    float projB = (cam.farPlane * cam.nearPlane) / (cam.farPlane - cam.nearPlane);
+    float linearDepth = projB/(depth + projA);
+    
+    float2 ndc = input.uv * 2.0f - 1.0f;
+    float3 viewRay = float3(ndc.x / cam.proj[0][0], ndc.y / cam.proj[1][1], -1.0f);
+  
+    float3 viewPos = viewRay * linearDepth;
+    float3 worldPos = mul(cam.invView, float4(viewPos, 1.0f)).xyz;
     
     Surface s;
-    s.worldPos = position;
+    s.worldPos = worldPos;
     s.N = normal;
-    s.V = normalize(cam.eyePos - position);
+    s.V = normalize(cam.eyePos - worldPos);
     s.albedo = albedo;
     s.emissive = emissive;
     s.ao = orm.r;

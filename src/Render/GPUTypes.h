@@ -37,6 +37,7 @@ struct alignas(16) CameraUBO
 {
 	glm::mat4 view;
 	glm::mat4 proj;
+	glm::mat4 invView;
 
 	glm::vec3 eyePos;
 	float nearPlane;	// for linearizing depth
