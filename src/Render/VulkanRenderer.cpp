@@ -13,6 +13,7 @@
 #include <chrono>
 #include <string>
 #include <format>
+#include <random>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
@@ -56,6 +57,11 @@ VulkanRenderer::~VulkanRenderer()
 		DestroyImage(_gBufferColorTargetImages[i]);
 	}
 
+	_ssaoImageView = nullptr;
+	_ssaoNoiseImageView = nullptr;
+	DestroyImage(_ssaoImage);
+	DestroyImage(_ssaoNoiseImage);
+
 	for (auto& frame : _frames)
 		for (auto& buffer : frame.globalBuffers)
 			DestroyBuffer(buffer);
@@ -78,6 +84,8 @@ void VulkanRenderer::Initialize()
 	CreateColorResources();
 	CreateDepthResources();
 	CreateGBufferImages();
+	CreateSSAOResource();
+	CreateSSAONoise();
 
 	_textureManger.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
@@ -92,7 +100,6 @@ void VulkanRenderer::Initialize()
 	convolutionHandle = _textureManger.CreateCubemapRenderTarget("convolution_render_target", 32);
 	prefilterHandle = _textureManger.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
 	brdfLUTHandle = _textureManger.Create2DRenderTarget("brdf_lut_render_target", BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION);
-
 
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
@@ -111,7 +118,6 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
-
 	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex });
 	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
@@ -134,6 +140,8 @@ void VulkanRenderer::Initialize()
 			memcpy(materials[j].samplerIndices, matGPUs[j].samplerIndices, sizeof(uint32_t) * 4);
 		}
 	}
+	// After descriptor set is created
+	CreateSSAOKernel();
 
 	ConvertEquirectToCubeMap();
 	ConvolveIrradianceMap();
@@ -656,6 +664,25 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
+	// 15: SSAO
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SSAO),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = 1,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
+	// 16: SSAO Noise
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SSAONoise),
+										.type = vk::DescriptorType::eSampledImage,
+										.count = 1,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
+	// 16: SSAO Kernel
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SSAOKernelUBO),
+										.type = vk::DescriptorType::eUniformBuffer,
+										.count = 1,
+										.bufferSize = sizeof(SSAOKernelUBO),
+										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
 }
 
 [[nodiscard]] vk::raii::DescriptorSetLayout VulkanRenderer::CreateDescriptorSetLayout(const std::vector<BindingDesc>& descs)
@@ -850,6 +877,13 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal };
 
 
+		vk::DescriptorImageInfo ssaoInfo = vk::DescriptorImageInfo{
+											.imageView = _ssaoImageView,
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		vk::DescriptorImageInfo ssaoNoiseInfo = vk::DescriptorImageInfo{
+											.imageView = _ssaoNoiseImageView,
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::Textures),
@@ -890,7 +924,6 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = shadowCubeMapInfos.data()
 			});
-
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::HDROutput),
@@ -899,7 +932,6 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = &hdrImageInfo
 			});
-
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::SkyboxCubemap),
@@ -908,7 +940,6 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = &skyboxCubemapInfo
 			});
-
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::GBufferColorTargets),
@@ -917,7 +948,6 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = gBufferColorTargetInfos.data()
 			});
-
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::DepthTarget),
@@ -925,6 +955,22 @@ void VulkanRenderer::CreateDescriptorSets()
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = &depthTargetInfo
+			});
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::SSAO),
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = &ssaoInfo
+			});
+		writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = frame.globalDescriptorSet,
+				.dstBinding = ToIdx(GlobalBinding::SSAONoise),
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eSampledImage,
+				.pImageInfo = &ssaoNoiseInfo
 			});
 
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
@@ -968,6 +1014,8 @@ void VulkanRenderer::CreatePipelines()
 
 	_deferredGBufferPipelineIndex = CreateDeferredGBufferPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/deferred_gbuffer_frag.spv", *_globalPipelineLayout);
 	_deferredLightingPipelineIndex = CreateDeferredLightingPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/deferred_lighting_pbr_frag.spv", *_globalPipelineLayout);
+
+	_ssaoPipelineIndex = CreateSSAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ssao_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1641,6 +1689,80 @@ uint32_t VulkanRenderer::CreateDeferredLightingPipeline(const std::string& vertP
 	return static_cast<uint32_t>(_pipelines.size() - 1);
 }
 
+uint32_t VulkanRenderer::CreateSSAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{ };
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::False,
+														 .depthWriteEnable = vk::False, };
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::False;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	const vk::Format& colorFormat = vk::Format::eR8Unorm;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &colorFormat,
+		 .depthAttachmentFormat = vk::Format::eUndefined} };
+
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
 void VulkanRenderer::CreateCommandPool()
 {
 	vk::CommandPoolCreateInfo poolInfo{ .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -1701,245 +1823,295 @@ void VulkanRenderer::RecordFrame(uint32_t imageIndex)
 
 void VulkanRenderer::RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
-	// Transit shadow map images to attachment
-	size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
-	for (size_t i = 0; i < casterCount; i++)
+	// shadow mapping pass 
 	{
+		// Transit shadow map images to attachment
+		size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+		for (size_t i = 0; i < casterCount; i++)
+		{
+			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+			TransitionImageLayout(_shadowMapImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				{},
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+		RecordShadowMapPass(cmd);
+
+		for (size_t i = 0; i < casterCount; i++)
+		{
+			// Transit shadow map images to shader readable
+			TransitionImageLayout(_shadowMapImages[i].image,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+
+		size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
+		for (size_t i = 0; i < pointCasterCount; i++)
+		{
+			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+			TransitionImageLayout(_shadowCubeMapImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				{},
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+		RecordShadowCubeMapPass(cmd);
+
+		for (size_t i = 0; i < pointCasterCount; i++)
+		{
+			// Transit shadow map images to shader readable
+			TransitionImageLayout(_shadowCubeMapImages[i].image,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+	}
+
+	// forward pass
+	{
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
 		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowMapImages[i].image,
+		TransitionImageLayout(_depthImage.image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthAttachmentOptimal,
-			{},
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		RecordForwardOpaquePass(cmd);
+
+		// WAW + RAW barrier
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		TransitionImageLayout(_depthImage.image,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eDepthReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::ImageAspectFlagBits::eDepth);
 	}
 
-	RecordShadowMapPass(cmd);
-
-	for (size_t i = 0; i < casterCount; i++)
+	// skybox, debug draws, and stuff
 	{
-		// Transit shadow map images to shader readable
-		TransitionImageLayout(_shadowMapImages[i].image,
-			vk::ImageLayout::eDepthAttachmentOptimal,
+		RecordSkyboxPass(cmd);
+
+		// WAW + RAW barrier
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		RecordDebugDrawPass(cmd);
+
+		// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
 			vk::AccessFlagBits2::eShaderRead,
-			vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::ImageAspectFlagBits::eDepth);
+			vk::ImageAspectFlagBits::eColor);
 	}
 
-
-	size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
-	for (size_t i = 0; i < pointCasterCount; i++)
+	// Tone mapping pass
 	{
-		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowCubeMapImages[i].image,
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
 			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eDepthAttachmentOptimal,
-			{},
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::ImageAspectFlagBits::eDepth);
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},                                                        // srcAccessMask (no need to wait for previous operations)
+			vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
+			vk::ImageAspectFlagBits::eColor);
+
+		RecordToneMappingPass(cmd, imageIndex);
+
+		// WAW + RAW barrier
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
 	}
-
-	RecordShadowCubeMapPass(cmd);
-
-	for (size_t i = 0; i < pointCasterCount; i++)
-	{
-		// Transit shadow map images to shader readable
-		TransitionImageLayout(_shadowCubeMapImages[i].image,
-			vk::ImageLayout::eDepthAttachmentOptimal,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::AccessFlagBits2::eShaderRead,
-			vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::ImageAspectFlagBits::eDepth);
-	}
-
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		{},
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
-
-	// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
-	RecordForwardOpaquePass(cmd);
-
-	// WAW + RAW barrier
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
-
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eDepthReadOnlyOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
-
-	RecordSkyboxPass(cmd);
-
-	// WAW + RAW barrier
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
-
-	RecordDebugDrawPass(cmd);
-
-	// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eColor);
-
-	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		{},                                                        // srcAccessMask (no need to wait for previous operations)
-		vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
-		vk::ImageAspectFlagBits::eColor);
-
-	RecordToneMappingPass(cmd, imageIndex);
-
-	// WAW + RAW barrier
-	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
 
 	RecordImGUIPass(cmd, imageIndex);
 }
 
 void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
-	// Transit shadow map images to attachment
-	size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
-	for (size_t i = 0; i < casterCount; i++)
+	// Shadow mapping pass (2d pass for dir/spot, and cube pass for point)
 	{
-		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowMapImages[i].image,
+		// Transit shadow map images to attachment
+		size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+		for (size_t i = 0; i < casterCount; i++)
+		{
+			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+			TransitionImageLayout(_shadowMapImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				{},
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+		RecordShadowMapPass(cmd);
+
+		for (size_t i = 0; i < casterCount; i++)
+		{
+			// Transit shadow map images to shader readable
+			TransitionImageLayout(_shadowMapImages[i].image,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+
+		size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
+		for (size_t i = 0; i < pointCasterCount; i++)
+		{
+			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
+			TransitionImageLayout(_shadowCubeMapImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				{},
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+
+		RecordShadowCubeMapPass(cmd);
+
+		for (size_t i = 0; i < pointCasterCount; i++)
+		{
+			// Transit shadow map images to shader readable
+			TransitionImageLayout(_shadowCubeMapImages[i].image,
+				vk::ImageLayout::eDepthAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eDepth);
+		}
+	}
+
+	// Deferred, G-buffer pass
+	{
+		// Rendering onto color & depth targets, transit to attachment layout
+		for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+		{
+			TransitionImageLayout(_gBufferColorTargetImages[i].image,
+				vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				{},	// no memory dependency
+				vk::AccessFlagBits2::eColorAttachmentWrite,
+				vk::PipelineStageFlagBits2::eFragmentShader, // read by last frame's lighting pass
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::ImageAspectFlagBits::eColor);
+		}
+
+		TransitionImageLayout(_depthImage.image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthAttachmentOptimal,
-			{},
+			{}, // no memory dependency
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::ImageAspectFlagBits::eDepth);
-	}
 
-	RecordShadowMapPass(cmd);
 
-	for (size_t i = 0; i < casterCount; i++)
-	{
-		// Transit shadow map images to shader readable
-		TransitionImageLayout(_shadowMapImages[i].image,
+		RecordDeferredGBufferPass(cmd);
+
+		// Sampling from color/depth targets, transit to shader read layout
+		for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
+		{
+			TransitionImageLayout(_gBufferColorTargetImages[i].image,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				vk::AccessFlagBits2::eColorAttachmentWrite,
+				vk::AccessFlagBits2::eShaderRead,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::PipelineStageFlagBits2::eFragmentShader,
+				vk::ImageAspectFlagBits::eColor);
+		}
+
+		TransitionImageLayout(_depthImage.image,
 			vk::ImageLayout::eDepthAttachmentOptimal,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::ImageLayout::eDepthReadOnlyOptimal,
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::AccessFlagBits2::eShaderRead,
-			vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::ImageAspectFlagBits::eDepth);
-	}
-
-
-	size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
-	for (size_t i = 0; i < pointCasterCount; i++)
-	{
-		// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
-		TransitionImageLayout(_shadowCubeMapImages[i].image,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eDepthAttachmentOptimal,
-			{},
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 			vk::ImageAspectFlagBits::eDepth);
 	}
 
-	RecordShadowCubeMapPass(cmd);
-
-	for (size_t i = 0; i < pointCasterCount; i++)
+	// SSAO Pass
 	{
-		// Transit shadow map images to shader readable
-		TransitionImageLayout(_shadowCubeMapImages[i].image,
-			vk::ImageLayout::eDepthAttachmentOptimal,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::AccessFlagBits2::eShaderRead,
-			vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::ImageAspectFlagBits::eDepth);
-	}
-
-	// Rendering onto color & depth targets, transit to attachment layout
-	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
-	{
-		TransitionImageLayout(_gBufferColorTargetImages[i].image,
+		TransitionImageLayout(_ssaoImage.image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			{},	// no memory dependency
 			vk::AccessFlagBits2::eColorAttachmentWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader, // read by last frame's lighting pass
+			vk::PipelineStageFlagBits2::eFragmentShader,
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			vk::ImageAspectFlagBits::eColor);
-	}
 
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		{}, // no memory dependency
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
+		RecordSSAOPass(cmd);
 
-
-	RecordDeferredGBufferPass(cmd);
-
-	// Sampling from color/depth targets, transit to shader read layout
-	for (size_t i = 0; i < _gBufferColorTargetImages.size(); i++)
-	{
-		TransitionImageLayout(_gBufferColorTargetImages[i].image,
+		TransitionImageLayout(_ssaoImage.image,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -1949,81 +2121,78 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eColor);
 	}
 
-	TransitionImageLayout(_depthImage.image,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eDepthReadOnlyOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::ImageAspectFlagBits::eDepth);
+	// Lighting, skybox, debug draws, and stuff
+	{
+		// Render onto hdr image
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
 
-	// Render onto hdr image
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		{},
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
+		RecordDeferredLightingPass(cmd);
 
-	RecordDeferredLightingPass(cmd);
+		// WAW + RAW barrier
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
 
-	// WAW + RAW barrier
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
+		RecordSkyboxPass(cmd);
 
-	RecordSkyboxPass(cmd);
+		// WAW + RAW barrier
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
 
-	// WAW + RAW barrier
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
+		RecordDebugDrawPass(cmd);
 
-	RecordDebugDrawPass(cmd);
+		// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eColor);
+	}
 
-	// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
-	TransitionImageLayout(_hdrColorImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eColor);
+	// Tone mapping pass
+	{
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},                                                        // srcAccessMask (no need to wait for previous operations)
+			vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
+			vk::ImageAspectFlagBits::eColor);
 
-	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		{},                                                        // srcAccessMask (no need to wait for previous operations)
-		vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // dstStage
-		vk::ImageAspectFlagBits::eColor);
+		RecordToneMappingPass(cmd, imageIndex);
 
-	RecordToneMappingPass(cmd, imageIndex);
-
-	// WAW + RAW barrier
-	TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
+		// WAW + RAW barrier
+		TransitionImageLayout(_pSwapChainCtx->GetSwapChainImage(imageIndex),
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+	}
 
 	RecordImGUIPass(cmd, imageIndex);
 }
@@ -3859,4 +4028,133 @@ void VulkanRenderer::BakeBRDFLUT()
 	vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmd };
 	_vkCtx.GetQueue().submit(submitInfo, nullptr);
 	_vkCtx.GetQueue().waitIdle();
+}
+
+
+void VulkanRenderer::RecordSSAOPass(const vk::raii::CommandBuffer& cmd)
+{
+	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _ssaoImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
+												   .loadOp = vk::AttachmentLoadOp::eClear,
+												   .storeOp = vk::AttachmentStoreOp::eStore,
+												   .clearValue = clearColor };
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment};
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_ssaoPipelineIndex];
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
+
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	cmd.draw(3, 1, 0, 0);
+
+	cmd.endRendering();
+}
+
+void VulkanRenderer::CreateSSAOResource()
+{
+	//TODO: create this on startup and swapchain recreation
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	_ssaoImage = CreateImage(
+		swapChainExtent.width, swapChainExtent.height, 1, 
+		vk::SampleCountFlagBits::e1, 
+		vk::Format::eR8Unorm,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment);
+
+	_ssaoImageView = CreateImageView(
+		_ssaoImage.image,
+		vk::Format::eR8Unorm,
+		vk::ImageAspectFlagBits::eColor, 1);
+}
+
+void VulkanRenderer::CreateSSAONoise()
+{
+	std::vector<glm::vec2> ssaoNoise;
+	std::uniform_real_distribution<float> randomFloats(0.0, 1.0); // random floats between [0.0, 1.0]
+	std::default_random_engine generator;
+	uint32_t imageWidth = 4;
+	uint32_t imageSize = imageWidth * imageWidth;
+
+	ssaoNoise.reserve(imageSize);
+	for (uint32_t i = 0; i < imageSize; i++)
+	{
+		// random rotation vector, rotate around tangent space normal (z == 0.0f)
+		glm::vec2 noise(
+			randomFloats(generator) * 2.0f - 1.0f,
+			randomFloats(generator) * 2.0f - 1.0f);
+		ssaoNoise.push_back(noise);
+	}
+
+	AllocatedBuffer staging = CreateBuffer(
+		imageSize * sizeof(glm::vec2), vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+	memcpy(staging.info.pMappedData, ssaoNoise.data(), sizeof(glm::vec2) * imageSize);
+
+	_ssaoNoiseImage = CreateImage(
+		imageWidth, imageWidth, 1,
+		vk::SampleCountFlagBits::e1, vk::Format::eR32G32Sfloat,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc — no mip blits
+
+	TransitionImageLayout(_ssaoNoiseImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1);
+	CopyBufferToImage(staging.buffer, _ssaoNoiseImage.image, imageWidth, imageWidth);
+	TransitionImageLayout(_ssaoNoiseImage.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 1);
+	DestroyBuffer(staging);
+
+	_ssaoNoiseImageView = CreateImageView(_ssaoNoiseImage.image, vk::Format::eR32G32Sfloat, vk::ImageAspectFlagBits::eColor, 1);
+}
+
+void VulkanRenderer::CreateSSAOKernel()
+{
+	SSAOKernelUBO kernelUBO{};
+	std::uniform_real_distribution<float> randomFloats(0.0, 1.0);
+	std::default_random_engine generator;
+	//TODO: parameterize sample size
+	for (uint32_t i = 0; i < 64; i++)
+	{
+		glm::vec3 sample(
+			randomFloats(generator) * 2.0 - 1.0,
+			randomFloats(generator) * 2.0 - 1.0,
+			randomFloats(generator)
+		);
+		sample = glm::normalize(sample);
+		sample *= randomFloats(generator);
+		float scale = (float)i / 64.0f;
+		scale = 0.1f + scale * scale * (1.0f - 0.1f);
+		sample *= scale;
+		kernelUBO.samples[i] = glm::vec4(sample, 0.0f);
+	}
+
+	// Same kernel for all frames
+	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		memcpy(_frames[i].Mapped(GlobalBinding::SSAOKernelUBO), &kernelUBO, sizeof(kernelUBO));
+	}
 }

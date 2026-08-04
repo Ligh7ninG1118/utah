@@ -4,6 +4,7 @@
 
 #include "_SharedTypes.hlsli"
 
+// Stay in sync with VulkanRenderer::GlobalBinding
 [[vk::binding(0, 0)]] ConstantBuffer<CameraUBO> cam;
 [[vk::binding(1, 0)]] ConstantBuffer<LightUBO> light;
 [[vk::binding(2, 0)]] StructuredBuffer<ObjectData> objBuf;
@@ -27,12 +28,17 @@
 [[vk::binding(13, 0)]] Texture2D gBufferColorTargets[];
 [[vk::binding(14, 0)]] Texture2D depthTarget;
 
+[[vk::binding(15, 0)]] Texture2D ssao;
+[[vk::binding(16, 0)]] Texture2D ssaoNoise;
+[[vk::binding(17, 0)]] ConstantBuffer<SSAOKernelUBO> ssaoKernel;
+
 // PushConstant, for now, is defined in individual shaders based on usage
 
 // Stay in sync with TextureManager::SamplerType
 static const uint SAMPLER_REPEAT_ANISO = 0;
 static const uint SAMPLER_CLAMP_EDGE = 1;
 static const uint SAMPLER_REPEAT_U_CLAMP_V = 2;
+static const uint SAMPLER_REPEAT_NEAREST = 3;
 
 // Stay in sync with VulkanRenderer::GBufferColorTargetType
 static const uint G_BUFFER_COLOR_TARGET_ALBEDO      = 0;

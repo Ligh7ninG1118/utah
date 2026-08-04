@@ -99,6 +99,9 @@ enum class GlobalBinding : uint32_t
 	SceneIBLUBO = 12,
 	GBufferColorTargets = 13,
 	DepthTarget = 14,
+	SSAO = 15,
+	SSAONoise = 16,
+	SSAOKernelUBO = 17,
 	Count
 };
 
@@ -219,7 +222,6 @@ private:
 	// ImGUI stuff
 	void InitImGUI();
 
-
 	// Per-Frame Update
 	void UpdateUniformBuffer(uint32_t currentImage);
 
@@ -252,7 +254,7 @@ private:
 	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
-
+	uint32_t CreateSSAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -272,6 +274,7 @@ private:
 	void RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd);
 	void RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
 	void RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
+
 
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -333,6 +336,7 @@ private:
 	uint32_t _brdfLutPipelineIndex = INVALID_HANDLE;
 	uint32_t _deferredGBufferPipelineIndex = INVALID_HANDLE;
 	uint32_t _deferredLightingPipelineIndex = INVALID_HANDLE;
+	uint32_t _ssaoPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
@@ -413,4 +417,16 @@ private:
 	};
 
 	RenderPath _renderPath = RenderPath::Deferred;
+
+
+	void RecordSSAOPass(const vk::raii::CommandBuffer& cmd);
+	void CreateSSAOResource();
+	void CreateSSAONoise();
+	void CreateSSAOKernel();
+
+	AllocatedImage _ssaoImage;
+	vk::raii::ImageView _ssaoImageView = nullptr;
+
+	AllocatedImage _ssaoNoiseImage;
+	vk::raii::ImageView _ssaoNoiseImageView = nullptr;
 };

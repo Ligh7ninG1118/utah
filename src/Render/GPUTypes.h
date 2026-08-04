@@ -81,6 +81,11 @@ struct alignas(16) MaterialSSBO
 	glm::vec3 emissiveFactor;
 };
 
+struct alignas(16) SSAOKernelUBO
+{
+	glm::vec4 samples[64];
+};
+
 struct PerDrawPC
 {
 	uint32_t objIndex;

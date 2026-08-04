@@ -239,7 +239,7 @@ TextureHandle TextureManager::CreateDefaultTexture(uint32_t colorValue, TextureC
 		imageSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_AUTO,
 		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 	memcpy(staging.info.pMappedData, &colorValue, imageSize);
-
+	//TODO: wrong size? should be size * uint32 (wait no it's 1x1 * 4 bytes so 4 is rigth
 	vk::Format format = vk::Format::eUndefined;
 	switch (colorSpace)
 	{
@@ -404,6 +404,18 @@ void TextureManager::CreateTextureSamplers()
 			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
 			samplerInfo.compareEnable = vk::False;
 			samplerInfo.compareOp = vk::CompareOp::eAlways;
+			samplerInfo.maxLod = vk::LodClampNone;
+			break;
+		case SamplerType::RepeatNearest:
+			samplerInfo.magFilter = vk::Filter::eNearest;
+			samplerInfo.minFilter = vk::Filter::eNearest;
+			samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
+			samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+			samplerInfo.mipLodBias = 0.0f;
+			samplerInfo.anisotropyEnable = vk::False;
+			samplerInfo.compareEnable = vk::False;
 			samplerInfo.maxLod = vk::LodClampNone;
 			break;
 		default:

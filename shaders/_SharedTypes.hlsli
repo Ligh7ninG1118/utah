@@ -92,4 +92,9 @@ struct SceneIBLUBO
     uint prefilteredMaxMip;
 };
 
+struct SSAOKernelUBO
+{
+    float3 samples[64];
+};
+
 #endif

@@ -29,7 +29,7 @@ enum class SamplerType : uint32_t
 	RepeatAniso = 0,
 	ClampEdge,
 	RepeatUClampV,
-
+	RepeatNearest,
 	Count
 };
 
