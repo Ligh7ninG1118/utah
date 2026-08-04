@@ -28,7 +28,7 @@
 [[vk::binding(13, 0)]] Texture2D gBufferColorTargets[];
 [[vk::binding(14, 0)]] Texture2D depthTarget;
 
-[[vk::binding(15, 0)]] Texture2D ssao;
+[[vk::binding(15, 0)]] Texture2D ssao[];
 [[vk::binding(16, 0)]] Texture2D ssaoNoise;
 [[vk::binding(17, 0)]] ConstantBuffer<SSAOKernelUBO> ssaoKernel;
 
@@ -45,5 +45,9 @@ static const uint G_BUFFER_COLOR_TARGET_ALBEDO      = 0;
 static const uint G_BUFFER_COLOR_TARGET_NORMAL      = 1;
 static const uint G_BUFFER_COLOR_TARGET_ORM         = 2;
 static const uint G_BUFFER_COLOR_TARGET_EMISSIVE    = 3;
+
+// Stay in sync with VulkanRenderer::SSAO_TYPE
+static const uint SSAO_RAW = 0;
+static const uint SSAO_BLURRED = 1;
 
 #endif

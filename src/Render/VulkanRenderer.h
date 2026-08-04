@@ -123,7 +123,16 @@ enum class RenderPath : uint8_t
 	Count
 };
 
+enum class SSAOTargetType : uint8_t
+{
+	RAW = 0,
+	BLURRED,
+
+	Count
+};
+
 inline constexpr uint32_t ToIdx(GlobalBinding b) { return static_cast<uint32_t>(b); }
+inline constexpr uint32_t ToIdx(SSAOTargetType t) { return static_cast<uint32_t>(t); }
 
 struct BindingDesc
 {
@@ -337,6 +346,7 @@ private:
 	uint32_t _deferredGBufferPipelineIndex = INVALID_HANDLE;
 	uint32_t _deferredLightingPipelineIndex = INVALID_HANDLE;
 	uint32_t _ssaoPipelineIndex = INVALID_HANDLE;
+	uint32_t _ssaoBlurPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
@@ -420,12 +430,13 @@ private:
 
 
 	void RecordSSAOPass(const vk::raii::CommandBuffer& cmd);
+	void RecordSSAOBlurPass(const vk::raii::CommandBuffer& cmd);
 	void CreateSSAOResource();
 	void CreateSSAONoise();
 	void CreateSSAOKernel();
 
-	AllocatedImage _ssaoImage;
-	vk::raii::ImageView _ssaoImageView = nullptr;
+	std::vector<AllocatedImage> _ssaoImages;
+	std::vector<vk::raii::ImageView> _ssaoImageViews;
 
 	AllocatedImage _ssaoNoiseImage;
 	vk::raii::ImageView _ssaoNoiseImageView = nullptr;

@@ -14,9 +14,6 @@ float4 main(PSInput input) : SV_TARGET
     float3 normal = normalize(gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(pixel).rgb);
     float3 albedo = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ALBEDO].Load(pixel).rgb;
     float3 orm = gBufferColorTargets[G_BUFFER_COLOR_TARGET_ORM].Load(pixel).rgb;
-    float ao = orm.r;
-    float roughness = orm.g;
-    float metallic = orm.b;
     float3 emissive = gBufferColorTargets[G_BUFFER_COLOR_TARGET_EMISSIVE].Load(pixel).rgb;
     
     float depth = depthTarget.Load(pixel).r;
@@ -37,7 +34,7 @@ float4 main(PSInput input) : SV_TARGET
     s.V = normalize(cam.eyePos - worldPos);
     s.albedo = albedo;
     s.emissive = emissive;
-    s.ao = min(orm.r, ssao.Load(int3(pixel)).r);
+    s.ao = min(orm.r, ssao[SSAO_BLURRED].Load(pixel).r);
     s.roughness = orm.g;
     s.metallic = orm.b;
     // Assume base reflectivity to be at 0.04

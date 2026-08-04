@@ -57,9 +57,14 @@ VulkanRenderer::~VulkanRenderer()
 		DestroyImage(_gBufferColorTargetImages[i]);
 	}
 
-	_ssaoImageView = nullptr;
+
+	for (size_t i = 0; i < _ssaoImageViews.size(); i++)
+	{
+		_ssaoImageViews[i] = nullptr;
+		DestroyImage(_ssaoImages[i]);
+	}
+
 	_ssaoNoiseImageView = nullptr;
-	DestroyImage(_ssaoImage);
 	DestroyImage(_ssaoNoiseImage);
 
 	for (auto& frame : _frames)
@@ -537,6 +542,7 @@ void VulkanRenderer::RecreateSwapChain()
 	CreateDepthResources();
 	
 	//TODO: Recreate gbuffer images since they relies on screen resolution
+	//TODO2: and ssao stuff
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
@@ -667,7 +673,7 @@ void VulkanRenderer::InitBindingDescs()
 	// 15: SSAO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SSAO),
 										.type = vk::DescriptorType::eSampledImage,
-										.count = 1,
+										.count = static_cast<uint32_t>(SSAOTargetType::Count),
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = { } });
 	// 16: SSAO Noise
@@ -676,7 +682,7 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = { } });
-	// 16: SSAO Kernel
+	// 17: SSAO Kernel
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::SSAOKernelUBO),
 										.type = vk::DescriptorType::eUniformBuffer,
 										.count = 1,
@@ -877,9 +883,16 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal };
 
 
-		vk::DescriptorImageInfo ssaoInfo = vk::DescriptorImageInfo{
-											.imageView = _ssaoImageView,
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+		size_t ssaoCount = _ssaoImages.size();
+		std::vector<vk::DescriptorImageInfo> ssaoInfos;
+		ssaoInfos.reserve(ssaoCount);
+		for (size_t i = 0; i < ssaoCount; i++)
+		{
+			ssaoInfos.push_back(vk::DescriptorImageInfo{
+											.imageView = _ssaoImageViews[i],
+											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+		}
+
 		vk::DescriptorImageInfo ssaoNoiseInfo = vk::DescriptorImageInfo{
 											.imageView = _ssaoNoiseImageView,
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
@@ -960,9 +973,9 @@ void VulkanRenderer::CreateDescriptorSets()
 				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::SSAO),
 				.dstArrayElement = 0,
-				.descriptorCount = 1,
+				.descriptorCount = static_cast<uint32_t>(ssaoCount),
 				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = &ssaoInfo
+				.pImageInfo = ssaoInfos.data()
 			});
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
@@ -1016,6 +1029,7 @@ void VulkanRenderer::CreatePipelines()
 	_deferredLightingPipelineIndex = CreateDeferredLightingPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/deferred_lighting_pbr_frag.spv", *_globalPipelineLayout);
 
 	_ssaoPipelineIndex = CreateSSAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ssao_frag.spv", *_globalPipelineLayout);
+	_ssaoBlurPipelineIndex = CreateSSAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ssao_blur_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -2098,9 +2112,9 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eDepth);
 	}
 
-	// SSAO Pass
+	// SSAO Pass (w/ blur)
 	{
-		TransitionImageLayout(_ssaoImage.image,
+		TransitionImageLayout(_ssaoImages[static_cast<uint32_t>(SSAOTargetType::RAW)].image,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			{},	// no memory dependency
@@ -2111,7 +2125,27 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 
 		RecordSSAOPass(cmd);
 
-		TransitionImageLayout(_ssaoImage.image,
+		TransitionImageLayout(_ssaoImages[static_cast<uint32_t>(SSAOTargetType::RAW)].image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eShaderRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eColor);
+
+		TransitionImageLayout(_ssaoImages[static_cast<uint32_t>(SSAOTargetType::BLURRED)].image,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			{},	// no memory dependency
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		RecordSSAOBlurPass(cmd);
+
+		TransitionImageLayout(_ssaoImages[static_cast<uint32_t>(SSAOTargetType::BLURRED)].image,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -4036,7 +4070,7 @@ void VulkanRenderer::RecordSSAOPass(const vk::raii::CommandBuffer& cmd)
 	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
-	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _ssaoImageView,
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _ssaoImageViews[static_cast<uint8_t>(SSAOTargetType::RAW)],
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .resolveMode = vk::ResolveModeFlagBits::eNone,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
@@ -4076,22 +4110,80 @@ void VulkanRenderer::RecordSSAOPass(const vk::raii::CommandBuffer& cmd)
 	cmd.endRendering();
 }
 
+void VulkanRenderer::RecordSSAOBlurPass(const vk::raii::CommandBuffer& cmd)
+{
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _ssaoImageViews[static_cast<uint8_t>(SSAOTargetType::BLURRED)],
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .resolveMode = vk::ResolveModeFlagBits::eNone,
+												   .loadOp = vk::AttachmentLoadOp::eDontCare,
+												   .storeOp = vk::AttachmentStoreOp::eStore};
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment };
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_ssaoBlurPipelineIndex];
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
+
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	cmd.draw(3, 1, 0, 0);
+
+	cmd.endRendering();
+}
+
 void VulkanRenderer::CreateSSAOResource()
 {
 	//TODO: create this on startup and swapchain recreation
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
-	_ssaoImage = CreateImage(
-		swapChainExtent.width, swapChainExtent.height, 1, 
-		vk::SampleCountFlagBits::e1, 
+	_ssaoImages.reserve(static_cast<size_t>(SSAOTargetType::Count));
+	_ssaoImageViews.reserve(static_cast<size_t>(SSAOTargetType::Count));
+
+	// 0: Raw
+	_ssaoImages.emplace_back(CreateImage(
+		swapChainExtent.width, swapChainExtent.height, 1,
+		vk::SampleCountFlagBits::e1,
 		vk::Format::eR8Unorm,
 		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment);
-
-	_ssaoImageView = CreateImageView(
-		_ssaoImage.image,
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment));
+	_ssaoImageViews.emplace_back(CreateImageView(
+		_ssaoImages[static_cast<uint8_t>(SSAOTargetType::RAW)].image,
 		vk::Format::eR8Unorm,
-		vk::ImageAspectFlagBits::eColor, 1);
+		vk::ImageAspectFlagBits::eColor, 1));
+
+	// 1: Blurred
+	_ssaoImages.emplace_back(CreateImage(
+		swapChainExtent.width, swapChainExtent.height, 1,
+		vk::SampleCountFlagBits::e1,
+		vk::Format::eR8Unorm,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment));
+	_ssaoImageViews.emplace_back(CreateImageView(
+		_ssaoImages[static_cast<uint8_t>(SSAOTargetType::BLURRED)].image,
+		vk::Format::eR8Unorm,
+		vk::ImageAspectFlagBits::eColor, 1));
 }
 
 void VulkanRenderer::CreateSSAONoise()
