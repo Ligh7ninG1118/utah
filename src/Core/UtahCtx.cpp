@@ -281,8 +281,10 @@ void UtahCtx::InitDemo2()
 	ModelHandle planeMesh = meshMgr->GetHandle("plane");
 	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
 
+	ModelHandle sponzaMesh = meshMgr->GetHandle("sponza");
+
 	// Models
-	{
+	/*{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
@@ -294,18 +296,17 @@ void UtahCtx::InitDemo2()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
+	}*/
 
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = 3.0f;
-		t._scale = glm::vec3(2.0f);
+		t._scale = glm::vec3(0.008f);
 
 		RenderComponent r;
-		r._mesh = bustMesh;
-		r._material = bustMat;
+		r._mesh = sponzaMesh;
+		r._material = whiteMat;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
@@ -328,7 +329,7 @@ void UtahCtx::InitDemo2()
 	//}
 
 	// Point lights
-	{
+	/*{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
@@ -356,7 +357,7 @@ void UtahCtx::InitDemo2()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
-	}
+	}*/
 
 }
 
@@ -455,6 +456,11 @@ void UtahCtx::ToggleCursorMode()
 		glfwSetInputMode(_pWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
+void UtahCtx::ToggleFastFlyMode()
+{
+	_pFlyCamera->ToggleFastFlyMode();
+}
+
 void UtahCtx::MousePositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
 	UtahCtx* ctx = static_cast<UtahCtx*>(glfwGetWindowUserPointer(window));
@@ -492,6 +498,16 @@ void UtahCtx::KeyInputCallback(GLFWwindow* window, int key, int scancode, int ac
 	if (key == GLFW_KEY_F && action == GLFW_RELEASE)
 	{
 		ctx->_holdMode = !ctx->_holdMode;
+	}
+
+	if (key == GLFW_KEY_LEFT_SHIFT && action == GLFW_PRESS)
+	{
+		ctx->ToggleFastFlyMode();
+	}
+
+	if (key == GLFW_KEY_LEFT_SHIFT && action == GLFW_RELEASE)
+	{
+		ctx->ToggleFastFlyMode();
 	}
 }
 

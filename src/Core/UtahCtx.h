@@ -44,7 +44,7 @@ private:
 	void CleanUp();
 
 	void ToggleCursorMode();
-
+	void ToggleFastFlyMode();
 
 	static void MousePositionCallback(GLFWwindow* window, double xpos, double ypos);
 	static void KeyInputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);

@@ -336,7 +336,7 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 				
 				fastgltf::iterateAccessor<uint32_t>(gltf, idxAccessor,
 					[&](uint32_t i) {
-						indices.push_back(static_cast<uint32_t>(vertexStart) + i);
+						indices.push_back(i);
 					});
 			}
 

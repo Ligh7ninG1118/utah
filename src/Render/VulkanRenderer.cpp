@@ -115,7 +115,7 @@ void VulkanRenderer::Initialize()
 	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
 	_meshManager.ImportModelGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
 	_meshManager.ImportModelGLTF("models/MarbleBust/marble_bust_01_4k.gltf", "marble_bust");
-
+	_meshManager.ImportModelGLTF("models/Sponza/Sponza.gltf", "sponza");
 
 #if USE_DEAR_IMGUI_INTERFACE
 	InitImGUI();

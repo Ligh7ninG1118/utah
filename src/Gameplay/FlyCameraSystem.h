@@ -11,10 +11,9 @@ public:
 	~FlyCameraSystem();
 
 	void Init(Registry& registry);
-
 	void Update(double deltaTime) override;
-
 	void HandleMouseInput(double xpos, double ypos);
+	void ToggleFastFlyMode() { _shoudldFlyFaster = !_shoudldFlyFaster; }
 
 private:
 	ComponentPool<CameraComponent>* _pCameraPool;
@@ -24,5 +23,9 @@ private:
 	double _lastMouseXPos;
 	double _lastMouseYPos;
 	float _mouseSens = 0.1f;
+
+	float _defaultFlySpeed = 2.0f;
+	float _fastFlySpeed = 5.0f;
+	bool _shoudldFlyFaster = false;
 };
 
