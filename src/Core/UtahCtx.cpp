@@ -87,9 +87,9 @@ void UtahCtx::InitDemo1()
 	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
 	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
 
-	MeshHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
-	MeshHandle teapotMesh = meshMgr->GetHandle("teapot");
-	MeshHandle planeMesh = meshMgr->GetHandle("plane");
+	ModelHandle vikingRoomMesh = meshMgr->GetHandle("viking_room");
+	ModelHandle teapotMesh = meshMgr->GetHandle("teapot");
+	ModelHandle planeMesh = meshMgr->GetHandle("plane");
 
 	MaterialHandle vikingRoomMat = matMgr->GetHandle("viking_room");
 	MaterialHandle greenMat = matMgr->GetHandle("pure_green");
@@ -233,22 +233,22 @@ void UtahCtx::InitDemo1()
 		_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
 	}
 
-	// SpotLight (flashlight)
-	{
-		Entity e = _registry.CreateEntity();
+	//// SpotLight (flashlight)
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
+	//	TransformComponent t;
 
-		SpotLightCPU p;
-		p.color = glm::vec3(1.0f);
-		p.intensity = 20.0f;
-		p.range = 30.0f;
-		p.cutoff = 12.5f;
-		p.outerCutoff = 17.5f;
+	//	SpotLightCPU p;
+	//	p.color = glm::vec3(1.0f);
+	//	p.intensity = 20.0f;
+	//	p.range = 30.0f;
+	//	p.cutoff = 12.5f;
+	//	p.outerCutoff = 17.5f;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<SpotLightCPU>(e, std::move(p));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<SpotLightCPU>(e, std::move(p));
+	//}
 }
 
 
@@ -272,8 +272,14 @@ void UtahCtx::InitDemo2()
 	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
 	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
 
-	MeshHandle helmetMesh = meshMgr->GetHandle("helmet");
+	ModelHandle helmetMesh = meshMgr->GetHandle("helmet");
 	MaterialHandle helmetMat = matMgr->GetHandle("helmet");
+
+	ModelHandle bustMesh = meshMgr->GetHandle("marble_bust");
+	MaterialHandle bustMat = matMgr->GetHandle("marble_bust");
+
+	ModelHandle planeMesh = meshMgr->GetHandle("plane");
+	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
 
 	// Models
 	{
@@ -289,6 +295,37 @@ void UtahCtx::InitDemo2()
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
+
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.x = 3.0f;
+		t._scale = glm::vec3(2.0f);
+
+		RenderComponent r;
+		r._mesh = bustMesh;
+		r._material = bustMat;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+
+	//// Floor Plane
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+	//	RenderComponent r;
+	//	t._pos.y = -0.66f;
+	//	t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
+
+	//	r._mesh = planeMesh;
+	//	r._material = whiteMat;
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
+	//}
 
 	// Point lights
 	{

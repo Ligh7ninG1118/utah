@@ -437,3 +437,7 @@ build
 
 # Ignore screenshots folder
 screenshots
+
+# Ignore assets
+models
+textures

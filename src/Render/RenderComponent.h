@@ -5,6 +5,6 @@
 
 struct RenderComponent
 {
-	MeshHandle _mesh{};
+	ModelHandle _mesh{};
 	MaterialHandle _material{};
 };

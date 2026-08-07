@@ -11,15 +11,15 @@
 MeshManager::MeshManager()
 	: _pRenderer(nullptr)
 {
-	_meshes.reserve(MAX_OBJECTS);
+	_models.reserve(MAX_OBJECTS);
 }
 
 MeshManager::~MeshManager()
 {
-	for (auto& mesh : _meshes)
+	for (auto& model : _models)
 	{
-		_pRenderer->DestroyBuffer(mesh.vertexBuffer);
-		_pRenderer->DestroyBuffer(mesh.indexBuffer);
+		_pRenderer->DestroyBuffer(GetBuffer(model.vbHandle));
+		_pRenderer->DestroyBuffer(GetBuffer(model.ibHandle));
 	}
 
 	for (auto& mesh : _debugMeshes)
@@ -38,7 +38,6 @@ void MeshManager::Initialize(VulkanRenderer* renderer)
 	CreateIcosphereMesh(1);
 	CreatePlane();
 	CreatePyramidMesh();
-
 }
 
 void MeshManager::CreateUnitCubeMesh()
@@ -56,7 +55,15 @@ void MeshManager::CreateUnitCubeMesh()
 	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(idx.data(),
 		sizeof(uint32_t) * idx.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
-	_meshes.emplace_back(vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(idx.size()));
+	Model model{};
+	model.vbHandle = AddBufferToPool(vb);
+	model.ibHandle = AddBufferToPool(ib);
+	Primitive prim{
+		.indexCount = static_cast<uint32_t>(idx.size())
+	};
+	model.primitives.push_back(prim);
+
+	_models.push_back(model);
 	RegisterName("unit_cube");
 }
 
@@ -172,10 +179,8 @@ void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
 
 	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(positions.data(),
 		sizeof(glm::vec3) * positions.size(), vk::BufferUsageFlagBits::eVertexBuffer);
-
 	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
-
 
 	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Icosphere)] 
 		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
@@ -202,12 +207,19 @@ void MeshManager::CreatePlane()
 	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
+	Model model{};
+	model.vbHandle = AddBufferToPool(vb);
+	model.ibHandle = AddBufferToPool(ib);
+	Primitive prim{
+		.indexCount = static_cast<uint32_t>(indices.size())
+	};
+	model.primitives.push_back(prim);
 
-	_meshes.emplace_back(vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()));
+	_models.push_back(model);
 	RegisterName("plane");
 }
 
-MeshHandle MeshManager::ImportMeshOBJ(const std::string& meshPath, const std::string& name)
+ModelHandle MeshManager::ImportMeshOBJ(const std::string& meshPath, const std::string& name)
 {
 	tinyobj::attrib_t                attrib;
 	std::vector<tinyobj::shape_t>    shapes;
@@ -264,13 +276,22 @@ MeshHandle MeshManager::ImportMeshOBJ(const std::string& meshPath, const std::st
 	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
-	// Add & return handle
-	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
-	
+
+	Model model{};
+	model.vbHandle = AddBufferToPool(vb);
+	model.ibHandle = AddBufferToPool(ib);
+	Primitive prim{
+		.indexCount = static_cast<uint32_t>(indices.size()),
+		.maxAABB = maxAABB,
+		.minAABB = minAABB
+	};
+	model.primitives.push_back(prim);
+
+	_models.push_back(model);
 	return RegisterName(name);
 }
 
-MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::string& name)
+ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std::string& name)
 {
 	std::filesystem::path path{ meshPath };
 
@@ -289,20 +310,28 @@ MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::s
 
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
-
-	glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-	glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
 	
+	Model model{};
+
 	for (const fastgltf::Mesh& mesh : gltf.meshes)
 	{
+		model.primitives.reserve(mesh.primitives.size());
 		for (const fastgltf::Primitive& prim : mesh.primitives)
 		{
+			Primitive primitive{};
+			glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+			glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+
 			const size_t vertexStart = vertices.size();
+			primitive.vertexOffset = vertices.size();
 
 			// indices
 			if (prim.indicesAccessor.has_value())
 			{
 				const fastgltf::Accessor& idxAccessor = gltf.accessors[prim.indicesAccessor.value()];
+
+				primitive.firstIndex = indices.size();
+				primitive.indexCount = idxAccessor.count;
 				indices.reserve(indices.size() + idxAccessor.count);
 				
 				fastgltf::iterateAccessor<uint32_t>(gltf, idxAccessor,
@@ -322,7 +351,12 @@ MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::s
 					vertices[vertexStart + i].pos = pos;
 					minAABB = glm::min(minAABB, pos);
 					maxAABB = glm::max(maxAABB, pos);
+
+					//TODO: Acquire max/min from file (possible?)
 				});
+
+			primitive.minAABB = minAABB;
+			primitive.maxAABB = maxAABB;
 
 			// normals
 			if (const auto* nrm = prim.findAttribute("NORMAL"); nrm != prim.attributes.end())
@@ -353,34 +387,44 @@ MeshHandle MeshManager::ImportMeshGLTF(const std::string& meshPath, const std::s
 						vertices[vertexStart + i].tangent = { t.x(), t.y(), t.z(), t.w() };
 					});
 			}
+
+			//TODO: Acquire material from file
+
+			model.primitives.push_back(primitive);
 		}
 	}
 
-	AllocatedBuffer vb = _pRenderer->CreateDeviceLocalBuffer(vertices.data(),
-		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer);
 
-	AllocatedBuffer ib = _pRenderer->CreateDeviceLocalBuffer(indices.data(),
-		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
+	model.vbHandle = AddBufferToPool(_pRenderer->CreateDeviceLocalBuffer(vertices.data(),
+		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer));
 
-	// Add & return handle
-	_meshes.emplace_back(vb, ib, maxAABB, minAABB, static_cast<uint32_t>(indices.size()));
+	model.ibHandle = AddBufferToPool(_pRenderer->CreateDeviceLocalBuffer(indices.data(),
+		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer));
 
+	_models.push_back(model);
 	return RegisterName(name);
 }
 
-MeshHandle MeshManager::GetHandle(const std::string& name) const
+ModelHandle MeshManager::GetHandle(const std::string& name) const
 {
 	auto it = _nameMap.find(name);
 	if (it == _nameMap.end())
-		throw std::runtime_error("Unknown mesh name: " + name);
-	return MeshHandle{ it->second };
+		throw std::runtime_error("Unknown model name: " + name);
+	return ModelHandle{ it->second };
 }
 
-MeshHandle MeshManager::RegisterName(const std::string& name)
+ModelHandle MeshManager::RegisterName(const std::string& name)
 {
-	uint32_t idx = static_cast<uint32_t>(_meshes.size() - 1);
+	uint32_t idx = static_cast<uint32_t>(_models.size() - 1);
 	auto [it, inserted] = _nameMap.emplace(name, idx);
 	if (!inserted)
-		throw std::runtime_error("Duplicate mesh name: " + name);
-	return MeshHandle{ idx };
+		throw std::runtime_error("Duplicate model name: " + name);
+	return ModelHandle{ idx };
+}
+
+uint32_t MeshManager::AddBufferToPool(AllocatedBuffer buffer)
+{
+	_bufferPool.push_back(buffer);
+
+	return _bufferPool.size() - 1;
 }

@@ -146,9 +146,9 @@ struct BindingDesc
 
 // data that needs extra copies, per frame in flight. cpu written
 // Excludes:
-//  - render-finished semaphores: per swapchain IMAGE (present consumes them), kept outside
-//  - color/depth/shadow images: GPU-written persistents, synchronized by barriers
-//  - swapchain images/views: count tied to the swapchain, not to frames in flight
+//    render-finished semaphores: per swapchain IMAGE (present consumes them), kept outside
+//    color/depth/shadow images: GPU-written persistents, synchronized by barriers
+//    swapchain images/views: count tied to the swapchain, not to frames in flight
 struct FrameData
 {
 	// CPU-written, persistent-mapped buffers created from the BindingDesc table

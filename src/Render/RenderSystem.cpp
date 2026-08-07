@@ -57,15 +57,18 @@ void RenderSystem::GatherDrawList()
 
 	for (size_t i = 0; i < renderPool.size(); i++)
 	{
-		DrawJob job;
-		job._renderComp = &renderPool[i];
-		job.SetModelMatrix(_pTransformPool->Get(renderCompToEntity[i]));
+		const Model& mesh = meshManager->GetModel(renderPool[i]._mesh);
 
-		const Mesh& mesh = meshManager->GetMesh(job._renderComp->_mesh);
-		job._minAABB = mesh.minAABB;
-		job._maxAABB = mesh.maxAABB;
+		for (auto& prim : mesh.primitives)
+		{
+			DrawJob job;
+			job._renderComp = &renderPool[i];
+			job.SetModelMatrix(_pTransformPool->Get(renderCompToEntity[i]));
+			job._minAABB = prim.minAABB;
+			job._maxAABB = prim.maxAABB;
 
-		_drawList.push_back(job);
+			_drawList.push_back(job);
+		}
 	}
 
 	//FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));

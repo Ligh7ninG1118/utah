@@ -96,9 +96,13 @@ void VulkanRenderer::Initialize()
 	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
 
 	TextureHandle hemletAlbedoTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_albedo.jpg", "helmet_albedo");
-	TextureHandle helmetORMTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_orm.png", "helmet_omr", TextureColorSpace::Linear);
+	TextureHandle helmetORMTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_orm.png", "helmet_orm", TextureColorSpace::Linear);
 	TextureHandle helmetNormalTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_normal.jpg", "helmet_normal", TextureColorSpace::Linear);
 	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
+
+	TextureHandle bustAlbedoTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_diff_4k.jpg", "bust_albedo");
+	TextureHandle bustORMTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_arm_4k.jpg", "bust_orm");
+	TextureHandle bustNormalTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_nor_gl_4k.jpg", "bust_normal");
 
 	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
 	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target", 2048);
@@ -109,7 +113,9 @@ void VulkanRenderer::Initialize()
 	_meshManager.Initialize(this);
 	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
 	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
-	_meshManager.ImportMeshGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
+	_meshManager.ImportModelGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
+	_meshManager.ImportModelGLTF("models/MarbleBust/marble_bust_01_4k.gltf", "marble_bust");
+
 
 #if USE_DEAR_IMGUI_INTERFACE
 	InitImGUI();
@@ -123,6 +129,7 @@ void VulkanRenderer::Initialize()
 
 	CreateSyncObjects();
 	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
+	_materialManager.CreatePBRMaterial("marble_bust", _pbrPipeline, { bustAlbedoTex, bustORMTex, bustNormalTex});
 	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex });
 	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
@@ -2282,11 +2289,11 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 			// Reuse second slot (uint index) to indicate which view proj matrix to use
 			PerDrawPC pc{ i, j };
 
-			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+			Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
 
-			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 			cmd.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
@@ -2302,7 +2309,10 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 				pc
 			);
 
-			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+			for (auto& prim : mesh.primitives)
+			{
+				cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+			}
 		}
 
 		cmd.endRendering();
@@ -2359,11 +2369,11 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 
 			PerDrawPC pc{ i, static_cast<uint32_t>(_shadowMapImages.size() + j * 6)};
 
-			Mesh mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+			Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
 
-			cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-			cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 			cmd.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
@@ -2379,7 +2389,10 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 				pc
 			);
 
-			cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+			for (auto& prim : mesh.primitives)
+			{
+				cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+			}
 		}
 
 		cmd.endRendering();
@@ -2439,9 +2452,12 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 
 		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
 
-		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+		Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
+
+		cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+
+		cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
+
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
 			pso.layout,
@@ -2453,8 +2469,12 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 			0,
 			pc
-		);
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		); 
+		
+		for (auto& prim : mesh.primitives)
+		{
+			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+		}
 	}
 	cmd.endRendering();
 }
@@ -2525,11 +2545,11 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 
 		PerDrawPC pc{ static_cast<uint32_t>(i), _drawList[i]._renderComp->_material.index };
 
-		const Mesh& mesh = _meshManager.GetMesh(_drawList[i]._renderComp->_mesh);
+		Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
 
-		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+		cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-		cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+		cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
@@ -2545,7 +2565,10 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 			pc
 		);
 
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		for (auto& prim : mesh.primitives)
+		{
+			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+		}
 	}
 
 	cmd.endRendering();
@@ -2662,11 +2685,11 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 
 	PerDrawPC pc{ 0, 0 };
 
-	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -2682,7 +2705,10 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 		pc
 	);
 
-	cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	for (auto& prim : mesh.primitives)
+	{
+		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+	}
 
 	cmd.endRendering();
 }
@@ -3670,11 +3696,11 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 
 	PerDrawPC pc{ equirectHandle.index, equirectTex.samplerIndex };
 
-	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -3690,7 +3716,10 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 		pc
 	);
 
-	cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	for (auto& prim : mesh.primitives)
+	{
+		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+	}
 
 	cmd.endRendering();
 
@@ -3823,11 +3852,11 @@ void VulkanRenderer::ConvolveIrradianceMap()
 
 	PerDrawPC pc{ cubemapRTHandle.index, cubemapTex.samplerIndex };
 
-	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
+	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -3843,7 +3872,10 @@ void VulkanRenderer::ConvolveIrradianceMap()
 		pc
 	);
 
-	cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+	for (auto& prim : mesh.primitives)
+	{
+		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+	}
 
 	cmd.endRendering();
 
@@ -3920,9 +3952,10 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 
 	const PipelineEntry& pso = _pipelines[_prefilterPipelineIndex];
 
-	const Mesh& mesh = _meshManager.GetMesh(_meshManager.GetHandle("unit_cube"));
-	cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
-	cmd.bindIndexBuffer(vk::Buffer(mesh.indexBuffer.buffer), 0, vk::IndexType::eUint32);
+	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pso.layout, 0,
 		*_frames[_currentFrame].globalDescriptorSet, nullptr);
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
@@ -3972,7 +4005,10 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 		cmd.pushConstants<PrefilterPC>(pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, pc);
 
-		cmd.drawIndexed(static_cast<uint32_t>(mesh.indexCount), 1, 0, 0, 0);
+		for (auto& prim : mesh.primitives)
+		{
+			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
+		}
 		cmd.endRendering();
 	}
 

@@ -32,11 +32,11 @@ struct Plane
 };
 
 // typed handle, preventing cross use
-struct MeshHandle
+struct ModelHandle
 {
 	uint32_t index = INVALID_HANDLE;
 	[[nodiscard]] bool IsValid() const { return index != INVALID_HANDLE; }
-	bool operator==(const MeshHandle&) const = default;
+	bool operator==(const ModelHandle&) const = default;
 };
 
 struct MaterialHandle
