@@ -7,6 +7,7 @@ static const uint MAX_POINT_LIGHTS = 32;
 static const uint MAX_DIR_LIGHTS = 4;
 static const uint MAX_SPOT_LIGHTS = 32;
 static const uint MAX_SHADOW_CASTER_LIGHTS = 64;
+static const uint MAX_TEX_SLOTS = 8;
 
 static const float PI = 3.1415926535f;
 
@@ -27,14 +28,15 @@ struct ObjectData
     float4x4 model;
 };
 
+// Mirrors MaterialManager::MaterialGPU
 struct MatData
 {
-    uint texIndices[4]; // [0] Albedo, [1] ORM, [2] Normal, [3] Emissive
-    uint samplerIndices[4];
+    uint texIndices[MAX_TEX_SLOTS]; // 0 base, 1 MR, 2 normal, 3 emissive, 4 occlusion, 5 to 7 reserved
+    uint samplerIndices[MAX_TEX_SLOTS];
     float4 baseColorFactor;
-    float3 ormFactor;
-    float normalScale;
-    float3 emissiveFactor;
+    float4 ormFactor; // r = ao strength, g = roughness, b = metallic
+    float4 emissiveFactor;
+    float4 params; // r = normal scale, g = alpha cutoff, b/a = reserved
 };
 
 // Lighting, shadow maps

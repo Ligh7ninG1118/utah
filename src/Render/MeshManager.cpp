@@ -4,8 +4,10 @@
 #include <fastgltf/core.hpp>
 #include <fastgltf/types.hpp>
 #include <fastgltf/tools.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include "VulkanRenderer.h"
 #include <filesystem>
+#include <tuple>
 
 
 MeshManager::MeshManager()
@@ -96,7 +98,7 @@ void MeshManager::CreateAABBMesh()
 		sizeof(uint32_t) * aabbIndices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
 	_debugMeshes[static_cast<uint32_t>(DebugMeshType::AABB)] = 
-		Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size()) };
+		DebugMesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(aabbIndices.size()) };
 }
 
 void MeshManager::CreatePyramidMesh(float baseSize, float height)
@@ -122,7 +124,7 @@ void MeshManager::CreatePyramidMesh(float baseSize, float height)
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
 	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Pyramid)] 
-		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+		= DebugMesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
 }
 
 void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
@@ -183,7 +185,7 @@ void MeshManager::CreateIcosphereMesh(uint32_t subdivisions, float radius)
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer);
 
 	_debugMeshes[static_cast<uint32_t>(DebugMeshType::Icosphere)] 
-		= Mesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
+		= DebugMesh{ vb, ib, glm::vec3(), glm::vec3(), static_cast<uint32_t>(indices.size()) };
 }
 
 void MeshManager::CreatePlane()
@@ -219,7 +221,7 @@ void MeshManager::CreatePlane()
 	RegisterName("plane");
 }
 
-ModelHandle MeshManager::ImportMeshOBJ(const std::string& meshPath, const std::string& name)
+ModelHandle MeshManager::ImportModelOBJ(const std::string& meshPath, const std::string& name)
 {
 	tinyobj::attrib_t                attrib;
 	std::vector<tinyobj::shape_t>    shapes;
@@ -295,7 +297,6 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 {
 	std::filesystem::path path{ meshPath };
 
-	//TODO: consider reuse this across loads
 	fastgltf::Parser parser;
 
 	auto data = fastgltf::GltfDataBuffer::FromPath(path);
@@ -308,10 +309,19 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 
 	fastgltf::Asset& gltf = asset.get();
 
+	if (gltf.nodes.size() != 1)
+	{
+		//TODO: Extend to cater assets with multiple nodes
+		throw std::runtime_error("Importer assumes single node asset; asset has multiple");
+	}
+
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
 	
 	Model model{};
+
+	model.intrinsicTransform = GetNodeTransform(gltf.nodes[0]);
+	std::vector<MaterialHandle> matHandles = LoadGLTFMaterials(gltf, path.parent_path(), name);
 
 	for (const fastgltf::Mesh& mesh : gltf.meshes)
 	{
@@ -319,9 +329,6 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 		for (const fastgltf::Primitive& prim : mesh.primitives)
 		{
 			Primitive primitive{};
-			glm::vec3 minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-			glm::vec3 maxAABB = glm::vec3(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
-
 			const size_t vertexStart = vertices.size();
 			primitive.vertexOffset = vertices.size();
 
@@ -345,14 +352,37 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 			const fastgltf::Accessor& posAccessor = gltf.accessors[posIt->accessorIndex];
 			vertices.resize(vertices.size() + posAccessor.count);
 
+			glm::vec3 minAABB{};
+			glm::vec3 maxAABB{};
+			bool shouldManualRecordMinMax = !posAccessor.min.has_value();
+
+			if (shouldManualRecordMinMax)
+			{
+				minAABB = glm::vec3(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+				maxAABB = glm::vec3(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+			}
+			else // Acquire min/max data directly from asset
+			{
+				minAABB = glm::vec3(
+					posAccessor.min.value().get<double>(0),
+					posAccessor.min.value().get<double>(1),
+					posAccessor.min.value().get<double>(2));
+				maxAABB = glm::vec3(
+					posAccessor.max.value().get<double>(0),
+					posAccessor.max.value().get<double>(1),
+					posAccessor.max.value().get<double>(2));
+			}
+
 			fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor,
 				[&](fastgltf::math::fvec3 p, size_t i) {
 					glm::vec3 pos = { p.x(), p.y(), p.z() };
 					vertices[vertexStart + i].pos = pos;
-					minAABB = glm::min(minAABB, pos);
-					maxAABB = glm::max(maxAABB, pos);
 
-					//TODO: Acquire max/min from file (possible?)
+					if (shouldManualRecordMinMax)
+					{
+						minAABB = glm::min(minAABB, pos);
+						maxAABB = glm::max(maxAABB, pos);
+					}
 				});
 
 			primitive.minAABB = minAABB;
@@ -388,16 +418,15 @@ ModelHandle MeshManager::ImportModelGLTF(const std::string& meshPath, const std:
 					});
 			}
 
-			//TODO: Acquire material from file
+			if (prim.materialIndex.has_value())
+				primitive.matHandle = matHandles[prim.materialIndex.value()];
 
 			model.primitives.push_back(primitive);
 		}
 	}
 
-
 	model.vbHandle = AddBufferToPool(_pRenderer->CreateDeviceLocalBuffer(vertices.data(),
 		sizeof(Vertex) * vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer));
-
 	model.ibHandle = AddBufferToPool(_pRenderer->CreateDeviceLocalBuffer(indices.data(),
 		sizeof(uint32_t) * indices.size(), vk::BufferUsageFlagBits::eIndexBuffer));
 
@@ -427,4 +456,74 @@ uint32_t MeshManager::AddBufferToPool(AllocatedBuffer buffer)
 	_bufferPool.push_back(buffer);
 
 	return _bufferPool.size() - 1;
+}
+
+glm::mat4 MeshManager::GetNodeTransform(const fastgltf::Node& node)
+{
+	return std::visit(fastgltf::visitor{
+		[](const fastgltf::math::fmat4x4& m) 
+		{
+			// both column major, straight copy
+			glm::mat4 out;
+			std::memcpy(&out, m.data(), sizeof(float) * 16);
+			return out;
+		},
+		[](const fastgltf::TRS& trs) 
+		{
+			glm::vec3 t(trs.translation.x(), trs.translation.y(), trs.translation.z());
+			// glTF quat is xyzw, glm::quat ctor is wxyz
+			glm::quat r(trs.rotation.w(), trs.rotation.x(), trs.rotation.y(), trs.rotation.z());
+			glm::vec3 s(trs.scale.x(), trs.scale.y(), trs.scale.z());
+
+			return glm::translate(glm::mat4(1.0f), t)
+				 * glm::mat4_cast(r)
+				 * glm::scale(glm::mat4(1.0f), s);
+		}
+		}, node.transform);
+}
+
+std::vector<MaterialHandle> MeshManager::LoadGLTFMaterials(const fastgltf::Asset& gltf, const std::filesystem::path& baseDir, const std::string& prefix)
+{
+	auto* texMgr = _pRenderer->GetTextureManager();
+	auto* matMgr = _pRenderer->GetMaterialManager();
+
+	std::map<std::pair<size_t, TextureColorSpace>, TextureHandle> cache;
+
+	auto load = [&](const auto& texInfoOpt, TextureColorSpace cs) -> std::optional<TextureHandle> 
+		{
+			if (!texInfoOpt) 
+				return std::nullopt;
+			size_t img = gltf.textures[texInfoOpt->textureIndex].imageIndex.value();
+			auto key = std::make_pair(img, cs);
+
+			if (auto it = cache.find(key); it != cache.end()) 
+				return it->second;
+			// resolve gltf.images[img].data (sources::URI here) -> path relative to baseDir
+			std::string uri{ std::get<fastgltf::sources::URI>(gltf.images[img].data).uri.string() };
+			TextureHandle h = texMgr->ImportTexture((baseDir / uri).string(),
+				prefix + "_img" + std::to_string(img) + (cs == TextureColorSpace::sRGB ? "_s" : "_l"), cs);
+			cache.emplace(key, h);
+			return h;
+		};
+
+	std::vector<MaterialHandle> out;
+	for (size_t m = 0; m < gltf.materials.size(); ++m) 
+	{
+		const auto& gm = gltf.materials[m];
+		PBRTextureSet set;
+		set.baseColor = load(gm.pbrData.baseColorTexture, TextureColorSpace::sRGB);
+		set.metalRough = load(gm.pbrData.metallicRoughnessTexture, TextureColorSpace::Linear);
+		set.normal = load(gm.normalTexture, TextureColorSpace::Linear);
+		set.emissive = load(gm.emissiveTexture, TextureColorSpace::sRGB);
+		set.occlusion = load(gm.occlusionTexture, TextureColorSpace::Linear);
+
+		glm::vec3 orm = { gm.occlusionTexture ? gm.occlusionTexture->strength : 1.0f,
+						  gm.pbrData.roughnessFactor, gm.pbrData.metallicFactor };
+		out.push_back(matMgr->CreatePBRMaterial(prefix + "_mat" + std::to_string(m),
+			_pRenderer->GetPBRPipelineIndex(), set,
+			glm::make_vec4(gm.pbrData.baseColorFactor.data()), orm,
+			glm::make_vec3(gm.emissiveFactor.data()),
+			gm.normalTexture ? gm.normalTexture->scale : 1.0f, gm.alphaCutoff));
+	}
+	return out;
 }

@@ -226,6 +226,9 @@ public:
 
 	MeshManager* GetMeshManager() { return &_meshManager; }
 	MaterialManager* GetMaterialManager() { return &_materialManager; }
+	TextureManager* GetTextureManager() { return &_textureManager; }
+
+	uint32_t GetPBRPipelineIndex() { return _pbrPipeline; }
 
 private:
 	// ImGUI stuff
@@ -367,7 +370,7 @@ private:
 	std::vector<AllocatedImage> _shadowCubeMapImages;
 	std::vector<vk::raii::ImageView> _shadowCubeMapImageViews;
 
-	TextureManager _textureManger;
+	TextureManager _textureManager;
 	MeshManager _meshManager;
 	MaterialManager _materialManager;
 

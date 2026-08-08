@@ -51,27 +51,37 @@ void RenderSystem::GatherDrawList()
 	auto& renderCompToEntity = _pRenderPool->GetEntities();
 	auto* meshManager = _pRenderer->GetMeshManager();
 
-
 	_drawList.clear();
-	_drawList.reserve(renderPool.size());
+	_drawList.reserve(512);
 
 	for (size_t i = 0; i < renderPool.size(); i++)
 	{
-		const Model& mesh = meshManager->GetModel(renderPool[i]._mesh);
+		RenderComponent& rc = renderPool[i];
+		const Model& model = meshManager->GetModel(rc._model);
 
-		for (auto& prim : mesh.primitives)
+		// raw model matrix
+		const glm::mat4 placement = DrawJob::CalculatePlacement(_pTransformPool->Get(renderCompToEntity[i]));
+		// intrinsic model matrix from asset
+		const glm::mat4 finalModel = placement * model.intrinsicTransform;
+
+		for (auto& prim : model.primitives)
 		{
 			DrawJob job;
-			job._renderComp = &renderPool[i];
-			job.SetModelMatrix(_pTransformPool->Get(renderCompToEntity[i]));
+			job._model = finalModel;
 			job._minAABB = prim.minAABB;
 			job._maxAABB = prim.maxAABB;
+			job._vbHandle = model.vbHandle;
+			job._ibHandle = model.ibHandle;
+			job._firstIndex = prim.firstIndex;
+			job._indexCount = prim.indexCount;
+			job._vertexOffset = prim.vertexOffset;
+			job._matIndex = rc._material.IsValid() ? rc._material.index : prim.matHandle.index;
 
 			_drawList.push_back(job);
 		}
 	}
 
-	//FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
+	FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
 
 	_pRenderer->SetDrawList(std::move(_drawList));
 	_pRenderer->SetDebugAABBDrawList(std::move(_debugAABBDrawList));

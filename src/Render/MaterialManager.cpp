@@ -1,5 +1,6 @@
 #include "MaterialManager.h"
 #include <stdexcept>
+#include <optional>
 
 MaterialManager::MaterialManager()
 {
@@ -21,30 +22,43 @@ MaterialHandle MaterialManager::CreateUnlitMaterial(const std::string& name, uin
 }
 
 MaterialHandle MaterialManager::CreatePBRMaterial(const std::string& name, uint32_t pipelineIndex, 
-    std::vector<TextureHandle> texIndices, glm::vec4 baseColorFactor, glm::vec3 ormFactor,
-    glm::vec3 emissiveFactor, float normalScale)
+    const PBRTextureSet& textures, glm::vec4 baseColorFactor, glm::vec3 ormFactor, glm::vec3 emissiveFactor,
+    float normalScale, float alphaCutoff)
 {
     Material newMat{};
     newMat.type = MaterialType::PBR;
     newMat.pipeline = pipelineIndex;
 
     // init with default textures for albedo/orm/normal/emissive
-    newMat.texIndices[0] = 0;
-    newMat.texIndices[1] = 1;
-    newMat.texIndices[2] = 2;
-    newMat.texIndices[3] = 3; 
+    newMat.texIndices[ToIdx(PBRSlot::BaseColor)] = 0;
+    newMat.texIndices[ToIdx(PBRSlot::MetalRough)] = 1;
+    newMat.texIndices[ToIdx(PBRSlot::Normal)] = 2;
+    newMat.texIndices[ToIdx(PBRSlot::Emissive)] = 3;
+    newMat.texIndices[ToIdx(PBRSlot::Occlusion)] = 4;
 
-    //TODO: All materials default to use one sampler for now
-    newMat.samplerIndices[0] = newMat.samplerIndices[1] = newMat.samplerIndices[2] = newMat.samplerIndices[3] = 0;
+    // init to 0 for the empty tex slots
+    for (uint32_t i = ToIdx(PBRSlot::Count); i < MAX_TEX_SLOTS; ++i)
+        newMat.texIndices[i] = 0;
 
-    for (size_t i = 0; i < texIndices.size(); i++)
-    {
-        newMat.texIndices[i] = texIndices[i].index;
-    }
+    // all materials default to use one sampler (repeat, aniso enabled)
+    for (uint32_t& s : newMat.samplerIndices) 
+        s = 0;
+
+    auto set = [&](PBRSlot slot, const std::optional<TextureHandle>& h) 
+        {
+            if (h) 
+                newMat.texIndices[ToIdx(slot)] = h->index;
+        };
+    set(PBRSlot::BaseColor, textures.baseColor);
+    set(PBRSlot::MetalRough, textures.metalRough);
+    set(PBRSlot::Normal, textures.normal);
+    set(PBRSlot::Emissive, textures.emissive);
+    set(PBRSlot::Occlusion, textures.occlusion);
+
     newMat.baseColorFactor = baseColorFactor;
-    newMat.ormFactor = ormFactor;
-    newMat.emissiveFactor = emissiveFactor;
-    newMat.normalScale = normalScale;
+    newMat.ormFactor = glm::vec4(ormFactor, 0.0f);
+    newMat.emissiveFactor = glm::vec4(emissiveFactor, 0.0f);
+    newMat.params = glm::vec4(normalScale, alphaCutoff, 0.0f, 0.0f);
 
     _materials.push_back(newMat);
     return RegisterName(name);
@@ -57,13 +71,12 @@ std::vector<MaterialGPU> MaterialManager::ConvertMaterialsToGPU()
     for (auto& mat : _materials)
     {
         MaterialGPU matGPU{};
-        memcpy(matGPU.texIndices, mat.texIndices, sizeof(uint32_t)*4);
-        memcpy(matGPU.samplerIndices, mat.samplerIndices, sizeof(uint32_t) * 4);
-
+        memcpy(matGPU.texIndices, mat.texIndices, sizeof(uint32_t) * MAX_TEX_SLOTS);
+        memcpy(matGPU.samplerIndices, mat.samplerIndices, sizeof(uint32_t) * MAX_TEX_SLOTS);
         matGPU.baseColorFactor = mat.baseColorFactor;
         matGPU.ormFactor = mat.ormFactor;
         matGPU.emissiveFactor = mat.emissiveFactor;
-        matGPU.normalScale = mat.normalScale;
+        matGPU.params = mat.params;
 
         matGPUs.push_back(matGPU);
     }

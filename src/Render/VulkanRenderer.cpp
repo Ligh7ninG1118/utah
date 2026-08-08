@@ -92,27 +92,18 @@ void VulkanRenderer::Initialize()
 	CreateSSAOResource();
 	CreateSSAONoise();
 
-	_textureManger.Initialize(this, &_vkCtx);
-	TextureHandle vikingRoomTex = _textureManger.ImportTexture("textures/viking_room.png", "viking_room");
+	_textureManager.Initialize(this, &_vkCtx);
+	TextureHandle vikingRoomTex = _textureManager.ImportTexture("textures/viking_room.png", "viking_room");
 
-	TextureHandle hemletAlbedoTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_albedo.jpg", "helmet_albedo");
-	TextureHandle helmetORMTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_orm.png", "helmet_orm", TextureColorSpace::Linear);
-	TextureHandle helmetNormalTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_normal.jpg", "helmet_normal", TextureColorSpace::Linear);
-	TextureHandle helmetEmissiveTex = _textureManger.ImportTexture("models/DamagedHelmet/Default_emissive.jpg", "helmet_emissive");
-
-	TextureHandle bustAlbedoTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_diff_4k.jpg", "bust_albedo");
-	TextureHandle bustORMTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_arm_4k.jpg", "bust_orm");
-	TextureHandle bustNormalTex = _textureManger.ImportTexture("models/MarbleBust/marble_bust_01_nor_gl_4k.jpg", "bust_normal");
-
-	equirectHandle = _textureManger.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
-	cubemapRTHandle = _textureManger.CreateCubemapRenderTarget("cubemap_render_target", 2048);
-	convolutionHandle = _textureManger.CreateCubemapRenderTarget("convolution_render_target", 32);
-	prefilterHandle = _textureManger.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
-	brdfLUTHandle = _textureManger.Create2DRenderTarget("brdf_lut_render_target", BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION);
+	equirectHandle = _textureManager.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
+	cubemapRTHandle = _textureManager.CreateCubemapRenderTarget("cubemap_render_target", 2048);
+	convolutionHandle = _textureManager.CreateCubemapRenderTarget("convolution_render_target", 32);
+	prefilterHandle = _textureManager.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
+	brdfLUTHandle = _textureManager.Create2DRenderTarget("brdf_lut_render_target", BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION);
 
 	_meshManager.Initialize(this);
-	_meshManager.ImportMeshOBJ("models/viking_room.obj", "viking_room");
-	_meshManager.ImportMeshOBJ("models/utah_teapot.obj", "teapot");
+	_meshManager.ImportModelOBJ("models/viking_room.obj", "viking_room");
+	_meshManager.ImportModelOBJ("models/utah_teapot.obj", "teapot");
 	_meshManager.ImportModelGLTF("models/DamagedHelmet/DamagedHelmet.gltf", "helmet");
 	_meshManager.ImportModelGLTF("models/MarbleBust/marble_bust_01_4k.gltf", "marble_bust");
 	_meshManager.ImportModelGLTF("models/Sponza/Sponza.gltf", "sponza");
@@ -128,9 +119,7 @@ void VulkanRenderer::Initialize()
 	CreateCommandBuffers();
 
 	CreateSyncObjects();
-	_materialManager.CreatePBRMaterial("helmet", _pbrPipeline, { hemletAlbedoTex, helmetORMTex, helmetNormalTex, helmetEmissiveTex }); // PBR, tex (damaged helmet)
-	_materialManager.CreatePBRMaterial("marble_bust", _pbrPipeline, { bustAlbedoTex, bustORMTex, bustNormalTex});
-	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { vikingRoomTex });
+	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { .baseColor = vikingRoomTex });
 	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
@@ -140,16 +129,10 @@ void VulkanRenderer::Initialize()
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		MaterialSSBO* materials = static_cast<MaterialSSBO*>(_frames[i].Mapped(GlobalBinding::MaterialSSBO));
+		MaterialGPU* materials = static_cast<MaterialGPU*>(_frames[i].Mapped(GlobalBinding::MaterialSSBO));
 		for (size_t j = 0; j < matGPUs.size(); ++j)
 		{
-			materials[j].baseColorFactor = matGPUs[j].baseColorFactor;
-			materials[j].ormFactor = matGPUs[j].ormFactor;
-			materials[j].emissiveFactor = matGPUs[j].emissiveFactor;
-			materials[j].normalScale = matGPUs[j].normalScale;
-
-			memcpy(materials[j].texIndices, matGPUs[j].texIndices, sizeof(uint32_t) * 4);
-			memcpy(materials[j].samplerIndices, matGPUs[j].samplerIndices, sizeof(uint32_t) * 4);
+			materials[j] = matGPUs[j];
 		}
 	}
 	// After descriptor set is created
@@ -484,9 +467,9 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	//TODO: No need to update this per frame probably
 	SceneIBLUBO sceneIBL
-	{   
+	{
 		.ambientColor = glm::vec3(0.0f),		// intensity 1 + ambient 0 for baked IBL; vice versa for no IBL
-		.intensity = 1.0f,	
+		.intensity = 1.0f,
 		.irradianceIndex = convolutionHandle.index,
 		.prefilteredIndex = prefilterHandle.index,
 		.brdfLUTIndex = brdfLUTHandle.index,
@@ -547,7 +530,7 @@ void VulkanRenderer::RecreateSwapChain()
 
 	CreateColorResources();
 	CreateDepthResources();
-	
+
 	//TODO: Recreate gbuffer images since they relies on screen resolution
 	//TODO2: and ssao stuff
 
@@ -605,7 +588,7 @@ void VulkanRenderer::InitBindingDescs()
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::MaterialSSBO),
 										.type = vk::DescriptorType::eStorageBuffer,
 										.count = 1,
-										.bufferSize = sizeof(MaterialSSBO) * MAX_OBJECTS,
+										.bufferSize = sizeof(MaterialGPU) * MAX_OBJECTS,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = {} });
 	// 4: Bindless texture array
@@ -819,24 +802,24 @@ void VulkanRenderer::CreateDescriptorSets()
 		}
 
 		// image info explicitly defined & partially bound, only write populated slots
-		size_t texCount = _textureManger.GetTexturesCount();
+		size_t texCount = _textureManager.GetTexturesCount();
 		std::vector<vk::DescriptorImageInfo> textureInfos;
 		textureInfos.reserve(texCount);
 		for (size_t i = 0; i < texCount; i++)
 		{
 			// skip sampler field, defined in separate image info
 			textureInfos.push_back(vk::DescriptorImageInfo{
-											.imageView = _textureManger.GetTextureImageView(i),
+											.imageView = _textureManager.GetTextureImageView(i),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
 		}
 
-		size_t samplerCount = _textureManger.GetTextureSamplersCount();
+		size_t samplerCount = _textureManager.GetTextureSamplersCount();
 		std::vector<vk::DescriptorImageInfo> samplerInfos;
 		samplerInfos.reserve(samplerCount);
 		for (size_t i = 0; i < samplerCount; i++)
 		{
 			samplerInfos.push_back(vk::DescriptorImageInfo{
-										.sampler = _textureManger.GetTextureSampler(i),
+										.sampler = _textureManager.GetTextureSampler(i),
 				});
 		}
 
@@ -870,7 +853,7 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
-											.imageView = _textureManger.GetTextureImageView(cubemapRTHandle.index),
+											.imageView = _textureManager.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 
@@ -1395,7 +1378,7 @@ uint32_t VulkanRenderer::CreateEquirectToCubePipeline(const std::string& vertPat
 	auto bindingDescription = vk::VertexInputBindingDescription{ 0, sizeof(glm::vec3), vk::VertexInputRate::eVertex };
 	std::vector< vk::VertexInputAttributeDescription> attributeDescriptions;
 
-	 attributeDescriptions = { vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0) };
+	attributeDescriptions = { vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0) };
 
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
 		.vertexBindingDescriptionCount = 1,
@@ -1596,7 +1579,7 @@ uint32_t VulkanRenderer::CreateDeferredGBufferPipeline(const std::string& vertPa
 
 	std::vector< vk::PipelineColorBlendAttachmentState> colorBlendAttachments;
 	colorBlendAttachments.reserve(_gBufferColorTargetFormats.size());
-	
+
 	for (size_t i = 0; i < _gBufferColorTargetFormats.size(); i++)
 	{
 		colorBlendAttachments.push_back(colorBlendAttachment);
@@ -1677,7 +1660,7 @@ uint32_t VulkanRenderer::CreateDeferredLightingPipeline(const std::string& vertP
 		vk::DynamicState::eScissor,
 		vk::DynamicState::eDepthTestEnable,
 		vk::DynamicState::eDepthWriteEnable,
-		vk::DynamicState::eDepthCompareOp};
+		vk::DynamicState::eDepthCompareOp };
 
 	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
 													.pDynamicStates = dynamicStates.data() };
@@ -2260,48 +2243,50 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 										   .pDepthAttachment = &depthAttachment };
 
 		cmd.beginRendering(renderingInfo);
+		const PipelineEntry& pso = _pipelines[_shadowPipelineIndex];
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(SHADOW_MAP_RESOLUTION),
+				static_cast<float>(SHADOW_MAP_RESOLUTION),
+				0.0f, 1.0f));
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+		cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
 
+		// Avoid rebind if buffers are the same
+		uint32_t lastVB = INVALID_HANDLE;
+		uint32_t lastIB = INVALID_HANDLE;
 		for (uint32_t i = 0; i < _drawList.size(); i++)
 		{
-			const PipelineEntry& pso = _pipelines[_shadowPipelineIndex];
-
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-			cmd.setViewport(0,
-				vk::Viewport(
-					0.0f, 0.0f,
-					static_cast<float>(SHADOW_MAP_RESOLUTION),
-					static_cast<float>(SHADOW_MAP_RESOLUTION),
-					0.0f, 1.0f));
-
-			cmd.setScissor(0,
-				vk::Rect2D(
-					vk::Offset2D(0, 0),
-					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
-
-			cmd.setCullMode(vk::CullModeFlagBits::eNone);
-			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-			cmd.setDepthTestEnable(vk::True);
-			cmd.setDepthWriteEnable(vk::True);
-			// Reverse Z, use Greater instead
-			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+			const DrawJob& job = _drawList[i];
+			if (job._vbHandle != lastVB)
+			{
+				cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+				lastVB = job._vbHandle;
+			}
+			if (job._ibHandle != lastIB)
+			{
+				cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+				lastIB = job._ibHandle;
+			}
 
 			// Reuse second slot (uint index) to indicate which view proj matrix to use
-			PerDrawPC pc{ i, j };
-
-			Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
-
-			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
-
-			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
-
-			cmd.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				pso.layout,
-				0,
-				*_frames[_currentFrame].globalDescriptorSet,
-				nullptr);
-
+			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(j) };
 			cmd.pushConstants<PerDrawPC>(
 				pso.layout,
 				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -2309,10 +2294,7 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 				pc
 			);
 
-			for (auto& prim : mesh.primitives)
-			{
-				cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
-			}
+			cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
 		}
 
 		cmd.endRendering();
@@ -2341,47 +2323,48 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 										   .pDepthAttachment = &depthAttachment };
 
 		cmd.beginRendering(renderingInfo);
+		const PipelineEntry& pso = _pipelines[_shadowCubeMapPipelineIndex];
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(SHADOW_MAP_RESOLUTION),
+				static_cast<float>(SHADOW_MAP_RESOLUTION),
+				0.0f, 1.0f));
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+		cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+		cmd.setDepthTestEnable(vk::True);
+		cmd.setDepthWriteEnable(vk::True);
+		// Reverse Z, use Greater instead
+		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
 
+		uint32_t lastVB = INVALID_HANDLE;
+		uint32_t lastIB = INVALID_HANDLE;
 		for (uint32_t i = 0; i < _drawList.size(); i++)
 		{
-			const PipelineEntry& pso = _pipelines[_shadowCubeMapPipelineIndex];
+			const DrawJob& job = _drawList[i];
+			if (job._vbHandle != lastVB)
+			{
+				cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+				lastVB = job._vbHandle;
+			}
+			if (job._ibHandle != lastIB)
+			{
+				cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+				lastIB = job._ibHandle;
+			}
 
-			cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-			cmd.setViewport(0,
-				vk::Viewport(
-					0.0f, 0.0f,
-					static_cast<float>(SHADOW_MAP_RESOLUTION),
-					static_cast<float>(SHADOW_MAP_RESOLUTION),
-					0.0f, 1.0f));
-
-			cmd.setScissor(0,
-				vk::Rect2D(
-					vk::Offset2D(0, 0),
-					vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
-
-			cmd.setCullMode(vk::CullModeFlagBits::eNone);
-			cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-			cmd.setDepthTestEnable(vk::True);
-			cmd.setDepthWriteEnable(vk::True);
-			// Reverse Z, use Greater instead
-			cmd.setDepthCompareOp(vk::CompareOp::eGreater);
-
-			PerDrawPC pc{ i, static_cast<uint32_t>(_shadowMapImages.size() + j * 6)};
-
-			Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
-
-			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
-
-			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
-
-			cmd.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				pso.layout,
-				0,
-				*_frames[_currentFrame].globalDescriptorSet,
-				nullptr);
-
+			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(_shadowMapImages.size() + j * 6) };
 			cmd.pushConstants<PerDrawPC>(
 				pso.layout,
 				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -2389,10 +2372,7 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 				pc
 			);
 
-			for (auto& prim : mesh.primitives)
-			{
-				cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
-			}
+			cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
 		}
 
 		cmd.endRendering();
@@ -2425,56 +2405,57 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 									   .pDepthAttachment = &depthAttachment };
 
 	cmd.beginRendering(renderingInfo);
+	const PipelineEntry& pso = _pipelines[_pbrPipeline];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
+	cmd.setCullMode(vk::CullModeFlagBits::eBack);
+	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+	cmd.setDepthTestEnable(vk::True);
+	cmd.setDepthWriteEnable(vk::True);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
 
+	// Avoid rebind if buffers are the same
+	uint32_t lastVB = INVALID_HANDLE;
+	uint32_t lastIB = INVALID_HANDLE;
 	for (size_t i = 0; i < _drawList.size(); i++)
 	{
-		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
-		const PipelineEntry& pso = _pipelines[mat.pipeline];
+		const DrawJob& job = _drawList[i];
+		if (job._vbHandle != lastVB)
+		{
+			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+			lastVB = job._vbHandle;
+		}
+		if (job._ibHandle != lastIB)
+		{
+			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+			lastIB = job._ibHandle;
+		}
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-		cmd.setCullMode(vk::CullModeFlagBits::eBack);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::True);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
-
-		PerDrawPC pc{ i, _drawList[i]._renderComp->_material.index };
-
-		Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
-
-		cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
-
-		cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
+		PerDrawPC pc{ static_cast<uint32_t>(i), job._matIndex };
 		cmd.pushConstants<PerDrawPC>(
 			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 			0,
 			pc
-		); 
-		
-		for (auto& prim : mesh.primitives)
-		{
-			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
-		}
+		);
+
+		cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
 	}
 	cmd.endRendering();
 }
@@ -2515,49 +2496,51 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 									   .pDepthAttachment = &depthAttachment };
 
 	cmd.beginRendering(renderingInfo);
+	const PipelineEntry& pso = _pipelines[_deferredGBufferPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
 
+	cmd.setCullMode(vk::CullModeFlagBits::eBack);
+	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+	cmd.setDepthTestEnable(vk::True);
+	cmd.setDepthWriteEnable(vk::True);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreater);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	// Avoid rebind if buffers are the same
+	uint32_t lastVB = INVALID_HANDLE;
+	uint32_t lastIB = INVALID_HANDLE;
 	// Objects
 	for (size_t i = 0; i < _drawList.size(); i++)
 	{
-		const Material& mat = _materialManager.GetMaterial(_drawList[i]._renderComp->_material);
-		const PipelineEntry& pso = _pipelines[_deferredGBufferPipelineIndex];
+		const DrawJob& job = _drawList[i];
+		if (job._vbHandle != lastVB)
+		{
+			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+			lastVB = job._vbHandle;
+		}
+		if (job._ibHandle != lastIB)
+		{
+			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+			lastIB = job._ibHandle;
+		}
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		cmd.setCullMode(vk::CullModeFlagBits::eBack);
-		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
-		cmd.setDepthTestEnable(vk::True);
-		cmd.setDepthWriteEnable(vk::True);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
-
-		PerDrawPC pc{ static_cast<uint32_t>(i), _drawList[i]._renderComp->_material.index };
-
-		Model mesh = _meshManager.GetModel(_drawList[i]._renderComp->_mesh);
-
-		cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
-
-		cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
+		PerDrawPC pc{ static_cast<uint32_t>(i), job._matIndex };
 		cmd.pushConstants<PerDrawPC>(
 			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -2565,12 +2548,8 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 			pc
 		);
 
-		for (auto& prim : mesh.primitives)
-		{
-			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
-		}
+		cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
 	}
-
 	cmd.endRendering();
 }
 
@@ -2599,40 +2578,31 @@ void VulkanRenderer::RecordDeferredLightingPass(const vk::raii::CommandBuffer& c
 
 	cmd.beginRendering(renderingInfo);
 
-	// Deferred Lighting
-	{
-		const PipelineEntry& pso = _pipelines[_deferredLightingPipelineIndex];
+	const PipelineEntry& pso = _pipelines[_deferredLightingPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
+	// Deferred lighting pass, no need for both of these
+	cmd.setDepthTestEnable(vk::False);
+	cmd.setDepthWriteEnable(vk::False);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
 
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
-
-		cmd.setViewport(0,
-			vk::Viewport(
-				0.0f, 0.0f,
-				static_cast<float>(swapChainExtent.width),
-				static_cast<float>(swapChainExtent.height),
-				0.0f, 1.0f));
-
-		cmd.setScissor(0,
-			vk::Rect2D(
-				vk::Offset2D(0, 0),
-				swapChainExtent));
-
-		// Deferred lighting pass, no need for both of these
-		cmd.setDepthTestEnable(vk::False);
-		cmd.setDepthWriteEnable(vk::False);
-		// Reverse Z, use Greater instead
-		cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
-
-		cmd.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
-			0,
-			*_frames[_currentFrame].globalDescriptorSet,
-			nullptr);
-
-		cmd.draw(3, 1, 0, 0);
-	}
-
+	cmd.draw(3, 1, 0, 0);
 	cmd.endRendering();
 }
 
@@ -2643,7 +2613,7 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .loadOp = vk::AttachmentLoadOp::eLoad,
-												   .storeOp = vk::AttachmentStoreOp::eStore};
+												   .storeOp = vk::AttachmentStoreOp::eStore };
 
 	// Needs depth information, but do not store result
 	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
@@ -2685,11 +2655,11 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 
 	PerDrawPC pc{ 0, 0 };
 
-	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
+	const Model& model = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(model.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(model.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -2705,7 +2675,7 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 		pc
 	);
 
-	for (auto& prim : mesh.primitives)
+	for (auto& prim : model.primitives)
 	{
 		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
 	}
@@ -2720,7 +2690,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .loadOp = vk::AttachmentLoadOp::eLoad,
-												   .storeOp = vk::AttachmentStoreOp::eStore};
+												   .storeOp = vk::AttachmentStoreOp::eStore };
 
 	// Needs depth information, but do not store result
 	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
@@ -2769,7 +2739,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 
 		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size()), _debugAABBMaterial.index };
 
-		const Mesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
+		const DebugMesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -2828,7 +2798,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 		// For point lights, use icosphere; pyramid for spot/directional
 		DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;
 
-		const Mesh& mesh = _meshManager.GetDebugMesh(meshType);
+		const DebugMesh& mesh = _meshManager.GetDebugMesh(meshType);
 
 		cmd.bindVertexBuffers(0, vk::Buffer(mesh.vertexBuffer.buffer), { 0 });
 
@@ -2863,7 +2833,7 @@ void VulkanRenderer::RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, u
 											   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 											   .loadOp = vk::AttachmentLoadOp::eClear,
 											   .storeOp = vk::AttachmentStoreOp::eStore,
-											   .clearValue = clearColor};
+											   .clearValue = clearColor };
 
 	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 								   .layerCount = 1,
@@ -2907,7 +2877,7 @@ void VulkanRenderer::RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _pSwapChainCtx->GetSwapChainImageView(imageIndex),
 											   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 											   .loadOp = vk::AttachmentLoadOp::eLoad,
-											   .storeOp = vk::AttachmentStoreOp::eStore};
+											   .storeOp = vk::AttachmentStoreOp::eStore };
 
 	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 								   .layerCount = 1,
@@ -3166,7 +3136,7 @@ void VulkanRenderer::CreateDepthResources()
 	auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	_depthImage = CreateImage(swapChainExtent.width, swapChainExtent.height, 1, vk::SampleCountFlagBits::e1, depthFormat,
-		vk::ImageTiling::eOptimal, 
+		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eDepthStencilAttachment);
 
 	_depthImageView = CreateImageView(_depthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
@@ -3473,7 +3443,7 @@ void VulkanRenderer::SaveScreenshot()
 	std::string pathName = std::format("screenshots/Screenshot-{}.png", timeStr);
 
 
-	if (stbi_write_png(pathName.c_str(), swapChainExtent.width, swapChainExtent.height, 4, 
+	if (stbi_write_png(pathName.c_str(), swapChainExtent.width, swapChainExtent.height, 4,
 		(const char*)allocInfo.pMappedData + layout.offset, layout.rowPitch))
 	{
 		printf("Screenshot saved at: %s\n", pathName.c_str());
@@ -3482,7 +3452,7 @@ void VulkanRenderer::SaveScreenshot()
 	{
 		printf("Screenshot failed to save!\n");
 	}
-	
+
 	DestroyImage(_screenshotImage);
 }
 
@@ -3493,8 +3463,8 @@ void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	_screenshotImage = CreateImage(swapChainExtent.width, swapChainExtent.height,
-		1, 
-		vk::SampleCountFlagBits::e1, 
+		1,
+		vk::SampleCountFlagBits::e1,
 		vk::Format::eR8G8B8A8Unorm,
 		vk::ImageTiling::eLinear,
 		vk::ImageUsageFlagBits::eTransferDst,
@@ -3626,17 +3596,17 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 	up = glm::vec3(0.0f, -1.0f, 0.0f);
 	view = glm::lookAt(eye, eye + dir, up);
 	viewProjMatrices.emplace_back(proj * view);
-	
+
 	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
 
-	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
-	const Texture& equirectTex = _textureManger.GetTexture(equirectHandle.index);
-	
+	const Texture& cubemapTex = _textureManager.GetTexture(cubemapRTHandle.index);
+	const Texture& equirectTex = _textureManager.GetTexture(equirectHandle.index);
+
 
 	const auto& cmd = frame.commandBuffer;
 	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
-	
-	
+
+
 	cmd.begin(beginInfo);
 
 	// Transition the skybox image to write and color attachment optimal
@@ -3696,11 +3666,11 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 
 	PerDrawPC pc{ equirectHandle.index, equirectTex.samplerIndex };
 
-	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
+	const Model& model = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(model.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(model.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -3716,7 +3686,7 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 		pc
 	);
 
-	for (auto& prim : mesh.primitives)
+	for (auto& prim : model.primitives)
 	{
 		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
 	}
@@ -3785,8 +3755,8 @@ void VulkanRenderer::ConvolveIrradianceMap()
 
 	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
 
-	const Texture& convolutionTex = _textureManger.GetTexture(convolutionHandle.index);
-	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
+	const Texture& convolutionTex = _textureManager.GetTexture(convolutionHandle.index);
+	const Texture& cubemapTex = _textureManager.GetTexture(cubemapRTHandle.index);
 
 
 	const auto& cmd = frame.commandBuffer;
@@ -3852,11 +3822,11 @@ void VulkanRenderer::ConvolveIrradianceMap()
 
 	PerDrawPC pc{ cubemapRTHandle.index, cubemapTex.samplerIndex };
 
-	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
+	const Model& model = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
 
-	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(model.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(model.ibHandle).buffer), 0, vk::IndexType::eUint32);
 
 	cmd.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -3872,7 +3842,7 @@ void VulkanRenderer::ConvolveIrradianceMap()
 		pc
 	);
 
-	for (auto& prim : mesh.primitives)
+	for (auto& prim : model.primitives)
 	{
 		cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
 	}
@@ -3921,8 +3891,8 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 	}
 	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
 
-	const Texture& prefilterTex = _textureManger.GetTexture(prefilterHandle.index);
-	const Texture& cubemapTex = _textureManger.GetTexture(cubemapRTHandle.index);
+	const Texture& prefilterTex = _textureManager.GetTexture(prefilterHandle.index);
+	const Texture& cubemapTex = _textureManager.GetTexture(cubemapRTHandle.index);
 
 	const auto& cmd = frame.commandBuffer;
 	vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
@@ -3952,10 +3922,10 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 
 	const PipelineEntry& pso = _pipelines[_prefilterPipelineIndex];
 
-	const Model& mesh = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
-	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(mesh.vbHandle).buffer), { 0 });
+	const Model& model = _meshManager.GetModel(_meshManager.GetHandle("unit_cube"));
+	cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(model.vbHandle).buffer), { 0 });
 
-	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(mesh.ibHandle).buffer), 0, vk::IndexType::eUint32);
+	cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(model.ibHandle).buffer), 0, vk::IndexType::eUint32);
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pso.layout, 0,
 		*_frames[_currentFrame].globalDescriptorSet, nullptr);
 	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
@@ -4005,7 +3975,7 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 		cmd.pushConstants<PrefilterPC>(pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, pc);
 
-		for (auto& prim : mesh.primitives)
+		for (auto& prim : model.primitives)
 		{
 			cmd.drawIndexed(prim.indexCount, 1, prim.firstIndex, prim.vertexOffset, 0);
 		}
@@ -4039,7 +4009,7 @@ void VulkanRenderer::PrefilterEnvironmentMap()
 
 void VulkanRenderer::BakeBRDFLUT()
 {
-	const Texture& brdfTex = _textureManger.GetTexture(brdfLUTHandle.index);
+	const Texture& brdfTex = _textureManager.GetTexture(brdfLUTHandle.index);
 
 	FrameData& frame = _frames[_currentFrame];
 	const auto& cmd = frame.commandBuffer;
@@ -4115,7 +4085,7 @@ void VulkanRenderer::RecordSSAOPass(const vk::raii::CommandBuffer& cmd)
 	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,
-									   .pColorAttachments = &colorAttachment};
+									   .pColorAttachments = &colorAttachment };
 	cmd.beginRendering(renderingInfo);
 
 	const PipelineEntry& pso = _pipelines[_ssaoPipelineIndex];
@@ -4154,7 +4124,7 @@ void VulkanRenderer::RecordSSAOBlurPass(const vk::raii::CommandBuffer& cmd)
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .resolveMode = vk::ResolveModeFlagBits::eNone,
 												   .loadOp = vk::AttachmentLoadOp::eDontCare,
-												   .storeOp = vk::AttachmentStoreOp::eStore};
+												   .storeOp = vk::AttachmentStoreOp::eStore };
 	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 									   .layerCount = 1,
 									   .colorAttachmentCount = 1,

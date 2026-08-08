@@ -117,13 +117,13 @@ void UtahCtx::InitDemo1()
 		{
 			t._rot.x = -90.0f;
 			t._rot.z = 180.0f;
-			r._mesh = vikingRoomMesh;
+			r._model = vikingRoomMesh;
 			r._material = vikingRoomMat;
 		}
 		else // Teapot
 		{
 			t._scale = glm::vec3(0.3f);
-			r._mesh = teapotMesh;
+			r._model = teapotMesh;
 			r._material = greenMat;
 		}
 
@@ -140,7 +140,7 @@ void UtahCtx::InitDemo1()
 
 		t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
 
-		r._mesh = planeMesh;
+		r._model = planeMesh;
 		r._material = whiteMat;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
@@ -272,11 +272,8 @@ void UtahCtx::InitDemo2()
 	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
 	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
 
-	ModelHandle helmetMesh = meshMgr->GetHandle("helmet");
-	MaterialHandle helmetMat = matMgr->GetHandle("helmet");
-
-	ModelHandle bustMesh = meshMgr->GetHandle("marble_bust");
-	MaterialHandle bustMat = matMgr->GetHandle("marble_bust");
+	ModelHandle helmetModel = meshMgr->GetHandle("helmet");
+	ModelHandle bustModel = meshMgr->GetHandle("marble_bust");
 
 	ModelHandle planeMesh = meshMgr->GetHandle("plane");
 	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
@@ -284,33 +281,44 @@ void UtahCtx::InitDemo2()
 	ModelHandle sponzaMesh = meshMgr->GetHandle("sponza");
 
 	// Models
-	/*{
-		Entity e = _registry.CreateEntity();
-
-		TransformComponent t;
-		t._rot = glm::vec3(90.0f, 0.0f, 0.0f);
-
-		RenderComponent r;
-		r._mesh = helmetMesh;
-		r._material = helmetMat;
-
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}*/
-
+	// Damaged helmet
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._scale = glm::vec3(0.008f);
 
 		RenderComponent r;
-		r._mesh = sponzaMesh;
-		r._material = whiteMat;
+		r._model = helmetModel;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
+	// Marble bust
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.x = 3.0f;
+		t._scale = glm::vec3(2.0f);
+
+		RenderComponent r;
+		r._model = bustModel;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+	// Sponza
+	/*{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+
+		RenderComponent r;
+		r._model = sponzaMesh;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}*/
 
 	//// Floor Plane
 	//{
@@ -329,7 +337,7 @@ void UtahCtx::InitDemo2()
 	//}
 
 	// Point lights
-	/*{
+	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
@@ -357,7 +365,7 @@ void UtahCtx::InitDemo2()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
-	}*/
+	}
 
 }
 

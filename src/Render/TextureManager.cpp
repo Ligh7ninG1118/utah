@@ -35,7 +35,8 @@ void TextureManager::Initialize(VulkanRenderer* renderer, VulkanContext* vkCtx)
 	CreateDefaultTexture(0x00FF8080, TextureColorSpace::Linear, "normal");
 	// Emissive
 	CreateDefaultTexture(0xFF000000, TextureColorSpace::sRGB, "emissive");
-
+	// AO
+	CreateDefaultTexture(0xFFFFFFFF, TextureColorSpace::Linear, "ao");
 
 	_skyboxTexHandle = ImportCubemapTexture({ "textures/skybox test x pos.png",
 											"textures/skybox test x neg.png",

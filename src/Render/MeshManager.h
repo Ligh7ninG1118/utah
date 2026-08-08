@@ -2,6 +2,7 @@
 #include "VulkanContext.h"
 #include "RenderCommons.h"
 #include <glm/glm.hpp>
+#include <fastgltf/core.hpp>
 #include <vector>
 #include <unordered_map>
 #include <string>
@@ -16,7 +17,7 @@ enum class DebugMeshType : uint32_t
 	Count
 };
 
-struct Mesh
+struct DebugMesh
 {
 	AllocatedBuffer vertexBuffer{};
 	AllocatedBuffer indexBuffer{};
@@ -37,9 +38,9 @@ struct Primitive
 
 struct Model
 {
+	glm::mat4 intrinsicTransform{ 1.0f }; // Node transform acquired from asset, default to identify
 	uint32_t vbHandle;
 	uint32_t ibHandle;
-	vk::IndexType indexType;
 	std::vector<Primitive> primitives;
 };
 
@@ -57,19 +58,22 @@ public:
 	void CreateIcosphereMesh(uint32_t subdivisions, float radius = 0.2f);
 	void CreatePlane();
 
-	ModelHandle ImportMeshOBJ(const std::string& meshPath, const std::string& name);
+	ModelHandle ImportModelOBJ(const std::string& meshPath, const std::string& name);
 	ModelHandle ImportModelGLTF(const std::string& meshPath, const std::string& name);
 
 	[[nodiscard]] ModelHandle GetHandle(const std::string& name) const;
 
 	[[nodiscard]] const Model& GetModel(ModelHandle handle) const { return _models[handle.index]; }
-	[[nodiscard]] const Mesh& GetDebugMesh(DebugMeshType type) { return _debugMeshes[static_cast<size_t>(type)]; }
+	[[nodiscard]] const DebugMesh& GetDebugMesh(DebugMeshType type) { return _debugMeshes[static_cast<size_t>(type)]; }
 
 	[[nodiscard]] AllocatedBuffer& GetBuffer(uint32_t handle) { return _bufferPool[handle]; }
 
 private:
 	ModelHandle RegisterName(const std::string& name);
 	[[nodiscard]] uint32_t AddBufferToPool(AllocatedBuffer buffer);
+	glm::mat4 GetNodeTransform(const fastgltf::Node& node);
+	std::vector<MaterialHandle> LoadGLTFMaterials(const fastgltf::Asset& gltf, 
+		const std::filesystem::path& baseDir, const std::string& prefix);
 
 	VulkanRenderer* _pRenderer;
 
@@ -77,7 +81,7 @@ private:
 	// string name -> index/handle
 	std::unordered_map<std::string, uint32_t> _nameMap;
 	// Pre-generated meshes for debug usages
-	std::array<Mesh, static_cast<size_t>(DebugMeshType::Count)> _debugMeshes;
+	std::array<DebugMesh, static_cast<size_t>(DebugMeshType::Count)> _debugMeshes;
 
 	std::vector<AllocatedBuffer> _bufferPool;
 };

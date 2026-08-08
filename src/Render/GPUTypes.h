@@ -71,16 +71,6 @@ struct alignas(16) ObjectSSBO
 	//Future TODO: normal, material index, AABB
 };
 
-struct alignas(16) MaterialSSBO
-{
-	uint32_t texIndices[4];
-	uint32_t samplerIndices[4];
-	glm::vec4 baseColorFactor;
-	glm::vec3 ormFactor;
-	float normalScale;
-	glm::vec3 emissiveFactor;
-};
-
 struct alignas(16) SSAOKernelUBO
 {
 	glm::vec4 samples[64];
