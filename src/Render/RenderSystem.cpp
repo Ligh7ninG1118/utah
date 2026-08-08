@@ -81,7 +81,7 @@ void RenderSystem::GatherDrawList()
 		}
 	}
 
-	FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
+	//FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
 
 	_pRenderer->SetDrawList(std::move(_drawList));
 	_pRenderer->SetDebugAABBDrawList(std::move(_debugAABBDrawList));

@@ -4,6 +4,11 @@
 
 #include "_GlobalBindings.hlsli"
 
+static const float MIN_BIAS = 0.000005f;
+static const float MAX_BIAS = 0.0001f;
+static const float PCF_RADIUS = 0.001f;
+
+
 float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
 {
     float4 worldPosLightSpace = mul(shadowMap.lightViewProj[shadowIndex], float4(worldPos, 1.0f));
@@ -14,9 +19,7 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
     
     // Bias to solve shadow acne, depends on angle
     float NdotL = max(dot(N, L), 0.0f);
-    float minBias = 0.000005f;
-    float maxBias = 0.0001f;
-    float bias = max(maxBias * (1.0f - NdotL), minBias);
+    float bias = max(MAX_BIAS * (1.0f - NdotL), MIN_BIAS);
     
     uint width, height;
     shadowMaps[shadowIndex].GetDimensions(width, height);
@@ -33,7 +36,6 @@ float ShadowCalculation(uint shadowIndex, float3 worldPos, float3 N, float3 L)
             float shadow = shadowMaps[shadowIndex].SampleCmpLevelZero(shadowMapCmpSampler, tempUV, refDepth);
             sum += (1.0f - shadow);
         }
-
     }
     
     return sum / 16.0f;
@@ -47,9 +49,7 @@ float ShadowCubeMapCalculation(uint shadowIndex, float3 N, float3 L, float nearP
     float currentDepth = nearPlane / (nearPlane - farPlane) - (farPlane * nearPlane) / ((nearPlane - farPlane) * zE);
     
     float NdotL = max(dot(N, L), 0.0f);
-    float minBias = 0.000005f;
-    float maxBias = 0.0001f;
-    float bias = max(maxBias * (1.0f - NdotL), minBias);
+    float bias = max(MAX_BIAS * (1.0f - NdotL), MIN_BIAS);
 
     float refDepth = currentDepth + bias;
     
@@ -60,7 +60,7 @@ float ShadowCubeMapCalculation(uint shadowIndex, float3 N, float3 L, float nearP
         float3(1, 1, -1), float3(1, -1, -1), float3(-1, 1, -1), float3(-1, -1, -1)
     };
     
-    float radius = length(L) * 0.001f;
+    float radius = length(L) * PCF_RADIUS;
     float sum = 0.0f;
     
     for (uint i = 0; i < 8; i++)

@@ -10,6 +10,7 @@ struct alignas(16) PointLightGPU
 	float intensity;
 	glm::vec3 color;
 	float range;
+	int32_t shadowIndex = SHADOW_INDEX_NONE;
 };
 
 struct alignas(16) DirectionalLightGPU
@@ -18,6 +19,7 @@ struct alignas(16) DirectionalLightGPU
 	float intensity;
 	glm::vec3 color;
 	float range;
+	int32_t shadowIndex = SHADOW_INDEX_NONE;
 };
 
 struct alignas(16) SpotLightGPU
@@ -29,6 +31,7 @@ struct alignas(16) SpotLightGPU
 	glm::vec3 color;
 	float intensity;
 	float range;
+	int32_t shadowIndex = SHADOW_INDEX_NONE;
 };
 
 // UBO, SSBO, PushConstant

@@ -95,7 +95,7 @@ void VulkanRenderer::Initialize()
 	_textureManager.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManager.ImportTexture("textures/viking_room.png", "viking_room");
 
-	equirectHandle = _textureManager.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
+	equirectHandle = _textureManager.ImportTexture("textures/dikhololo_night_2k.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
 	cubemapRTHandle = _textureManager.CreateCubemapRenderTarget("cubemap_render_target", 2048);
 	convolutionHandle = _textureManager.CreateCubemapRenderTarget("convolution_render_target", 32);
 	prefilterHandle = _textureManager.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
@@ -324,6 +324,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	camUBO.farPlane = _mainCam._farPlane;
 	memcpy(frame.Mapped(GlobalBinding::CameraUBO), &camUBO, sizeof(camUBO));
 
+	AssignShadowSlots();
 	LightUBO lightUBO{};
 	lightUBO.dirLightNum = std::min(static_cast<uint32_t>(_dirLights.size()), MAX_DIR_LIGHTS);
 	std::memcpy(lightUBO.dirLights, _dirLights.data(),
@@ -393,77 +394,74 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	// Shadow Map
 	// Reverse Z, flip near and far plane
 
-	std::vector<glm::mat4> viewProjMatrices;
-	viewProjMatrices.reserve(_shadowMapImages.size() + _pointLights.size() * 6);
+	std::array<glm::mat4, SHADOW_MATRIX_COUNT> viewProj;
+	viewProj.fill(glm::mat4(1.0f));
 
-	for (size_t i = 0; i < _dirLights.size(); i++)
+	for (const auto& l : _dirLights) 
 	{
-		glm::mat4 orthoProj = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, _mainCam._farPlane, _mainCam._nearPlane);
-		glm::vec3 lightEye = glm::vec3(0.0f) - glm::normalize(_dirLights[i].direction) * 2.0f;
-		glm::mat4 view = glm::lookAt(lightEye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+		if (l.shadowIndex == SHADOW_INDEX_NONE) 
+			continue;
+		glm::mat4 proj = glm::ortho(-DIR_SHADOW_ORTHO_HALF_EXTENT, DIR_SHADOW_ORTHO_HALF_EXTENT,
+			-DIR_SHADOW_ORTHO_HALF_EXTENT, DIR_SHADOW_ORTHO_HALF_EXTENT,
+			_mainCam._farPlane, _mainCam._nearPlane);
+		glm::vec3 eye = -glm::normalize(l.direction) * DIR_SHADOW_EYE_DISTANCE;
 
-		viewProjMatrices.emplace_back(orthoProj * view);
+		viewProj[l.shadowIndex] = proj * glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0, 1, 0));
 	}
-
-	for (size_t i = 0; i < _spotLights.size(); i++)
+	for (const auto& l : _spotLights) 
 	{
-		float cosOuter = _spotLights[i].outerCutoff;          // GPU struct stores cos(radians(outerCutoff))
-		float fov = 2.0f * acosf(glm::clamp(cosOuter, -1.f, 1.f)) * 1.1f;  // full cone + slight pad
-		glm::mat4 proj = glm::perspective(fov, 1.0f, _mainCam._farPlane, _mainCam._nearPlane); // reverse-Z (near/far swapped), aspect 1
-
-		glm::vec3 eye = _spotLights[i].position;
-		glm::vec3 dir = glm::normalize(_spotLights[i].direction);
+		if (l.shadowIndex == SHADOW_INDEX_NONE)
+			continue;
+		float fov = 2.0f * acosf(glm::clamp(l.outerCutoff, -1.f, 1.f)) * SPOT_SHADOW_FOV_PAD;
+		glm::mat4 proj = glm::perspective(fov, 1.0f, _mainCam._farPlane, _mainCam._nearPlane);
+		glm::vec3 dir = glm::normalize(l.direction);
 		glm::vec3 up = (fabs(dir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
-		glm::mat4 view = glm::lookAt(eye, eye + dir, up);
 
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[l.shadowIndex] = proj * glm::lookAt(l.position, l.position + dir, up);
 	}
-
-	// pad unused 2d slots
-	viewProjMatrices.resize(std::max(viewProjMatrices.size(), _shadowMapImages.size()));
-
-	for (size_t i = 0; i < _pointLights.size(); i++)
+	for (const auto& l : _pointLights) 
 	{
+		if (l.shadowIndex == SHADOW_INDEX_NONE) continue;
+		uint32_t base = SHADOW_CUBE_MATRIX_BASE + l.shadowIndex * CUBE_FACE_COUNT;
 		glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, _mainCam._farPlane, _mainCam._nearPlane);
 
 		// +X
-		glm::vec3 eye = _pointLights[i].position;
+		glm::vec3 eye = l.position;
 		glm::vec3 dir = glm::vec3(1.0f, 0.0f, 0.0f);
 		glm::vec3 up = glm::vec3(0.0f, -1.0f, 0.0f);
 		glm::mat4 view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 0] = proj * view;
 
 		// -X
 		dir = glm::vec3(-1.0f, 0.0f, 0.0f);
 		view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 1] = proj * view;
 
 		// +Y
 		dir = glm::vec3(0.0f, 1.0f, 0.0f);
 		up = glm::vec3(0.0f, 0.0f, 1.0f);
 		view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 2] = proj * view;
 
 		// -Y
 		dir = glm::vec3(0.0f, -1.0f, 0.0f);
 		up = glm::vec3(0.0f, 0.0f, -1.0f);
 		view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 3] = proj * view;
 
 		// +Z
 		dir = glm::vec3(0.0f, 0.0f, 1.0f);
 		up = glm::vec3(0.0f, -1.0f, 0.0f);
 		view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 4] = proj * view;
 
 		// -Z
 		dir = glm::vec3(0.0f, 0.0f, -1.0f);
 		up = glm::vec3(0.0f, -1.0f, 0.0f);
 		view = glm::lookAt(eye, eye + dir, up);
-		viewProjMatrices.emplace_back(proj * view);
+		viewProj[base + 5] = proj * view;
 	}
-
-	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProjMatrices.data(), viewProjMatrices.size() * sizeof(glm::mat4));
+	memcpy(frame.Mapped(GlobalBinding::ShadowMapUBO), viewProj.data(), SHADOW_MATRIX_COUNT * sizeof(glm::mat4));
 
 	//TODO: No need to update this per frame probably
 	SceneIBLUBO sceneIBL
@@ -477,6 +475,19 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	};
 
 	memcpy(frame.Mapped(GlobalBinding::SceneIBLUBO), &sceneIBL, sizeof(sceneIBL));
+}
+
+void VulkanRenderer::AssignShadowSlots()
+{
+	int next2D = 0; // shared by dir + spot
+	for (auto& l : _dirLights)  
+		l.shadowIndex = (next2D < (int)SHADOW_2D_SLOT_COUNT) ? next2D++ : SHADOW_INDEX_NONE;
+	for (auto& l : _spotLights) 
+		l.shadowIndex = (next2D < (int)SHADOW_2D_SLOT_COUNT) ? next2D++ : SHADOW_INDEX_NONE;
+
+	int nextCube = 0;
+	for (auto& l : _pointLights)
+		l.shadowIndex = (nextCube < (int)SHADOW_CUBE_SLOT_COUNT) ? nextCube++ : SHADOW_INDEX_NONE;
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -607,13 +618,13 @@ void VulkanRenderer::InitBindingDescs()
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowMapUBO),
 										.type = vk::DescriptorType::eUniformBuffer,
 										.count = 1,
-										.bufferSize = sizeof(glm::mat4) * MAX_SHADOW_CASTER_LIGHTS,
+										.bufferSize = sizeof(glm::mat4) * SHADOW_MATRIX_COUNT,
 										.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-										.bindingFlags = {} });
+										.bindingFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 	// 7: Shadow map texture array
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowMaps),
 										.type = vk::DescriptorType::eSampledImage,
-										.count = MAX_SHADOW_CASTER_LIGHTS,
+										.count = SHADOW_2D_SLOT_COUNT,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 	// 8: Shadow map texture sampler
@@ -626,7 +637,7 @@ void VulkanRenderer::InitBindingDescs()
 	// 9: Shadow cube map texture
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowCubeMaps),
 										.type = vk::DescriptorType::eSampledImage,
-										.count = MAX_SHADOW_CASTER_POINT_LIGHTS,
+										.count = SHADOW_CUBE_SLOT_COUNT,
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 	// 10: hdr intermediate texture
@@ -1275,7 +1286,7 @@ uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& 
 		 .pDynamicState = &dynamicState,
 		 .layout = layout,
 		 .renderPass = nullptr},
-		{.viewMask = 0b00111111,
+		{.viewMask = CUBE_FACE_VIEWMASK,
 		 .colorAttachmentCount = 0,
 		 .pColorAttachmentFormats = nullptr,
 		 .depthAttachmentFormat = depthFormat} };
@@ -1441,7 +1452,7 @@ uint32_t VulkanRenderer::CreateEquirectToCubePipeline(const std::string& vertPat
 		 .pDynamicState = &dynamicState,
 		 .layout = layout,
 		 .renderPass = nullptr},
-		{.viewMask = 0b00111111,
+		{.viewMask = CUBE_FACE_VIEWMASK,
 		 .colorAttachmentCount = 1,
 		 .pColorAttachmentFormats = &hdrFormat,
 		 .depthAttachmentFormat = vk::Format::eUndefined} };
@@ -1830,7 +1841,7 @@ void VulkanRenderer::RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint
 	// shadow mapping pass 
 	{
 		// Transit shadow map images to attachment
-		size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+		size_t casterCount = std::min<size_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
 		for (size_t i = 0; i < casterCount; i++)
 		{
 			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
@@ -1860,7 +1871,7 @@ void VulkanRenderer::RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint
 		}
 
 
-		size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
+		size_t pointCasterCount = std::min<size_t>(_pointLights.size(), SHADOW_CUBE_SLOT_COUNT);
 		for (size_t i = 0; i < pointCasterCount; i++)
 		{
 			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
@@ -1992,7 +2003,7 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 	// Shadow mapping pass (2d pass for dir/spot, and cube pass for point)
 	{
 		// Transit shadow map images to attachment
-		size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+		size_t casterCount = std::min<size_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
 		for (size_t i = 0; i < casterCount; i++)
 		{
 			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
@@ -2022,7 +2033,7 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 		}
 
 
-		size_t pointCasterCount = std::min(_pointLights.size(), _shadowCubeMapImages.size());
+		size_t pointCasterCount = std::min<size_t>(_pointLights.size(), SHADOW_CUBE_SLOT_COUNT);
 		for (size_t i = 0; i < pointCasterCount; i++)
 		{
 			// Transition the depth image to DEPTH_ATTACHMENT_OPTIMAL
@@ -2223,11 +2234,11 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 
 void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 {
-	size_t casterCount = std::min(_dirLights.size() + _spotLights.size(), _shadowMapImages.size());
+	size_t active2D = std::min<uint32_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 
-	for (size_t j = 0; j < casterCount; j++)
+	for (size_t j = 0; j < active2D; j++)
 	{
 		// Depth attachment
 		vk::RenderingAttachmentInfo depthAttachment = { .imageView = _shadowMapImageViews[j],
@@ -2303,7 +2314,9 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 {
-	for (size_t j = 0; j < std::min(_pointLights.size(), _shadowCubeMapImages.size()); j++)
+	uint32_t activeCube = std::min<uint32_t>(_pointLights.size(), SHADOW_CUBE_SLOT_COUNT);
+
+	for (uint32_t j = 0; j < activeCube; j++)
 	{
 		// Reverse Z, cleared 0.0f instead
 		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
@@ -2317,7 +2330,7 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 
 		vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)},
 										   .layerCount = 6,
-										   .viewMask = 0b00111111,
+										   .viewMask = CUBE_FACE_VIEWMASK,
 										   .colorAttachmentCount = 0,
 										   .pColorAttachments = nullptr,
 										   .pDepthAttachment = &depthAttachment };
@@ -2364,7 +2377,7 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 				lastIB = job._ibHandle;
 			}
 
-			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(_shadowMapImages.size() + j * 6) };
+			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(SHADOW_CUBE_MATRIX_BASE + j * CUBE_FACE_COUNT) };
 			cmd.pushConstants<PerDrawPC>(
 				pso.layout,
 				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -3355,8 +3368,7 @@ void VulkanRenderer::CreateColorResources()
 
 void VulkanRenderer::CreateShadowMapResources()
 {
-	//TODO: Calculate shadow caster count
-	for (size_t i = 0; i < 3; i++)
+	for (size_t i = 0; i < SHADOW_2D_SLOT_COUNT; i++)
 	{
 		//TODO: shadow map resolution (vary based on setting & light type)
 		_shadowMapImages.emplace_back(CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1, vk::Format::eD32Sfloat,
@@ -3369,7 +3381,7 @@ void VulkanRenderer::CreateShadowMapResources()
 	// For viewing the shadow map in imgui window
 	//_shadowMapImGuiDS = ImGui_ImplVulkan_AddTexture(_textureManger.GetTextureSampler(0), *_shadowMapImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	for (size_t i = 0; i < 2; i++)
+	for (size_t i = 0; i < SHADOW_CUBE_SLOT_COUNT; i++)
 	{
 		_shadowCubeMapImages.emplace_back(
 			CreateImage(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION, 1, vk::SampleCountFlagBits::e1,

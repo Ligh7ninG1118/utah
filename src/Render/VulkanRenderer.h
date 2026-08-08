@@ -236,6 +236,7 @@ private:
 
 	// Per-Frame Update
 	void UpdateUniformBuffer(uint32_t currentImage);
+	void AssignShadowSlots();
 
 	// Window resize callback
 	void RegisterResizeCallback();

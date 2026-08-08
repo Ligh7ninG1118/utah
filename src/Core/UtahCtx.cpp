@@ -321,20 +321,20 @@ void UtahCtx::InitDemo2()
 	}*/
 
 	//// Floor Plane
-	//{
-	//	Entity e = _registry.CreateEntity();
+	{
+		Entity e = _registry.CreateEntity();
 
-	//	TransformComponent t;
-	//	RenderComponent r;
-	//	t._pos.y = -0.66f;
-	//	t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
+		TransformComponent t;
+		RenderComponent r;
+		t._pos.y = -0.66f;
+		t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
 
-	//	r._mesh = planeMesh;
-	//	r._material = whiteMat;
+		r._model = planeMesh;
+		r._material = whiteMat;
 
-	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
-	//}
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
 
 	// Point lights
 	{

@@ -6,8 +6,15 @@
 static const uint MAX_POINT_LIGHTS = 32;
 static const uint MAX_DIR_LIGHTS = 4;
 static const uint MAX_SPOT_LIGHTS = 32;
-static const uint MAX_SHADOW_CASTER_LIGHTS = 64;
 static const uint MAX_TEX_SLOTS = 8;
+
+static const uint SHADOW_2D_SLOT_COUNT = 4;   // dir + spot
+static const uint SHADOW_CUBE_SLOT_COUNT = 4;   // point
+static const uint CUBE_FACE_COUNT = 6;
+static const uint CUBE_FACE_VIEWMASK = 0x3F; // 0b00111111
+static const int SHADOW_INDEX_NONE = -1;
+static const uint SHADOW_CUBE_MATRIX_BASE = SHADOW_2D_SLOT_COUNT;
+static const uint SHADOW_MATRIX_COUNT = SHADOW_2D_SLOT_COUNT + SHADOW_CUBE_SLOT_COUNT * CUBE_FACE_COUNT;
 
 static const float PI = 3.1415926535f;
 
@@ -47,6 +54,7 @@ struct PointLight
     float intensity;
     float3 color;
     float range;
+    int shadowIndex;
 };
 
 struct DirectionalLight
@@ -55,6 +63,7 @@ struct DirectionalLight
     float intensity;
     float3 color;
     float range;
+    int shadowIndex;
 };
 
 struct SpotLight
@@ -66,6 +75,7 @@ struct SpotLight
     float3 color;
     float intensity;
     float range;
+    int shadowIndex;
 };
 
 struct LightUBO
@@ -81,7 +91,7 @@ struct LightUBO
 
 struct ShadowMapUBO
 {
-    float4x4 lightViewProj[MAX_SHADOW_CASTER_LIGHTS];
+    float4x4 lightViewProj[SHADOW_MATRIX_COUNT];
 };
 
 struct SceneIBLUBO

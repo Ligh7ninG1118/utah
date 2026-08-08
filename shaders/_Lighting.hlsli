@@ -59,21 +59,30 @@ float3 IntegrateLights(Surface s)
     for (uint i = 0; i < light.pointLightNum; i++)
     {
         LightSample ls = SamplePointLight(light.pointLights[i], s);
-        float shadow = ShadowCubeMapCalculation(i, s.N, s.worldPos - light.pointLights[i].position, cam.nearPlane, cam.farPlane);
+        int shadowIdx = light.pointLights[i].shadowIndex;
+        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
+            ShadowCubeMapCalculation(shadowIdx, s.N, s.worldPos - light.pointLights[i].position, cam.nearPlane, cam.farPlane)
+            : 0.0f;
         Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
     }
     
     for (uint i = 0; i < light.dirLightNum; i++)
     {
         LightSample ls = SampleDirLight(light.dirLights[i], s);
-        float shadow = ShadowCalculation(i, s.worldPos, s.N, ls.L);
+        int shadowIdx = light.dirLights[i].shadowIndex;
+        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
+            ShadowCalculation(shadowIdx, s.worldPos, s.N, ls.L)
+            : 0.0f;
         Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
     }
     
     for (uint i = 0; i < light.spotLightNum; i++)
     {
         LightSample ls = SampleSpotLight(light.spotLights[i], s);
-        float shadow = ShadowCalculation(light.dirLightNum + i, s.worldPos, s.N, ls.L);
+        int shadowIdx = light.spotLights[i].shadowIndex;
+        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
+            ShadowCalculation(shadowIdx, s.worldPos, s.N, ls.L)
+            : 0.0f;
         Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
     }
     
