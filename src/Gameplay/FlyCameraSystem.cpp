@@ -57,6 +57,14 @@ void FlyCameraSystem::HandleMouseInput(double xpos, double ypos)
 {
 	CameraComponent& cam = _pCameraPool->GetPool()[_mainCamIndex];
 
+	if (_firstTimeCapturingInput)
+	{
+		_lastMouseXPos = xpos;
+		_lastMouseYPos = ypos;
+		_firstTimeCapturingInput = false;
+		return;
+	}
+
 	double deltaHor = xpos - _lastMouseXPos;
 	double deltaVer = ypos - _lastMouseYPos;
 

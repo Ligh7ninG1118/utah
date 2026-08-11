@@ -20,6 +20,7 @@ private:
 
 	int _mainCamIndex = 0;
 
+	bool _firstTimeCapturingInput = true;
 	double _lastMouseXPos;
 	double _lastMouseYPos;
 	float _mouseSens = 0.1f;

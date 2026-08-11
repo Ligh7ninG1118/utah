@@ -620,7 +620,7 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.bufferSize = sizeof(glm::mat4) * SHADOW_MATRIX_COUNT,
 										.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-										.bindingFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind });
+										.bindingFlags = {} });
 	// 7: Shadow map texture array
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ShadowMaps),
 										.type = vk::DescriptorType::eSampledImage,
