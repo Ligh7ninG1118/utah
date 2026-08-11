@@ -9,7 +9,7 @@ struct PSInput
     [[vk::location(2)]] float2 uv : TEXCOORD0;
     [[vk::location(3)]] nointerpolation uint matIndex : MATINDEX;
     [[vk::location(4)]] float4 tangent : TANGENT;
-    
+    bool isFrontFace : SV_IsFrontFace;
 };
 
 struct PSOutput
@@ -26,18 +26,22 @@ PSOutput main(PSInput input)
     MatData mat = matBuf[input.matIndex];
     
     uint albedoIdx = mat.texIndices[0];
+    uint albedoSamplerIdx = mat.samplerIndices[0];
+    float4 albedo = textures[NonUniformResourceIndex(albedoIdx)].Sample(textureSamplers[albedoSamplerIdx], input.uv);
+    //TODO: this disables early z depth write, separate it into a different shader/pipeline?
+    // discard
+    clip(albedo.a - mat.params.g);
+    
     uint rmIdx = mat.texIndices[1];
     uint normalIdx = mat.texIndices[2];
     uint emissiveIdx = mat.texIndices[3];
     uint aoIdx = mat.texIndices[4];
     
-    uint albedoSamplerIdx = mat.samplerIndices[0];
     uint rmSamplerIdx = mat.samplerIndices[1];
     uint normalSamplerIdx = mat.samplerIndices[2];
     uint emissiveSamplerIdx = mat.samplerIndices[3];
     uint aoSamplerIdx = mat.samplerIndices[4];
     
-    float3 albedo = textures[NonUniformResourceIndex(albedoIdx)].Sample(textureSamplers[albedoSamplerIdx], input.uv).rgb;
     float3 rm = textures[NonUniformResourceIndex(rmIdx)].Sample(textureSamplers[rmSamplerIdx], input.uv).rgb;
     float3 normal = textures[NonUniformResourceIndex(normalIdx)].Sample(textureSamplers[normalSamplerIdx], input.uv).rgb;
     float3 emissive = textures[NonUniformResourceIndex(emissiveIdx)].Sample(textureSamplers[emissiveSamplerIdx], input.uv).rgb;
@@ -47,7 +51,7 @@ PSOutput main(PSInput input)
     float roughness = rm.g * mat.ormFactor.g;
     float metallic = rm.b * mat.ormFactor.b;
    
-    albedo *= mat.baseColorFactor.rgb;
+    albedo *= float4(mat.baseColorFactor.rgb, 1.0f);
     emissive *= mat.emissiveFactor.rgb;
 
     float3 N = normalize(input.normal);
@@ -60,9 +64,12 @@ PSOutput main(PSInput input)
         N = normalize(T * nTangent.x + B * nTangent.y + N * nTangent.z);
     }
     
+    if(!input.isFrontFace)
+        N = -N;
+    
     PSOutput output = (PSOutput) 0;
     output.Normal = float4(N, 1.0f);
-    output.Albedo = float4(albedo, 1.0f);
+    output.Albedo = albedo;
     output.ORM = float4(ao, roughness, metallic, 1.0f);
     output.Emissive = float4(emissive, 1.0f);
     

@@ -23,7 +23,7 @@ MaterialHandle MaterialManager::CreateUnlitMaterial(const std::string& name, uin
 
 MaterialHandle MaterialManager::CreatePBRMaterial(const std::string& name, uint32_t pipelineIndex, 
     const PBRTextureSet& textures, glm::vec4 baseColorFactor, glm::vec3 ormFactor, glm::vec3 emissiveFactor,
-    float normalScale, float alphaCutoff)
+    float normalScale, float alphaCutoff, bool isDoubleSided, AlphaMode alphaMode)
 {
     Material newMat{};
     newMat.type = MaterialType::PBR;
@@ -58,7 +58,12 @@ MaterialHandle MaterialManager::CreatePBRMaterial(const std::string& name, uint3
     newMat.baseColorFactor = baseColorFactor;
     newMat.ormFactor = glm::vec4(ormFactor, 0.0f);
     newMat.emissiveFactor = glm::vec4(emissiveFactor, 0.0f);
-    newMat.params = glm::vec4(normalScale, alphaCutoff, 0.0f, 0.0f);
+    newMat.params = glm::vec4(
+        normalScale, 
+        alphaMode == AlphaMode::Mask ? alphaCutoff : 0.0f,  // currently Mask and Opaque shares one shader; guards against bad alpha channel
+        0.0f, 0.0f); // reserved, empty fields
+    newMat.isDoubleSided = isDoubleSided;
+    newMat.alphaMode = alphaMode;
 
     _materials.push_back(newMat);
     return RegisterName(name);

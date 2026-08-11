@@ -33,7 +33,7 @@ void UtahCtx::Run()
 {
 	InitWindow();
 	InitSystems();
-	InitDemo2();
+	InitDemoSponza();
 	MainLoop();
 	CleanUp();
 }
@@ -367,6 +367,37 @@ void UtahCtx::InitDemo2()
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
 
+}
+
+void UtahCtx::InitDemoSponza()
+{
+	// Fly camera
+	{
+		Entity flyCam = _registry.CreateEntity();
+
+		CameraComponent c;
+		c._pos.y = 1.0f;
+		c._rot.y = -45.0f;
+
+		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
+	}
+
+	MeshManager* meshMgr = _pRenderSystem->GetMeshManager();
+	MaterialManager* matMgr = _pRenderSystem->GetMaterialManager();
+
+	ModelHandle sponzaMesh = meshMgr->GetHandle("sponza");
+	// Sponza
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+
+		RenderComponent r;
+		r._model = sponzaMesh;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
 }
 
 void UtahCtx::MainLoop()

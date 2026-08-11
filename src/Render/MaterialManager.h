@@ -8,14 +8,14 @@
 #include "RenderCommons.h"
 
 
-enum class MaterialType : uint32_t
+enum class MaterialType : uint8_t
 {
 	Unlit,
 	//BlinnPhong, // deprecated
 	PBR
 };
 
-enum class PBRSlot : uint32_t
+enum class PBRSlot : uint8_t
 {
 	BaseColor = 0,
 	MetalRough = 1,
@@ -26,9 +26,17 @@ enum class PBRSlot : uint32_t
 	Count
 };
 
-inline constexpr uint32_t ToIdx(PBRSlot s) { return static_cast<uint32_t>(s); }
+// Order matched with fastgltf::AlphaMode
+enum class AlphaMode : uint8_t
+{
+	Opaque = 0,
+	Mask,
+	Blend,
+};
 
-static constexpr uint32_t MAX_TEX_SLOTS = 8;
+inline constexpr uint8_t ToIdx(PBRSlot s) { return static_cast<uint8_t>(s); }
+
+static constexpr uint8_t MAX_TEX_SLOTS = 8;
 
 struct PBRTextureSet
 {
@@ -49,6 +57,9 @@ struct Material
 	glm::vec4 ormFactor; // r = ao strength, g = roughness, b = metallic
 	glm::vec4 emissiveFactor;
 	glm::vec4 params;  // r = normal scale, g = alpha cutoff, b/a = reserved
+	// Handled CPU side, no need to pass to GPU
+	bool isDoubleSided;
+	AlphaMode alphaMode;
 };
 
 struct MaterialGPU
@@ -69,6 +80,7 @@ public:
 	~MaterialManager();
 
 	const Material& GetMaterial(MaterialHandle handle) const { return _materials[handle.index]; }
+	const Material& GetMaterial(uint32_t index) const { return _materials[index]; }
 
 	MaterialHandle CreateUnlitMaterial(const std::string& name, uint32_t pipelineIndex, glm::vec4 color);
 
@@ -78,7 +90,9 @@ public:
 		glm::vec3 ormFactor = glm::vec3(1.0f),
 		glm::vec3 emissiveFactor = glm::vec3(0.0f), 
 		float normalScale = 1.0f,
-		float alphaCutoff = 0.5f);
+		float alphaCutoff = 0.5f,
+		bool isDoubleSided = false,
+		AlphaMode alphaMode = AlphaMode::Opaque);
 
 	std::vector<MaterialGPU> ConvertMaterialsToGPU();
 

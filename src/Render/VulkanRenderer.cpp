@@ -95,7 +95,8 @@ void VulkanRenderer::Initialize()
 	_textureManager.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManager.ImportTexture("textures/viking_room.png", "viking_room");
 
-	equirectHandle = _textureManager.ImportTexture("textures/dikhololo_night_2k.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
+	equirectHandle = _textureManager.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
+	//equirectHandle = _textureManager.ImportTexture("textures/dikhololo_night_2k.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
 	cubemapRTHandle = _textureManager.CreateCubemapRenderTarget("cubemap_render_target", 2048);
 	convolutionHandle = _textureManager.CreateCubemapRenderTarget("convolution_render_target", 32);
 	prefilterHandle = _textureManager.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
@@ -295,7 +296,6 @@ void VulkanRenderer::InitImGUI()
 	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
 	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
 	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
-
 
 	ImGui_ImplVulkan_Init(&initInfo);
 }
@@ -2430,7 +2430,6 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 		vk::Rect2D(
 			vk::Offset2D(0, 0),
 			swapChainExtent));
-	cmd.setCullMode(vk::CullModeFlagBits::eBack);
 	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 	cmd.setDepthTestEnable(vk::True);
 	cmd.setDepthWriteEnable(vk::True);
@@ -2458,6 +2457,15 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 		{
 			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
 			lastIB = job._ibHandle;
+		}
+		const Material& mat = _materialManager.GetMaterial(job._matIndex);
+		if (mat.isDoubleSided)
+		{
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		}
+		else
+		{
+			cmd.setCullMode(vk::CullModeFlagBits::eBack);
 		}
 
 		PerDrawPC pc{ static_cast<uint32_t>(i), job._matIndex };
@@ -2521,8 +2529,6 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 		vk::Rect2D(
 			vk::Offset2D(0, 0),
 			swapChainExtent));
-
-	cmd.setCullMode(vk::CullModeFlagBits::eBack);
 	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 	cmd.setDepthTestEnable(vk::True);
 	cmd.setDepthWriteEnable(vk::True);
@@ -2542,6 +2548,15 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 	for (size_t i = 0; i < _drawList.size(); i++)
 	{
 		const DrawJob& job = _drawList[i];
+		const Material& mat = _materialManager.GetMaterial(job._matIndex);
+		if (mat.isDoubleSided)
+		{
+			cmd.setCullMode(vk::CullModeFlagBits::eNone);
+		}
+		else
+		{
+			cmd.setCullMode(vk::CullModeFlagBits::eBack);
+		}
 		if (job._vbHandle != lastVB)
 		{
 			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });

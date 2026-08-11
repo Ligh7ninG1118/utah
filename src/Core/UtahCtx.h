@@ -40,6 +40,7 @@ private:
 	void InitSystems();
 	void InitDemo1();
 	void InitDemo2();
+	void InitDemoSponza();
 	void MainLoop();
 	void CleanUp();
 

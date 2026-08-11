@@ -432,7 +432,6 @@ private:
 
 	RenderPath _renderPath = RenderPath::Deferred;
 
-
 	void RecordSSAOPass(const vk::raii::CommandBuffer& cmd);
 	void RecordSSAOBlurPass(const vk::raii::CommandBuffer& cmd);
 	void CreateSSAOResource();

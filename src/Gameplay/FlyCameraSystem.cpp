@@ -67,14 +67,12 @@ void FlyCameraSystem::HandleMouseInput(double xpos, double ypos)
 
 	double deltaHor = xpos - _lastMouseXPos;
 	double deltaVer = ypos - _lastMouseYPos;
-
 	_lastMouseXPos = xpos;
 	_lastMouseYPos = ypos;
 
-
+	//TODO: Cap within +-360 deg
 	cam._rot.z += -deltaVer * _mouseSens;
 	cam._rot.y += deltaHor * _mouseSens;
-
 	cam._rot.z = glm::clamp(cam._rot.z, -89.0f, 89.0f);
 }
 	

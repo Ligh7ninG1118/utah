@@ -523,7 +523,10 @@ std::vector<MaterialHandle> MeshManager::LoadGLTFMaterials(const fastgltf::Asset
 			_pRenderer->GetPBRPipelineIndex(), set,
 			glm::make_vec4(gm.pbrData.baseColorFactor.data()), orm,
 			glm::make_vec3(gm.emissiveFactor.data()),
-			gm.normalTexture ? gm.normalTexture->scale : 1.0f, gm.alphaCutoff));
+			gm.normalTexture ? gm.normalTexture->scale : 1.0f, 
+			gm.alphaCutoff,
+			gm.doubleSided,
+			static_cast<AlphaMode>(gm.alphaMode))); //TODO: I imagine this is pretty bad pratice, add a guard or proper switch later
 	}
 	return out;
 }
