@@ -26,7 +26,6 @@ struct VSOutput
     [[vk::location(2)]] float2 uv                : TEXCOORD0;
     [[vk::location(3)]] nointerpolation uint matIndex : MATINDEX;
     [[vk::location(4)]] float4 tangent           : TANGENT;
-    
 };
 
 VSOutput main(VSInput input)

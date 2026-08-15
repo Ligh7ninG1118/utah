@@ -123,6 +123,23 @@ void VulkanRenderer::Initialize()
 	_materialManager.CreatePBRMaterial("viking_room", _pbrPipeline, { .baseColor = vikingRoomTex });
 	_materialManager.CreatePBRMaterial("pure_green", _pbrPipeline, {}, glm::vec4(0.2f, 0.9f, 0.2f, 1.0f)); // no tex green color
 	_materialManager.CreatePBRMaterial("pure_white", _pbrPipeline, {}, glm::vec4(0.9f, 0.9f, 0.9f, 1.0f)); // no tex white color
+	_materialManager.CreatePBRMaterial("red_glass", _pbrPipeline, {}, 
+		glm::vec4(1.0f, 0.0f, 0.0f, 0.4f),
+		glm::vec3(1.0f),
+		glm::vec3(0.0f),
+		1.0f,
+		0.5f,
+		true,
+		AlphaMode::Blend);
+	_materialManager.CreatePBRMaterial("blue_glass", _pbrPipeline, {},
+		glm::vec4(0.0f, 0.0f, 1.0f, 0.4f),
+		glm::vec3(1.0f),
+		glm::vec3(0.0f),
+		1.0f,
+		0.5f,
+		true,
+		AlphaMode::Blend);
+
 	_debugAABBMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_yellow", _debugWireframePipeline, glm::vec4(0.9f, 0.9f, 0.2f, 1.0f)); // Debug Wireframe, Yellow (For AABB)
 	_debugLightMaterial = _materialManager.CreateUnlitMaterial("debug_wireframe_blue", _debugWireframePipeline, glm::vec4(0.2f, 0.2f, 0.9f, 1.0f)); // Debug Wireframe, Blue (For point lights)
 
@@ -148,6 +165,11 @@ void VulkanRenderer::Initialize()
 void VulkanRenderer::SetDrawList(std::vector<struct DrawJob>&& list)
 {
 	_drawList = std::move(list);
+}
+
+void VulkanRenderer::SetBlendDrawList(std::vector<struct DrawJob>&& list)
+{
+	_transparentDrawList = std::move(list);
 }
 
 void VulkanRenderer::SetDebugAABBDrawList(std::vector<glm::mat4>&& list)
@@ -324,6 +346,8 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	camUBO.farPlane = _mainCam._farPlane;
 	memcpy(frame.Mapped(GlobalBinding::CameraUBO), &camUBO, sizeof(camUBO));
 
+	SortTransparentDrawJobs(camUBO.view);
+
 	AssignShadowSlots();
 	LightUBO lightUBO{};
 	lightUBO.dirLightNum = std::min(static_cast<uint32_t>(_dirLights.size()), MAX_DIR_LIGHTS);
@@ -350,8 +374,14 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	}
 
 	currentOffset += _drawList.size();
-	//TODO: Group this with a DebugDraw struct
 
+	for (size_t i = 0; i < _transparentDrawList.size(); ++i)
+	{
+		objects[i + currentOffset].model = _transparentDrawList[i]._model;
+	}
+
+	currentOffset += _transparentDrawList.size();
+	//TODO: Group this with a DebugDraw struct
 	// AABB Bounding boxes
 	for (size_t i = 0; i < _debugAABBDrawList.size(); ++i)
 	{
@@ -475,6 +505,19 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	};
 
 	memcpy(frame.Mapped(GlobalBinding::SceneIBLUBO), &sceneIBL, sizeof(sceneIBL));
+}
+
+void VulkanRenderer::SortTransparentDrawJobs(const glm::mat4& view)
+{
+	//TODO: not sure if this is correct, capture sign and comparison and all that
+	std::sort(_transparentDrawList.begin(), _transparentDrawList.end(),
+		[&](const DrawJob& lhs, const DrawJob& rhs)
+		{
+			const auto& lhsVS = view * lhs._model;
+			const auto& rhsVS = view * rhs._model;
+			// comparing view space z, the furthest ones at the front
+			return lhsVS[3][2] > rhsVS[3][2];
+		});
 }
 
 void VulkanRenderer::AssignShadowSlots()
@@ -1031,13 +1074,14 @@ void VulkanRenderer::CreatePipelines()
 
 	_ssaoPipelineIndex = CreateSSAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ssao_frag.spv", *_globalPipelineLayout);
 	_ssaoBlurPipelineIndex = CreateSSAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/ssao_blur_frag.spv", *_globalPipelineLayout);
+
+	_forwardTransparentPipelineIndex = CreateForwardTransparentPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/forward_pbr_transparent_frag.spv", *_globalPipelineLayout);
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
 	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
-
 
 	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
 		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
@@ -1778,6 +1822,106 @@ uint32_t VulkanRenderer::CreateSSAOPipeline(const std::string& vertPath, const s
 	return static_cast<uint32_t>(_pipelines.size() - 1);
 }
 
+uint32_t VulkanRenderer::CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	auto bindingDescription = Vertex::GetBindingDescription();
+	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+		.pVertexAttributeDescriptions = attributeDescriptions.data() };
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::True,
+														 .depthWriteEnable = vk::False,
+														 .depthCompareOp = vk::CompareOp::eLess,
+														 .depthBoundsTestEnable = vk::False,
+														 .stencilTestEnable = vk::False };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+		vk::DynamicState::eCullMode,
+		vk::DynamicState::eFrontFace,
+		vk::DynamicState::eDepthTestEnable,
+		vk::DynamicState::eDepthWriteEnable,
+		vk::DynamicState::eDepthCompareOp };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = 
+		vk::ColorComponentFlagBits::eR | 
+		vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | 
+		vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::True;
+	colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+	colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+	colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
+	colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+	colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+	colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	vk::Format depthFormat = FindDepthFormat();
+	vk::Format hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &hdrFormat,
+		 .depthAttachmentFormat = depthFormat} };
+
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
 void VulkanRenderer::CreateCommandPool()
 {
 	vk::CommandPoolCreateInfo poolInfo{ .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -2156,7 +2300,7 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eColor);
 	}
 
-	// Lighting, skybox, debug draws, and stuff
+	// Lighting, skybox, debug draws, and transparency
 	{
 		// Render onto hdr image
 		TransitionImageLayout(_hdrColorImage.image,
@@ -2193,6 +2337,18 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eColor);
 
 		RecordDebugDrawPass(cmd);
+
+		// WAW + RAW barrier
+		TransitionImageLayout(_hdrColorImage.image,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite,
+			vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			vk::ImageAspectFlagBits::eColor);
+
+		RecordForwardTransparentPass(cmd);
 
 		// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
 		TransitionImageLayout(_hdrColorImage.image,
@@ -2469,6 +2625,82 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 		}
 
 		PerDrawPC pc{ static_cast<uint32_t>(i), job._matIndex };
+		cmd.pushConstants<PerDrawPC>(
+			pso.layout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			0,
+			pc
+		);
+
+		cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
+	}
+	cmd.endRendering();
+}
+
+void VulkanRenderer::RecordForwardTransparentPass(const vk::raii::CommandBuffer& cmd)
+{
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
+												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
+												   .storeOp = vk::AttachmentStoreOp::eStore};
+	// Depth attachment
+	vk::RenderingAttachmentInfo depthAttachment = { .imageView = _depthImageView,
+												   .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+												   .loadOp = vk::AttachmentLoadOp::eLoad,
+												   .storeOp = vk::AttachmentStoreOp::eNone};
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+									   .layerCount = 1,
+									   .colorAttachmentCount = 1,
+									   .pColorAttachments = &colorAttachment,
+									   .pDepthAttachment = &depthAttachment };
+
+	cmd.beginRendering(renderingInfo);
+	const PipelineEntry& pso = _pipelines[_forwardTransparentPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0,
+		vk::Viewport(
+			0.0f, 0.0f,
+			static_cast<float>(swapChainExtent.width),
+			static_cast<float>(swapChainExtent.height),
+			0.0f, 1.0f));
+	cmd.setScissor(0,
+		vk::Rect2D(
+			vk::Offset2D(0, 0),
+			swapChainExtent));
+	cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+	cmd.setDepthTestEnable(vk::True);
+	cmd.setDepthWriteEnable(vk::False);
+	// Reverse Z, use Greater instead
+	cmd.setDepthCompareOp(vk::CompareOp::eGreaterOrEqual);
+	// Since it's an exclusive pass for transparent objects, assume all are double sided
+	cmd.setCullMode(vk::CullModeFlagBits::eNone);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		pso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+
+	// Avoid rebind if buffers are the same
+	uint32_t lastVB = INVALID_HANDLE;
+	uint32_t lastIB = INVALID_HANDLE;
+	for (size_t i = 0; i < _transparentDrawList.size(); i++)
+	{
+		const DrawJob& job = _transparentDrawList[i];
+		if (job._vbHandle != lastVB)
+		{
+			cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+			lastVB = job._vbHandle;
+		}
+		if (job._ibHandle != lastIB)
+		{
+			cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+			lastIB = job._ibHandle;
+		}
+
+		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size()), job._matIndex };
 		cmd.pushConstants<PerDrawPC>(
 			pso.layout,
 			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -2765,7 +2997,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 		// And topology removed from dynamic states
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size()), _debugAABBMaterial.index };
+		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size() + _transparentDrawList.size()), _debugAABBMaterial.index };
 
 		const DebugMesh& mesh = _meshManager.GetDebugMesh(DebugMeshType::AABB);
 
@@ -2821,7 +3053,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 		// And topology removed from dynamic states
 		//cmd.setPrimitiveTopology(vk::PrimitiveTopology::eTriangleList);
 
-		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size() + _debugAABBDrawList.size()), _debugLightMaterial.index };
+		PerDrawPC pc{ static_cast<uint32_t>(i + _drawList.size() + _transparentDrawList.size() + _debugAABBDrawList.size()), _debugLightMaterial.index };
 
 		// For point lights, use icosphere; pyramid for spot/directional
 		DebugMeshType meshType = (i >= _dirLights.size() + _spotLights.size()) ? DebugMeshType::Icosphere : DebugMeshType::Pyramid;

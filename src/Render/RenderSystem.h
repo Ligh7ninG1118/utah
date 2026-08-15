@@ -32,11 +32,9 @@ public:
 
 private:
 	void GatherDrawList();
-
 	void GatherLights();
 
 	void FrustumCulling(std::vector<DrawJob>& drawList, const std::vector<Plane>& frustum);
-
 	std::vector<Plane> GenerateFrustum(const CameraComponent& cam) const;
 
 	VulkanRenderer* _pRenderer;
@@ -49,5 +47,6 @@ private:
 	ComponentPool<SpotLightCPU>* _pSpotLightPool;
 
 	std::vector<DrawJob> _drawList;
+	std::vector<DrawJob> _drawListBlend;
 	std::vector<glm::mat4> _debugAABBDrawList;
 };

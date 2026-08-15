@@ -33,7 +33,7 @@ void UtahCtx::Run()
 {
 	InitWindow();
 	InitSystems();
-	InitDemoSponza();
+	InitDemo2();
 	MainLoop();
 	CleanUp();
 }
@@ -262,9 +262,9 @@ void UtahCtx::InitDemo2()
 		CameraComponent c;
 		c._pos.x = -0.4;
 		c._pos.y = 0.1f;
-		c._pos.z = 2.0f;
-		c._rot.y = -75.0f;
-		c._rot.z = -10.0f;
+		c._pos.z = 9.0f;
+		c._rot.y = -90.0f;
+		c._rot.z = 0.0f;
 
 		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 	}
@@ -277,6 +277,8 @@ void UtahCtx::InitDemo2()
 
 	ModelHandle planeMesh = meshMgr->GetHandle("plane");
 	MaterialHandle whiteMat = matMgr->GetHandle("pure_white");
+	MaterialHandle redGlass = matMgr->GetHandle("red_glass");
+	MaterialHandle blueGlass = matMgr->GetHandle("blue_glass");
 
 	ModelHandle sponzaMesh = meshMgr->GetHandle("sponza");
 
@@ -298,11 +300,48 @@ void UtahCtx::InitDemo2()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.x = 3.0f;
-		t._scale = glm::vec3(2.0f);
+		t._pos.y = -1.0f;
+		t._pos.z = 5.0f;
+		t._scale = glm::vec3(3.0f);
 
 		RenderComponent r;
 		r._model = bustModel;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+	// Red Glass
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.x = -0.25f;
+		t._pos.y = -0.25f;
+		t._pos.z = 3.0f;
+		t._scale = glm::vec3(2.0f);
+		t._rot.x = 90.0f;
+
+		RenderComponent r;
+		r._model = planeMesh;
+		r._material = redGlass;
+
+		_registry.AddComponent<TransformComponent>(e, std::move(t));
+		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+	// Blue Glass
+	{
+		Entity e = _registry.CreateEntity();
+
+		TransformComponent t;
+		t._pos.x = 0.25f;
+		t._pos.y = 0.25f;
+		t._pos.z = 3.5f;
+		t._scale = glm::vec3(2.0f);
+		t._rot.x = 90.0f;
+
+		RenderComponent r;
+		r._model = planeMesh;
+		r._material = blueGlass;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
@@ -321,7 +360,7 @@ void UtahCtx::InitDemo2()
 	}*/
 
 	//// Floor Plane
-	{
+	/*{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
@@ -334,7 +373,7 @@ void UtahCtx::InitDemo2()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
+	}*/
 
 	// Point lights
 	{

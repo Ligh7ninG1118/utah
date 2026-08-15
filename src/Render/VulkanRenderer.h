@@ -180,11 +180,9 @@ public:
 	void Initialize();
 
 	void SetDrawList(std::vector<struct DrawJob>&& list);
-
+	void SetBlendDrawList(std::vector<struct DrawJob>&& list);
 	void SetDebugAABBDrawList(std::vector<glm::mat4>&& list);
-
 	void SetCameraComponent(const CameraComponent& camera);
-
 	void SetLights(std::vector<PointLightGPU>&& pointLights, std::vector<DirectionalLightGPU>&& dirLights, 
 		std::vector<SpotLightGPU>&& spotLights);
 
@@ -236,6 +234,7 @@ private:
 
 	// Per-Frame Update
 	void UpdateUniformBuffer(uint32_t currentImage);
+	void SortTransparentDrawJobs(const glm::mat4& view);
 	void AssignShadowSlots();
 
 	// Window resize callback
@@ -268,6 +267,7 @@ private:
 	uint32_t CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateSSAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
 	void CreateCommandPool();
@@ -281,13 +281,13 @@ private:
 	void RecordShadowMapPass(const vk::raii::CommandBuffer& cmd);
 	void RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd);
 	void RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd);
+	void RecordForwardTransparentPass(const vk::raii::CommandBuffer& cmd);
 	void RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cmd);
 	void RecordDeferredLightingPass(const vk::raii::CommandBuffer& cmd);
 	void RecordSkyboxPass(const vk::raii::CommandBuffer& cmd);
 	void RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd);
 	void RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
 	void RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
-
 
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -351,6 +351,7 @@ private:
 	uint32_t _deferredLightingPipelineIndex = INVALID_HANDLE;
 	uint32_t _ssaoPipelineIndex = INVALID_HANDLE;
 	uint32_t _ssaoBlurPipelineIndex = INVALID_HANDLE;
+	uint32_t _forwardTransparentPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
@@ -395,6 +396,7 @@ private:
 	bool _framebufferResized = false;
 
 	std::vector<struct DrawJob> _drawList;
+	std::vector<struct DrawJob> _transparentDrawList;
 	std::vector<glm::mat4> _debugAABBDrawList;
 
 	struct CameraComponent _mainCam;

@@ -50,9 +50,12 @@ void RenderSystem::GatherDrawList()
 	auto& renderPool = _pRenderPool->GetPool();
 	auto& renderCompToEntity = _pRenderPool->GetEntities();
 	auto* meshManager = _pRenderer->GetMeshManager();
+	auto* matManager = _pRenderer->GetMaterialManager();
 
 	_drawList.clear();
 	_drawList.reserve(512);
+	_drawListBlend.clear();
+	_drawListBlend.reserve(32);
 
 	for (size_t i = 0; i < renderPool.size(); i++)
 	{
@@ -75,15 +78,21 @@ void RenderSystem::GatherDrawList()
 			job._firstIndex = prim.firstIndex;
 			job._indexCount = prim.indexCount;
 			job._vertexOffset = prim.vertexOffset;
+			// Use RenderComp's override material if it's valid, or else use primitive's own material
 			job._matIndex = rc._material.IsValid() ? rc._material.index : prim.matHandle.index;
 
-			_drawList.push_back(job);
+			// transparent/blend job into different list
+			if (matManager->GetMaterial(job._matIndex).alphaMode == AlphaMode::Blend)
+				_drawListBlend.push_back(job);
+			else
+				_drawList.push_back(job);
 		}
 	}
 
 	//FrustumCulling(_drawList, GenerateFrustum(_pCameraPool->GetPool()[0]));
 
 	_pRenderer->SetDrawList(std::move(_drawList));
+	_pRenderer->SetBlendDrawList(std::move(_drawListBlend));
 	_pRenderer->SetDebugAABBDrawList(std::move(_debugAABBDrawList));
 }
 
