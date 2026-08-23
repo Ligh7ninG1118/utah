@@ -9,7 +9,7 @@ struct PSInput
 float main(PSInput input) : SV_TARGET
 {
     uint2 ssaoDim;
-    ssao[SSAO_RAW].GetDimensions(ssaoDim.x, ssaoDim.y);
+    ao[AO_RAW].GetDimensions(ssaoDim.x, ssaoDim.y);
     
     int2 center = int2(input.position.xy);
     int2 maxCoord = int2(ssaoDim) - 1;
@@ -21,7 +21,7 @@ float main(PSInput input) : SV_TARGET
         for (int y = -2; y < 2; ++y)
         {
             int2 tap = clamp(center + int2(x, y), int2(0, 0), maxCoord);
-            result += ssao[SSAO_RAW].Load(int3(tap, 0)).r;
+            result += ao[AO_RAW].Load(int3(tap, 0)).r;
         }
     }
     return result / (4.0f * 4.0f);

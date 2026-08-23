@@ -34,7 +34,7 @@ float4 main(PSInput input) : SV_TARGET
     s.V = normalize(cam.eyePos - worldPos);
     s.albedo = albedo;
     s.emissive = emissive;
-    s.ao = min(orm.r, ssao[SSAO_BLURRED].Load(pixel).r);
+    s.ao = min(orm.r, ao[AO_BLURRED].Load(pixel).r);
     s.roughness = orm.g;
     s.metallic = orm.b;
     // Assume base reflectivity to be at 0.04

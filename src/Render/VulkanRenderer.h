@@ -99,7 +99,7 @@ enum class GlobalBinding : uint32_t
 	SceneIBLUBO = 12,
 	GBufferColorTargets = 13,
 	DepthTarget = 14,
-	SSAO = 15,
+	AO = 15,
 	SSAONoise = 16,
 	SSAOKernelUBO = 17,
 	Count
@@ -123,7 +123,16 @@ enum class RenderPath : uint8_t
 	Count
 };
 
-enum class SSAOTargetType : uint8_t
+enum class AOMethod : uint8_t
+{
+	Off = 0,
+	SSAO,
+	GTAO,
+
+	Count
+};
+
+enum class AOTargetType : uint8_t
 {
 	RAW = 0,
 	BLURRED,
@@ -132,7 +141,7 @@ enum class SSAOTargetType : uint8_t
 };
 
 inline constexpr uint32_t ToIdx(GlobalBinding b) { return static_cast<uint32_t>(b); }
-inline constexpr uint32_t ToIdx(SSAOTargetType t) { return static_cast<uint32_t>(t); }
+inline constexpr uint32_t ToIdx(AOTargetType t) { return static_cast<uint32_t>(t); }
 
 struct BindingDesc
 {
@@ -266,7 +275,7 @@ private:
 	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredGBufferPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
-	uint32_t CreateSSAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Command Pool & Buffers
@@ -350,7 +359,8 @@ private:
 	uint32_t _deferredGBufferPipelineIndex = INVALID_HANDLE;
 	uint32_t _deferredLightingPipelineIndex = INVALID_HANDLE;
 	uint32_t _ssaoPipelineIndex = INVALID_HANDLE;
-	uint32_t _ssaoBlurPipelineIndex = INVALID_HANDLE;
+	uint32_t _aoBlurPipelineIndex = INVALID_HANDLE;
+	uint32_t _gtaoPipelineIndex = INVALID_HANDLE;
 	uint32_t _forwardTransparentPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
@@ -434,14 +444,16 @@ private:
 
 	RenderPath _renderPath = RenderPath::Deferred;
 
-	void RecordSSAOPass(const vk::raii::CommandBuffer& cmd);
-	void RecordSSAOBlurPass(const vk::raii::CommandBuffer& cmd);
-	void CreateSSAOResource();
+	AOMethod _aoMethod = AOMethod::GTAO;
+
+	void RecordAOPass(const vk::raii::CommandBuffer& cmd);
+	void RecordAOBlurPass(const vk::raii::CommandBuffer& cmd);
+	void CreateAOResource();
 	void CreateSSAONoise();
 	void CreateSSAOKernel();
 
-	std::vector<AllocatedImage> _ssaoImages;
-	std::vector<vk::raii::ImageView> _ssaoImageViews;
+	std::vector<AllocatedImage> _aoImages;
+	std::vector<vk::raii::ImageView> _aoImageViews;
 
 	AllocatedImage _ssaoNoiseImage;
 	vk::raii::ImageView _ssaoNoiseImageView = nullptr;
