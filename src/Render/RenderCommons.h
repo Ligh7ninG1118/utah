@@ -29,6 +29,10 @@ constexpr float DIR_SHADOW_ORTHO_HALF_EXTENT = 20.0f;
 constexpr float DIR_SHADOW_EYE_DISTANCE = 2.0f;
 constexpr float SPOT_SHADOW_FOV_PAD = 1.1f;
 
+constexpr uint32_t CLUSTER_GRID_X = 16; // independent of resolution
+constexpr uint32_t CLUSTER_GRID_Y = 9;
+constexpr uint32_t CLUSTER_GRID_Z = 24;
+constexpr uint32_t CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z; // 3456
 
 constexpr uint32_t INVALID_HANDLE = 0xFFFFFFFF;
 

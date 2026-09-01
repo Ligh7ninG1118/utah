@@ -32,6 +32,9 @@
 [[vk::binding(16, 0)]] Texture2D ssaoNoise;
 [[vk::binding(17, 0)]] ConstantBuffer<SSAOKernelUBO> ssaoKernel;
 
+[[vk::binding(18, 0)]] RWStructuredBuffer<uint> clusterFlags;
+[[vk::binding(19, 0)]] RWStructuredBuffer<ClusterList> clusterList; //[0] only
+
 // PushConstant, for now, is defined in individual shaders based on usage
 
 // Stay in sync with TextureManager::SamplerType

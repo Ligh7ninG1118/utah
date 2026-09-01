@@ -102,6 +102,8 @@ enum class GlobalBinding : uint32_t
 	AO = 15,
 	SSAONoise = 16,
 	SSAOKernelUBO = 17,
+	ClusterFlagsSSBO = 18,
+	ClusterListSSBO = 19,
 	Count
 };
 
@@ -278,6 +280,9 @@ private:
 	uint32_t CreateAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
+	// Compute Pipeline
+	uint32_t CreateComputePipeline(const std::string& compPath, vk::PipelineLayout layout);
+
 	// Command Pool & Buffers
 	void CreateCommandPool();
 	void CreateCommandBuffers();
@@ -297,6 +302,8 @@ private:
 	void RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd);
 	void RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
 	void RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
+	
+	void RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd);
 
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -362,6 +369,8 @@ private:
 	uint32_t _aoBlurPipelineIndex = INVALID_HANDLE;
 	uint32_t _gtaoPipelineIndex = INVALID_HANDLE;
 	uint32_t _forwardTransparentPipelineIndex = INVALID_HANDLE;
+	uint32_t _clusterBuildPipelineIndex = INVALID_HANDLE;
+	uint32_t _clusterCompactPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
@@ -457,4 +466,6 @@ private:
 
 	AllocatedImage _ssaoNoiseImage;
 	vk::raii::ImageView _ssaoNoiseImageView = nullptr;
+
+	uint32_t _lastClusterUniqueCount = 0;
 };

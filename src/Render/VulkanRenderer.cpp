@@ -348,6 +348,16 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	SortTransparentDrawJobs(camUBO.view);
 
+	// Read back last result from this slot (2 frames old), then reset
+	auto* clusterListMapped = static_cast<ClusterListGPU*>(frame.Mapped(GlobalBinding::ClusterListSSBO));
+	_lastClusterUniqueCount = clusterListMapped->uniqueCount;
+	clusterListMapped->uniqueCount = 0;
+	memset(frame.Mapped(GlobalBinding::ClusterFlagsSSBO), 0, sizeof(uint32_t) * CLUSTER_COUNT);
+
+	ImGui::Begin("Telemetry");
+	ImGui::Text("Active Clusters: %u / %u", _lastClusterUniqueCount, CLUSTER_COUNT);
+	ImGui::End();
+
 	AssignShadowSlots();
 	LightUBO lightUBO{};
 	lightUBO.dirLightNum = std::min(static_cast<uint32_t>(_dirLights.size()), MAX_DIR_LIGHTS);
@@ -622,7 +632,7 @@ void VulkanRenderer::InitBindingDescs()
 										.type = vk::DescriptorType::eUniformBuffer,
 										.count = 1,
 										.bufferSize = sizeof(CameraUBO),
-										.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+										.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute,
 										.bindingFlags = {} });
 	// 1: Light UBO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::LightUBO),
@@ -712,7 +722,7 @@ void VulkanRenderer::InitBindingDescs()
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::DepthTarget),
 										.type = vk::DescriptorType::eSampledImage,
 										.count = 1,
-										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.stageFlags = vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute,
 										.bindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind });
 	// 15: AO
 	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::AO),
@@ -732,6 +742,20 @@ void VulkanRenderer::InitBindingDescs()
 										.count = 1,
 										.bufferSize = sizeof(SSAOKernelUBO),
 										.stageFlags = vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
+	// 18: Cluster Flags
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ClusterFlagsSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(uint32_t) * CLUSTER_COUNT,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.bindingFlags = { } });
+	// 19: Cluster List
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ClusterListSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(ClusterListGPU),
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
 										.bindingFlags = { } });
 }
 
@@ -1077,6 +1101,10 @@ void VulkanRenderer::CreatePipelines()
 	_gtaoPipelineIndex = CreateAOPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/gtao_frag.spv", *_globalPipelineLayout);
 
 	_forwardTransparentPipelineIndex = CreateForwardTransparentPipeline("shaderBin/static_mesh_vert.spv", "shaderBin/forward_pbr_transparent_frag.spv", *_globalPipelineLayout);
+
+	_clusterBuildPipelineIndex = CreateComputePipeline("shaderBin/cluster_build_comp.spv", *_globalPipelineLayout);
+	_clusterCompactPipelineIndex = CreateComputePipeline("shaderBin/cluster_compact_comp.spv", *_globalPipelineLayout);
+
 }
 
 uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout, PipelineType type)
@@ -1923,6 +1951,26 @@ uint32_t VulkanRenderer::CreateForwardTransparentPipeline(const std::string& ver
 	return static_cast<uint32_t>(_pipelines.size() - 1);
 }
 
+uint32_t VulkanRenderer::CreateComputePipeline(const std::string& compPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule compModule = CreateShaderModule(ReadFile(compPath));
+
+	vk::PipelineShaderStageCreateInfo compShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eCompute, .module = compModule, .pName = "main" };
+
+	vk::ComputePipelineCreateInfo pipelineCreateInfo = {
+		.stage = compShaderStageInfo,
+		.layout = layout
+	};
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfo),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
 void VulkanRenderer::CreateCommandPool()
 {
 	vk::CommandPoolCreateInfo poolInfo{ .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -2254,9 +2302,12 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
 			vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests | vk::PipelineStageFlagBits2::eComputeShader,
 			vk::ImageAspectFlagBits::eDepth);
 	}
+
+	// Cluster, build and compact clusters
+	RecordClusterBuildPass(cmd);
 
 	// AO Pass (w/ blur)
 	{
@@ -3151,6 +3202,34 @@ void VulkanRenderer::RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
 
 	cmd.endRendering();
+}
+
+void VulkanRenderer::RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd)
+{
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	const PipelineEntry& buildPso = _pipelines[_clusterBuildPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *buildPso.pipeline);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eCompute,
+		buildPso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+	cmd.dispatch((swapChainExtent.width + 15) / 16, (swapChainExtent.height + 15) / 16, 1);
+
+	// flag writes (pass 1) -> flag reads + count RMW (pass 2)
+	vk::MemoryBarrier2 memBarrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite };
+	cmd.pipelineBarrier2(vk::DependencyInfo{ .memoryBarrierCount = 1, .pMemoryBarriers = &memBarrier });
+
+	const PipelineEntry& compactPso = _pipelines[_clusterCompactPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compactPso.pipeline);
+
+	cmd.dispatch((CLUSTER_COUNT + 255) / 256, 1, 1);
 }
 
 std::unique_ptr<vk::raii::CommandBuffer> VulkanRenderer::BeginSingleTimeCommands()

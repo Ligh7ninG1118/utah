@@ -16,6 +16,12 @@ static const int SHADOW_INDEX_NONE = -1;
 static const uint SHADOW_CUBE_MATRIX_BASE = SHADOW_2D_SLOT_COUNT;
 static const uint SHADOW_MATRIX_COUNT = SHADOW_2D_SLOT_COUNT + SHADOW_CUBE_SLOT_COUNT * CUBE_FACE_COUNT;
 
+static const uint CLUSTER_GRID_X = 16; // independent of resolution
+static const uint CLUSTER_GRID_Y = 9;
+static const uint CLUSTER_GRID_Z = 24;
+static const uint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z; // 3456
+static const uint INVALID_CLUSTER_KEY = 0xFFFFFFFF;
+
 static const float PI = 3.1415926535f;
 
 
@@ -107,6 +113,12 @@ struct SceneIBLUBO
 struct SSAOKernelUBO
 {
     float3 samples[64];
+};
+
+struct ClusterList
+{
+    uint uniqueCount; uint pad0; uint pad1; uint pad2;
+    uint list[CLUSTER_COUNT];
 };
 
 #endif

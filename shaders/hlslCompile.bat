@@ -20,6 +20,12 @@ for %%F in ("%SCRIPT_DIR%*_frag.hlsl") do (
     echo   %%~nxF
     "%DXC%" %DXC_FLAGS% -T ps_6_7 "%%F" -Fo "%OUT_DIR%\%%~nF.spv"
 )
+
+echo Compiling *_compute.hlsl (compute shaders)...
+for %%F in ("%SCRIPT_DIR%*_comp.hlsl") do (
+    echo   %%~nxF
+    "%DXC%" %DXC_FLAGS% -T cs_6_7 "%%F" -Fo "%OUT_DIR%\%%~nF.spv"
+)
  
 echo.
 echo Done.

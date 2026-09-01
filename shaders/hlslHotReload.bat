@@ -19,5 +19,11 @@ for %%F in ("%SCRIPT_DIR%*_frag.hlsl") do (
     for %%D in (%OUT_DIRS%) do "%DXC%" %DXC_FLAGS% -T ps_6_7 "%%F" -Fo "%%D\%%~nF.spv"
 )
 
+echo Compiling *_comp.hlsl...
+for %%F in ("%SCRIPT_DIR%*_comp.hlsl") do (
+    echo   %%~nxF
+    for %%D in (%OUT_DIRS%) do "%DXC%" %DXC_FLAGS% -T cs_6_7 "%%F" -Fo "%%D\%%~nF.spv"
+)
+
 echo.
 echo Done.

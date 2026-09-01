@@ -79,6 +79,13 @@ struct alignas(16) SSAOKernelUBO
 	glm::vec4 samples[64];
 };
 
+struct alignas(16) ClusterListGPU
+{
+	uint32_t uniqueCount;
+	uint32_t pad[3];
+	uint32_t list[CLUSTER_COUNT];
+};
+
 struct PerDrawPC
 {
 	uint32_t objIndex;

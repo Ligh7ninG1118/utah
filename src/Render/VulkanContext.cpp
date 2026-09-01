@@ -207,10 +207,11 @@ void VulkanContext::CreateLogicalDevice()
 {
 	std::vector<vk::QueueFamilyProperties> queueFamilyProperties = _physicalDevice.getQueueFamilyProperties();
 
-	// get the first index into queueFamilyProperties which supports both graphics and present
+	// get the first index into queueFamilyProperties which supports both graphics and present (also compute)
 	for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); qfpIndex++)
 	{
 		if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
+			(queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eCompute) &&
 			_physicalDevice.getSurfaceSupportKHR(qfpIndex, *_surface))
 		{
 			// found a queue family that supports both graphics and present
