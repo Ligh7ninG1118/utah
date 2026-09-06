@@ -104,6 +104,12 @@ enum class GlobalBinding : uint32_t
 	SSAOKernelUBO = 17,
 	ClusterFlagsSSBO = 18,
 	ClusterListSSBO = 19,
+	PointLightSSBO = 20,
+	BVHNodeSSBO = 21,
+	BVHLightSphereSSBO = 22,
+	BVHLightIndexSSBO = 23,
+	ClusterLightGridSSBO = 24,
+	ClusterLightListSSBO = 25,
 	Count
 };
 
@@ -247,6 +253,7 @@ private:
 	void UpdateUniformBuffer(uint32_t currentImage);
 	void SortTransparentDrawJobs(const glm::mat4& view);
 	void AssignShadowSlots();
+	void BuildLightBVH(const glm::mat4& view, FrameData& frame);
 
 	// Window resize callback
 	void RegisterResizeCallback();
@@ -279,6 +286,7 @@ private:
 	uint32_t CreateDeferredLightingPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateAOPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
+	uint32_t CreateClusterHeatmapPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 
 	// Compute Pipeline
 	uint32_t CreateComputePipeline(const std::string& compPath, vk::PipelineLayout layout);
@@ -304,6 +312,8 @@ private:
 	void RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex);
 	
 	void RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd);
+	void RecordLightAssignmentPass(const vk::raii::CommandBuffer& cmd);
+	void RecordClusterHeatmapPass(const vk::raii::CommandBuffer& cmd);
 
 	std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands();
 	void EndSingleTimeCommands(const vk::raii::CommandBuffer& commandBuffer);
@@ -371,6 +381,8 @@ private:
 	uint32_t _forwardTransparentPipelineIndex = INVALID_HANDLE;
 	uint32_t _clusterBuildPipelineIndex = INVALID_HANDLE;
 	uint32_t _clusterCompactPipelineIndex = INVALID_HANDLE;
+	uint32_t _clusterAssignPipelineIndex = INVALID_HANDLE;
+	uint32_t _clusterHeatmapPipelineIndex = INVALID_HANDLE;
 
 	MaterialHandle _debugAABBMaterial{};
 	MaterialHandle _debugLightMaterial{};
@@ -468,4 +480,6 @@ private:
 	vk::raii::ImageView _ssaoNoiseImageView = nullptr;
 
 	uint32_t _lastClusterUniqueCount = 0;
+	bool _showClusterHeatmap = false;
+	float _heatmapMaxRef = 32.0f;
 };

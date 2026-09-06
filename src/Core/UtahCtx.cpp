@@ -8,6 +8,8 @@
 #include "Render/MaterialManager.h"
 #include <utility>
 #include <iostream>
+#include <random>
+#include "Render/RenderCommons.h"
 
 
 #include "imgui.h"
@@ -436,6 +438,32 @@ void UtahCtx::InitDemoSponza()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
+	}
+
+	// light pressure test for clustered
+	{
+		constexpr uint32_t kNumLights = 1500;
+		std::mt19937 rng(1337);
+		std::uniform_real_distribution<float> dx(-11.0f, 11.0f);
+		std::uniform_real_distribution<float> dy(0.5f, 12.0f);
+		std::uniform_real_distribution<float> dz(-4.5f, 4.5f);
+		std::uniform_real_distribution<float> dc(0.1f, 1.0f);
+
+		for (uint32_t i = 0; i < kNumLights; i++)
+		{
+			Entity e = _registry.CreateEntity();
+
+			TransformComponent t;
+			t._pos = glm::vec3(dx(rng), dy(rng), dz(rng));
+
+			PointLightCPU p;
+			p.color = glm::vec3(dc(rng), dc(rng), dc(rng));
+			p.intensity = 5.0f;
+			p.range = 3.0f;
+
+			_registry.AddComponent<TransformComponent>(e, std::move(t));
+			_registry.AddComponent<PointLightCPU>(e, std::move(p));
+		}
 	}
 }
 

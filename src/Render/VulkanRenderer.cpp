@@ -20,6 +20,24 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+namespace
+{
+	// Spread 10 low bits so each occupies every 3rd bit slot, for a 30-bit Morton code.
+	uint32_t ExpandBits10(uint32_t v)
+	{
+		v = (v * 0x00010001u) & 0xFF0000FFu;
+		v = (v * 0x00000101u) & 0x0F00F00Fu;
+		v = (v * 0x00000011u) & 0xC30C30C3u;
+		v = (v * 0x00000005u) & 0x49249249u;
+		return v;
+	}
+
+	uint32_t Morton3D(uint32_t x, uint32_t y, uint32_t z)
+	{
+		return (ExpandBits10(x) << 2) | (ExpandBits10(y) << 1) | ExpandBits10(z);
+	}
+}
+
 
 VulkanRenderer::VulkanRenderer()
 	: _programCtx(UtahCtx::Get())
@@ -356,6 +374,8 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	ImGui::Begin("Telemetry");
 	ImGui::Text("Active Clusters: %u / %u", _lastClusterUniqueCount, CLUSTER_COUNT);
+	ImGui::Checkbox("Cluster Light Heatmap", &_showClusterHeatmap);
+	ImGui::SliderFloat("Heatmap Max", &_heatmapMaxRef, 1.0f, 128.0f);
 	ImGui::End();
 
 	AssignShadowSlots();
@@ -374,6 +394,10 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 
 	memcpy(frame.Mapped(GlobalBinding::LightUBO), &lightUBO, sizeof(lightUBO));
 
+	const uint32_t pointCount = std::min(static_cast<uint32_t>(_pointLights.size()), MAX_CLUSTER_LIGHTS);
+	std::memcpy(frame.Mapped(GlobalBinding::PointLightSSBO), _pointLights.data(), pointCount * sizeof(PointLightGPU));
+	BuildLightBVH(camUBO.view, frame);
+	static_cast<ClusterLightListGPU*>(frame.Mapped(GlobalBinding::ClusterLightListSSBO))->count = 0;
 
 	size_t currentOffset = 0;
 
@@ -541,6 +565,116 @@ void VulkanRenderer::AssignShadowSlots()
 	int nextCube = 0;
 	for (auto& l : _pointLights)
 		l.shadowIndex = (nextCube < (int)SHADOW_CUBE_SLOT_COUNT) ? nextCube++ : SHADOW_INDEX_NONE;
+}
+
+void VulkanRenderer::BuildLightBVH(const glm::mat4& view, FrameData& frame)
+{
+	const uint32_t n = std::min(static_cast<uint32_t>(_pointLights.size()), MAX_CLUSTER_LIGHTS);
+
+	auto* nodesGPU = static_cast<BVHNodeGPU*>(frame.Mapped(GlobalBinding::BVHNodeSSBO));
+	auto* spheresGPU = static_cast<glm::vec4*>(frame.Mapped(GlobalBinding::BVHLightSphereSSBO));
+	auto* indicesGPU = static_cast<uint32_t*>(frame.Mapped(GlobalBinding::BVHLightIndexSSBO));
+
+	// empty tree early return
+	if (n == 0)
+	{
+		nodesGPU[0] = BVHNodeGPU{ .minAABB = glm::vec3(1e30f), .firstIndex = 0,
+								  .maxAABB = glm::vec3(-1e30f), .count = 0 };
+		return;
+	}
+
+	// view space light spheres + bounds for morton quantization.
+	struct CullLight { glm::vec3 center; float radius; uint32_t origIndex; uint32_t morton; };
+	std::vector<CullLight> lights(n);
+	glm::vec3 boundsMin(1e30f), boundsMax(-1e30f);
+	for (uint32_t i = 0; i < n; i++)
+	{
+		glm::vec3 vc = glm::vec3(view * glm::vec4(_pointLights[i].position, 1.0f));
+		float r = _pointLights[i].range;
+		lights[i] = { vc, r, i, 0u };
+		boundsMin = glm::min(boundsMin, vc - r);
+		boundsMax = glm::max(boundsMax, vc + r);
+	}
+
+	// morton codes over the view space bounds (10 bits/axis).
+	glm::vec3 ext = glm::max(boundsMax - boundsMin, glm::vec3(1e-6f));
+	for (auto& l : lights)
+	{
+		glm::vec3 q = glm::clamp((l.center - boundsMin) / ext, glm::vec3(0.0f), glm::vec3(1.0f)) * 1023.0f;
+		l.morton = Morton3D(uint32_t(q.x), uint32_t(q.y), uint32_t(q.z));
+	}
+	std::sort(lights.begin(), lights.end(),
+		[](const CullLight& a, const CullLight& b) { return a.morton < b.morton; });
+
+	// write the morton-sorted light arrays.
+	for (uint32_t i = 0; i < n; i++)
+	{
+		spheresGPU[i] = glm::vec4(lights[i].center, lights[i].radius);
+		indicesGPU[i] = lights[i].origIndex;
+	}
+
+	// bottom-up chunk-by-BVH_BRANCH into levels (leaves over lights, then internal nodes).
+	struct BuildNode { glm::vec3 mn, mx; uint32_t first, count; bool leaf; };
+	std::vector<std::vector<BuildNode>> levels;
+
+	{
+		std::vector<BuildNode> leaves;
+		for (uint32_t s = 0; s < n; s += BVH_BRANCH)
+		{
+			uint32_t c = std::min<uint32_t>(BVH_BRANCH, n - s);
+			glm::vec3 mn(1e30f), mx(-1e30f);
+			for (uint32_t l = 0; l < c; l++)
+			{
+				mn = glm::min(mn, lights[s + l].center - lights[s + l].radius);
+				mx = glm::max(mx, lights[s + l].center + lights[s + l].radius);
+			}
+			leaves.push_back({ mn, mx, s, c, true });
+		}
+		levels.push_back(std::move(leaves));
+	}
+	while (levels.back().size() > 1)
+	{
+		const auto& child = levels.back();
+		std::vector<BuildNode> parents;
+		for (uint32_t s = 0; s < child.size(); s += BVH_BRANCH)
+		{
+			uint32_t c = std::min<uint32_t>(BVH_BRANCH, static_cast<uint32_t>(child.size()) - s);
+			glm::vec3 mn(1e30f), mx(-1e30f);
+			for (uint32_t l = 0; l < c; l++)
+			{
+				mn = glm::min(mn, child[s + l].mn);
+				mx = glm::max(mx, child[s + l].mx);
+			}
+			parents.push_back({ mn, mx, s, c, false });
+		}
+		levels.push_back(std::move(parents));
+	}
+
+	// flatten top-to-bottom so the root is node 0. levels is bottom-up (0 = leaves).
+	const uint32_t numLevels = static_cast<uint32_t>(levels.size());
+	std::vector<uint32_t> levelBase(numLevels);
+	uint32_t running = 0;
+	for (uint32_t topDown = 0; topDown < numLevels; topDown++)
+	{
+		uint32_t lv = numLevels - 1 - topDown; // root..leaves
+		levelBase[lv] = running;
+		running += static_cast<uint32_t>(levels[lv].size());
+	}
+	// running == total node count (<= MAX_BVH_NODES for n <= MAX_CLUSTER_LIGHTS)
+
+	for (uint32_t lv = 0; lv < numLevels; lv++)
+	{
+		uint32_t base = levelBase[lv];
+		for (uint32_t x = 0; x < levels[lv].size(); x++)
+		{
+			const BuildNode& bn = levels[lv][x];
+			uint32_t first = bn.leaf ? bn.first                       // index into light arrays
+				: levelBase[lv - 1] + bn.first;   // index into child nodes (level below)
+			nodesGPU[base + x] = BVHNodeGPU{
+				.minAABB = bn.mn, .firstIndex = first,
+				.maxAABB = bn.mx, .count = bn.count | (bn.leaf ? BVH_LEAF_BIT : 0u) };
+		}
+	}
 }
 
 void VulkanRenderer::RegisterResizeCallback()
@@ -755,6 +889,48 @@ void VulkanRenderer::InitBindingDescs()
 										.type = vk::DescriptorType::eStorageBuffer,
 										.count = 1,
 										.bufferSize = sizeof(ClusterListGPU),
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.bindingFlags = { } });
+	// 20: Point Light SSBO
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::PointLightSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(PointLightGPU) * MAX_CLUSTER_LIGHTS,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute | vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
+	// 21: Light BVH nodes
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::BVHNodeSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(BVHNodeGPU) * MAX_BVH_NODES,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.bindingFlags = { } });
+	// 22: BVH light spheres
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::BVHLightSphereSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(glm::vec4) * MAX_CLUSTER_LIGHTS,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.bindingFlags = { } });
+	// 23: BVH light indices
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::BVHLightIndexSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(uint32_t) * MAX_CLUSTER_LIGHTS,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.bindingFlags = { } });
+	// 24: Cluster light grid
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ClusterLightGridSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(uint32_t) * 2 * CLUSTER_COUNT,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute | vk::ShaderStageFlagBits::eFragment,
+										.bindingFlags = { } });
+	// 25: Cluster light index list
+	bindingDescs.push_back(BindingDesc{ .bindingIndex = ToIdx(GlobalBinding::ClusterLightListSSBO),
+										.type = vk::DescriptorType::eStorageBuffer,
+										.count = 1,
+										.bufferSize = sizeof(ClusterLightListGPU),
 										.stageFlags = vk::ShaderStageFlagBits::eCompute,
 										.bindingFlags = { } });
 }
@@ -1104,6 +1280,8 @@ void VulkanRenderer::CreatePipelines()
 
 	_clusterBuildPipelineIndex = CreateComputePipeline("shaderBin/cluster_build_comp.spv", *_globalPipelineLayout);
 	_clusterCompactPipelineIndex = CreateComputePipeline("shaderBin/cluster_compact_comp.spv", *_globalPipelineLayout);
+	_clusterAssignPipelineIndex = CreateComputePipeline("shaderBin/cluster_assign_comp.spv", *_globalPipelineLayout);
+	_clusterHeatmapPipelineIndex = CreateClusterHeatmapPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/cluster_heatmap_frag.spv", *_globalPipelineLayout);
 
 }
 
@@ -1851,6 +2029,86 @@ uint32_t VulkanRenderer::CreateAOPipeline(const std::string& vertPath, const std
 	return static_cast<uint32_t>(_pipelines.size() - 1);
 }
 
+uint32_t VulkanRenderer::CreateClusterHeatmapPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
+{
+	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = CreateShaderModule(ReadFile(fragPath));
+
+	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+		.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" };
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo{ };
+
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList,
+														   .primitiveRestartEnable = vk::False };
+	vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+	vk::PipelineRasterizationStateCreateInfo rasterizer{ .depthClampEnable = vk::False,
+														.rasterizerDiscardEnable = vk::False,
+														.polygonMode = vk::PolygonMode::eFill,
+														.cullMode = vk::CullModeFlagBits::eNone,
+														.frontFace = vk::FrontFace::eCounterClockwise,
+														.depthBiasEnable = vk::False,
+														.lineWidth = 1.0f };
+
+	vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1,
+														  .sampleShadingEnable = vk::False };
+	vk::PipelineDepthStencilStateCreateInfo depthStencil{ .depthTestEnable = vk::False,
+														 .depthWriteEnable = vk::False, };
+
+	// Alpha-blend the heatmap over the scene color
+	vk::PipelineColorBlendAttachmentState   colorBlendAttachment;
+	colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+		vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+	colorBlendAttachment.blendEnable = vk::True;
+	colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+	colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+	colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
+	colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+	colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+	colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
+
+	vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False,
+														.logicOp = vk::LogicOp::eCopy,
+														.attachmentCount = 1,
+														.pAttachments = &colorBlendAttachment };
+
+	std::vector dynamicStates = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor };
+
+	vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+													.pDynamicStates = dynamicStates.data() };
+
+	const vk::Format& hdrFormat = vk::Format::eR16G16B16A16Sfloat;
+
+	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
+		{.stageCount = 2,
+		 .pStages = shaderStages,
+		 .pVertexInputState = &vertexInputInfo,
+		 .pInputAssemblyState = &inputAssembly,
+		 .pViewportState = &viewportState,
+		 .pRasterizationState = &rasterizer,
+		 .pMultisampleState = &multisampling,
+		 .pDepthStencilState = &depthStencil,
+		 .pColorBlendState = &colorBlending,
+		 .pDynamicState = &dynamicState,
+		 .layout = layout,
+		 .renderPass = nullptr},
+		{.colorAttachmentCount = 1,
+		 .pColorAttachmentFormats = &hdrFormat,
+		 .depthAttachmentFormat = vk::Format::eUndefined} };
+
+	_pipelines.push_back(PipelineEntry{
+		.pipeline = vk::raii::Pipeline(_vkCtx.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>()),
+		.layout = layout
+		});
+
+	return static_cast<uint32_t>(_pipelines.size() - 1);
+}
+
 uint32_t VulkanRenderer::CreateForwardTransparentPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
@@ -2308,6 +2566,8 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 
 	// Cluster, build and compact clusters
 	RecordClusterBuildPass(cmd);
+	// Assign lights to active clusters
+	RecordLightAssignmentPass(cmd);
 
 	// AO Pass (w/ blur)
 	{
@@ -2401,6 +2661,22 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eColor);
 
 		RecordForwardTransparentPass(cmd);
+
+		// Cluster light-count heatmap overlay (debug), before HDR is consumed by tone mapping
+		if (_showClusterHeatmap)
+		{
+			// WAW + RAW barrier
+			TransitionImageLayout(_hdrColorImage.image,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				vk::ImageLayout::eColorAttachmentOptimal,
+				vk::AccessFlagBits2::eColorAttachmentWrite,
+				vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::ImageAspectFlagBits::eColor);
+
+			RecordClusterHeatmapPass(cmd);
+		}
 
 		// Transit HDR image from attachment -> shader read, sampled by tone mapping pass
 		TransitionImageLayout(_hdrColorImage.image,
@@ -3230,6 +3506,56 @@ void VulkanRenderer::RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd)
 	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *compactPso.pipeline);
 
 	cmd.dispatch((CLUSTER_COUNT + 255) / 256, 1, 1);
+}
+
+void VulkanRenderer::RecordLightAssignmentPass(const vk::raii::CommandBuffer& cmd)
+{
+	const PipelineEntry& assignPso = _pipelines[_clusterAssignPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *assignPso.pipeline);
+	cmd.bindDescriptorSets(
+		vk::PipelineBindPoint::eCompute,
+		assignPso.layout,
+		0,
+		*_frames[_currentFrame].globalDescriptorSet,
+		nullptr);
+	cmd.dispatch((CLUSTER_COUNT + 63) / 64, 1, 1);
+
+	vk::MemoryBarrier2 memBarrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead };
+	cmd.pipelineBarrier2(vk::DependencyInfo{ .memoryBarrierCount = 1, .pMemoryBarriers = &memBarrier });
+}
+
+void VulkanRenderer::RecordClusterHeatmapPass(const vk::raii::CommandBuffer& cmd)
+{
+	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
+
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
+											   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+											   .loadOp = vk::AttachmentLoadOp::eLoad,
+											   .storeOp = vk::AttachmentStoreOp::eStore };
+	vk::RenderingInfo renderingInfo = { .renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+								   .layerCount = 1,
+								   .colorAttachmentCount = 1,
+								   .pColorAttachments = &colorAttachment };
+	cmd.beginRendering(renderingInfo);
+
+	const PipelineEntry& pso = _pipelines[_clusterHeatmapPipelineIndex];
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+	cmd.setViewport(0,
+		vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+	cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+
+	cmd.pushConstants<float>(pso.layout,
+		vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, _heatmapMaxRef);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pso.layout, 0,
+		*_frames[_currentFrame].globalDescriptorSet, nullptr);
+
+	cmd.draw(3, 1, 0, 0);
+	cmd.endRendering();
 }
 
 std::unique_ptr<vk::raii::CommandBuffer> VulkanRenderer::BeginSingleTimeCommands()
@@ -4562,7 +4888,7 @@ void VulkanRenderer::CreateSSAONoise()
 		imageWidth, imageWidth, 1,
 		vk::SampleCountFlagBits::e1, vk::Format::eR32G32Sfloat,
 		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc — no mip blits
+		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc ï¿½ no mip blits
 
 	TransitionImageLayout(_ssaoNoiseImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1);
 	CopyBufferToImage(staging.buffer, _ssaoNoiseImage.image, imageWidth, imageWidth);

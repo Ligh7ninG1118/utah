@@ -86,6 +86,21 @@ struct alignas(16) ClusterListGPU
 	uint32_t list[CLUSTER_COUNT];
 };
 
+struct alignas(16) BVHNodeGPU
+{
+	glm::vec3 minAABB;
+	uint32_t firstIndex;   // child node index for internal, OR first light index for leaf
+	glm::vec3 maxAABB;
+	uint32_t count;        // low 31 bits = child count + high bit (use BVH_LEAF_BIT) = leaf
+};
+
+struct alignas(16) ClusterLightListGPU
+{
+	uint32_t count;
+	uint32_t pad[3];
+	uint32_t list[MAX_CLUSTER_LIGHT_INDICES];
+};
+
 struct PerDrawPC
 {
 	uint32_t objIndex;

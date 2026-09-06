@@ -22,6 +22,14 @@ static const uint CLUSTER_GRID_Z = 24;
 static const uint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z; // 3456
 static const uint INVALID_CLUSTER_KEY = 0xFFFFFFFF;
 
+static const uint MAX_CLUSTER_LIGHTS = 4096;
+static const uint BVH_BRANCH = 32;
+static const uint MAX_BVH_NODES = 133;
+static const uint MAX_LIGHTS_PER_CLUSTER = 128;
+static const uint MAX_CLUSTER_LIGHT_INDICES = 262144;
+static const uint BVH_STACK_SIZE = 64;
+static const uint BVH_LEAF_BIT = 0x80000000;
+
 static const float PI = 3.1415926535f;
 
 
@@ -119,6 +127,21 @@ struct ClusterList
 {
     uint uniqueCount; uint pad0; uint pad1; uint pad2;
     uint list[CLUSTER_COUNT];
+};
+
+struct BVHNodeGPU
+{
+    float3 minAABB;
+    uint firstIndex;
+    float3 maxAABB;
+    uint count;
+};
+
+struct ClusterLightListGPU
+{
+    uint count;
+    uint pad[3];
+    uint list[MAX_CLUSTER_LIGHT_INDICES];
 };
 
 #endif

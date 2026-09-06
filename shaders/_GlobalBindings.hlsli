@@ -35,6 +35,13 @@
 [[vk::binding(18, 0)]] RWStructuredBuffer<uint> clusterFlags;
 [[vk::binding(19, 0)]] RWStructuredBuffer<ClusterList> clusterList; //[0] only
 
+[[vk::binding(20, 0)]] StructuredBuffer<PointLight> pointLightBuf;       // world-space, original order
+[[vk::binding(21, 0)]] StructuredBuffer<BVHNodeGPU> bvhNodes;            // view-space, [0] root
+[[vk::binding(22, 0)]] StructuredBuffer<float4> bvhLightSphere;          // view center pos + radius, morton order
+[[vk::binding(23, 0)]] StructuredBuffer<uint> bvhLightIndex;             // original light index, morton order
+[[vk::binding(24, 0)]] RWStructuredBuffer<uint2> clusterLightGrid;
+[[vk::binding(25, 0)]] RWStructuredBuffer<ClusterLightListGPU> clusterLightList; //[0] only
+
 // PushConstant, for now, is defined in individual shaders based on usage
 
 // Stay in sync with TextureManager::SamplerType
