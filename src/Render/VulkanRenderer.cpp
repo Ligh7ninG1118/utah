@@ -388,9 +388,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	std::memcpy(lightUBO.spotLights, _spotLights.data(),
 		std::min(_spotLights.size(), size_t(MAX_SPOT_LIGHTS)) * sizeof(SpotLightGPU));
 
-	lightUBO.pointLightNum = std::min(static_cast<uint32_t>(_pointLights.size()), MAX_POINT_LIGHTS);
-	std::memcpy(lightUBO.pointLights, _pointLights.data(),
-		std::min(_pointLights.size(), size_t(MAX_POINT_LIGHTS)) * sizeof(PointLightGPU));
+	lightUBO.pointLightNum = std::min(static_cast<uint32_t>(_pointLights.size()), MAX_CLUSTER_LIGHTS);
 
 	memcpy(frame.Mapped(GlobalBinding::LightUBO), &lightUBO, sizeof(lightUBO));
 
@@ -398,6 +396,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	std::memcpy(frame.Mapped(GlobalBinding::PointLightSSBO), _pointLights.data(), pointCount * sizeof(PointLightGPU));
 	BuildLightBVH(camUBO.view, frame);
 	static_cast<ClusterLightListGPU*>(frame.Mapped(GlobalBinding::ClusterLightListSSBO))->count = 0;
+	memset(frame.Mapped(GlobalBinding::ClusterLightGridSSBO), 0, sizeof(uint32_t) * 2 * CLUSTER_COUNT);
 
 	size_t currentOffset = 0;
 
@@ -931,7 +930,7 @@ void VulkanRenderer::InitBindingDescs()
 										.type = vk::DescriptorType::eStorageBuffer,
 										.count = 1,
 										.bufferSize = sizeof(ClusterLightListGPU),
-										.stageFlags = vk::ShaderStageFlagBits::eCompute,
+										.stageFlags = vk::ShaderStageFlagBits::eCompute | vk::ShaderStageFlagBits::eFragment,
 										.bindingFlags = { } });
 }
 
@@ -2648,7 +2647,7 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 			vk::ImageAspectFlagBits::eColor);
 
-		RecordDebugDrawPass(cmd);
+		//RecordDebugDrawPass(cmd);
 
 		// WAW + RAW barrier
 		TransitionImageLayout(_hdrColorImage.image,

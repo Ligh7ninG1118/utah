@@ -442,7 +442,7 @@ void UtahCtx::InitDemoSponza()
 
 	// light pressure test for clustered
 	{
-		constexpr uint32_t kNumLights = 1500;
+		constexpr uint32_t kNumLights = 4096;
 		std::mt19937 rng(1337);
 		std::uniform_real_distribution<float> dx(-11.0f, 11.0f);
 		std::uniform_real_distribution<float> dy(0.5f, 12.0f);

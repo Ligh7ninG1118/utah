@@ -53,7 +53,6 @@ struct alignas(16) LightUBO
 	unsigned int dirLightNum;
 	unsigned int spotLightNum;
 
-	PointLightGPU pointLights[32];
 	DirectionalLightGPU dirLights[4];
 	SpotLightGPU spotLights[32];
 };

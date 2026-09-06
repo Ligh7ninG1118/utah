@@ -34,11 +34,11 @@ constexpr uint32_t CLUSTER_GRID_Y = 9;
 constexpr uint32_t CLUSTER_GRID_Z = 24;
 constexpr uint32_t CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z; // 3456
 
-constexpr uint32_t MAX_CLUSTER_LIGHTS = 4096;
+constexpr uint32_t MAX_CLUSTER_LIGHTS = 8192;
 constexpr uint32_t BVH_BRANCH = 32;
-constexpr uint32_t MAX_BVH_NODES = 133;
-constexpr uint32_t MAX_LIGHTS_PER_CLUSTER = 128;
-constexpr uint32_t MAX_CLUSTER_LIGHT_INDICES = 262144;
+constexpr uint32_t MAX_BVH_NODES = 2048;
+constexpr uint32_t MAX_LIGHTS_PER_CLUSTER = 256;
+constexpr uint32_t MAX_CLUSTER_LIGHT_INDICES = 1048576;
 constexpr uint32_t BVH_LEAF_BIT = 0x80000000u;         // marks a leaf, see GPUTypes.h/BVHNodeGPU.count
 
 constexpr uint32_t INVALID_HANDLE = 0xFFFFFFFF;

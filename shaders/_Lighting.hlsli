@@ -2,6 +2,7 @@
 #define UTAH_LIGHTING_HLSLI
 #pragma once
 
+#include "_GlobalBindings.hlsli"
 #include "_BRDF.hlsli"
 #include "_SharedTypes.hlsli"
 #include "_ShadowMapping.hlsli"
@@ -52,40 +53,59 @@ LightSample SamplePointLight(PointLight l, Surface s)
     return ls;
 }
 
-float3 IntegrateLights(Surface s)
+float3 ShadeDirLight(DirectionalLight l, Surface s)
+{
+    LightSample ls = SampleDirLight(l, s);
+    float shadow = (l.shadowIndex != SHADOW_INDEX_NONE) ?
+        ShadowCalculation(l.shadowIndex, s.worldPos, s.N, ls.L) : 0.0f;
+    return EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
+}
+
+float3 ShadeSpotLight(SpotLight l, Surface s)
+{
+    LightSample ls = SampleSpotLight(l, s);
+    float shadow = (l.shadowIndex != SHADOW_INDEX_NONE) ?
+        ShadowCalculation(l.shadowIndex, s.worldPos, s.N, ls.L) : 0.0f;
+    return EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
+}
+
+float3 ShadePointLight(PointLight l, Surface s)
+{
+    LightSample ls = SamplePointLight(l, s);
+    float shadow = (l.shadowIndex != SHADOW_INDEX_NONE) ?
+        ShadowCubeMapCalculation(l.shadowIndex, s.N, s.worldPos - l.position, cam.nearPlane, cam.farPlane) : 0.0f;
+    return EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
+}
+
+void IntegrateDirSpot(Surface s, inout float3 Lo)
+{
+    for (uint j = 0; j < light.dirLightNum; j++)
+        Lo += ShadeDirLight(light.dirLights[j], s);
+    for (uint k = 0; k < light.spotLightNum; k++)
+        Lo += ShadeSpotLight(light.spotLights[k], s);
+}
+
+float3 IntegrateLightsBrute(Surface s)
 {
     float3 Lo = (float3) 0.0f;
-    
     for (uint i = 0; i < light.pointLightNum; i++)
+        Lo += ShadePointLight(pointLightBuf[i], s);
+    IntegrateDirSpot(s, Lo);
+    return Lo;
+}
+
+float3 IntegrateLightsClustered(Surface s, uint clusterKey)
+{
+    float3 Lo = (float3) 0.0f;
+    if (clusterKey != INVALID_CLUSTER_KEY)
     {
-        LightSample ls = SamplePointLight(light.pointLights[i], s);
-        int shadowIdx = light.pointLights[i].shadowIndex;
-        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
-            ShadowCubeMapCalculation(shadowIdx, s.N, s.worldPos - light.pointLights[i].position, cam.nearPlane, cam.farPlane)
-            : 0.0f;
-        Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
+        uint2 og = clusterLightGrid[clusterKey]; // (offset, count)
+        for (uint n = 0; n < og.y; n++)
+        {
+            Lo += ShadePointLight(pointLightBuf[clusterLightList[0].list[og.x + n]], s);
+        }
     }
-    
-    for (uint i = 0; i < light.dirLightNum; i++)
-    {
-        LightSample ls = SampleDirLight(light.dirLights[i], s);
-        int shadowIdx = light.dirLights[i].shadowIndex;
-        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
-            ShadowCalculation(shadowIdx, s.worldPos, s.N, ls.L)
-            : 0.0f;
-        Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
-    }
-    
-    for (uint i = 0; i < light.spotLightNum; i++)
-    {
-        LightSample ls = SampleSpotLight(light.spotLights[i], s);
-        int shadowIdx = light.spotLights[i].shadowIndex;
-        float shadow = (shadowIdx != SHADOW_INDEX_NONE) ?
-            ShadowCalculation(shadowIdx, s.worldPos, s.N, ls.L)
-            : 0.0f;
-        Lo += EvaluateBRDF(s, ls.L) * ls.radiance * max(dot(s.N, ls.L), 0.0f) * (1.0f - shadow);
-    }
-    
+    IntegrateDirSpot(s, Lo);
     return Lo;
 }
 

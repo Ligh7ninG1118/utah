@@ -64,5 +64,5 @@ float4 main(PSInput input) : SV_Target
     // And for metallic surface, lerp between F0 to albedo color
     s.f0 = lerp((float3) 0.04f, albedo, metallic);
     
-    return float4(EvaluateIBL(s) + IntegrateLights(s) + s.emissive, 1.0f);
+    return float4(EvaluateIBL(s) + IntegrateLightsBrute(s) + s.emissive, 1.0f);
 }

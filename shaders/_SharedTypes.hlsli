@@ -22,11 +22,11 @@ static const uint CLUSTER_GRID_Z = 24;
 static const uint CLUSTER_COUNT = CLUSTER_GRID_X * CLUSTER_GRID_Y * CLUSTER_GRID_Z; // 3456
 static const uint INVALID_CLUSTER_KEY = 0xFFFFFFFF;
 
-static const uint MAX_CLUSTER_LIGHTS = 4096;
+static const uint MAX_CLUSTER_LIGHTS = 8192;
 static const uint BVH_BRANCH = 32;
-static const uint MAX_BVH_NODES = 133;
-static const uint MAX_LIGHTS_PER_CLUSTER = 128;
-static const uint MAX_CLUSTER_LIGHT_INDICES = 262144;
+static const uint MAX_BVH_NODES = 265;
+static const uint MAX_LIGHTS_PER_CLUSTER = 2048;
+static const uint MAX_CLUSTER_LIGHT_INDICES = 1048576;
 static const uint BVH_STACK_SIZE = 64;
 static const uint BVH_LEAF_BIT = 0x80000000;
 
@@ -97,8 +97,7 @@ struct LightUBO
     uint pointLightNum;
     uint dirLightNum;
     uint spotLightNum;
-
-    PointLight pointLights[MAX_POINT_LIGHTS];
+    
     DirectionalLight dirLights[MAX_DIR_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
 };

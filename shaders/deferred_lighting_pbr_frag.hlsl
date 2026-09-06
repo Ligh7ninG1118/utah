@@ -1,5 +1,6 @@
 #include "_GlobalBindings.hlsli"
 #include "_Lighting.hlsli"
+#include "_Clustering.hlsli"
 
 struct PSInput
 {
@@ -41,5 +42,9 @@ float4 main(PSInput input) : SV_TARGET
     // And for metallic surface, lerp between F0 to albedo color
     s.f0 = lerp((float3) 0.04f, albedo, s.metallic);
     
-    return float4(EvaluateIBL(s) + IntegrateLights(s) + s.emissive, 1.0f);
+    uint2 dims;
+    depthTarget.GetDimensions(dims.x, dims.y);
+    uint clusterKey = ClusterKeyFromDepth(depth, uint2(pixel.xy), dims);
+
+    return float4(EvaluateIBL(s) + IntegrateLightsClustered(s, clusterKey) + s.emissive, 1.0f);
 }
