@@ -70,7 +70,7 @@ struct alignas(16) SceneIBLUBO
 struct alignas(16) ObjectSSBO
 {
 	glm::mat4 model;
-	//Future TODO: normal, material index, AABB
+	glm::mat4 normalMatrix;
 };
 
 struct alignas(16) SSAOKernelUBO
@@ -103,5 +103,12 @@ struct alignas(16) ClusterLightListGPU
 struct PerDrawPC
 {
 	uint32_t objIndex;
+	uint32_t matIndex;
+};
+
+struct ShadowPC
+{
+	uint32_t objIndex;
+	uint32_t lightMatrixIndex;
 	uint32_t matIndex;
 };

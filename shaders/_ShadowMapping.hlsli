@@ -48,7 +48,7 @@ float ShadowCubeMapCalculation(uint shadowIndex, float3 N, float3 L, float nearP
     // reconstruct linearize depth (can't use perspective result directly)
     float currentDepth = nearPlane / (nearPlane - farPlane) - (farPlane * nearPlane) / ((nearPlane - farPlane) * zE);
     
-    float NdotL = max(dot(N, L), 0.0f);
+    float NdotL = max(dot(N, -normalize(L)), 0.0f);
     float bias = max(MAX_BIAS * (1.0f - NdotL), MIN_BIAS);
 
     float refDepth = currentDepth + bias;

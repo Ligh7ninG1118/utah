@@ -68,9 +68,9 @@ void VulkanContext::CreateAllocator()
 
 void VulkanContext::CreateInstance()
 {
-	constexpr vk::ApplicationInfo appInfo{ .pApplicationName = "Hello Triangle",
+	constexpr vk::ApplicationInfo appInfo{ .pApplicationName = "utah",
 										  .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-										  .pEngineName = "No Engine",
+										  .pEngineName = "utah",
 										  .engineVersion = VK_MAKE_VERSION(1, 0, 0),
 										  .apiVersion = vk::ApiVersion13 };
 	// Can use appInfo.pNext to point to extension information
@@ -186,6 +186,7 @@ void VulkanContext::PickPhysicalDevice()
 			features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy &&
 			features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
 			features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
+			features.template get<vk::PhysicalDeviceVulkan13Features>().shaderDemoteToHelperInvocation &&
 			features.template get<vk::PhysicalDeviceVulkan12Features>().runtimeDescriptorArray &&
 			features.template get<vk::PhysicalDeviceVulkan12Features>().descriptorBindingPartiallyBound &&
 			features.template get<vk::PhysicalDeviceVulkan12Features>().shaderSampledImageArrayNonUniformIndexing &&
@@ -240,6 +241,7 @@ void VulkanContext::CreateLogicalDevice()
 				.fragmentStoresAndAtomics = true}
 			},
 			{ // vk::PhysicalDeviceVulkan13Features
+				.shaderDemoteToHelperInvocation = true,
 				.synchronization2 = true, 
 				.dynamicRendering = true
 			},

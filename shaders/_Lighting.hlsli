@@ -111,7 +111,7 @@ float3 IntegrateLightsClustered(Surface s, uint clusterKey)
 
 float3 EvaluateIBL(Surface s)
 {
-    float3 kS = FresnelSchlick(max(dot(s.N, s.V), 0.0f), s.f0, s.roughness);
+    float3 kS = FresnelSchlickRoughness(max(dot(s.N, s.V), 0.0f), s.f0, s.roughness);
     float3 kD = 1.0f - kS;
     kD *= 1.0f - s.metallic;
     

@@ -29,5 +29,23 @@ struct DrawJob
 		m = glm::scale(m, t._scale);
 		return m;
 	}
+
+
+	static void TransformAABB(const glm::mat4& m, const glm::vec3& localMin, const glm::vec3& localMax,
+		glm::vec3& outMin, glm::vec3& outMax)
+	{
+		const glm::vec3 centerLocal = (localMin + localMax) * 0.5f;
+		const glm::vec3 halfExtentLocal = (localMax - localMin) * 0.5f;
+
+		const glm::vec3 centerWorld = glm::vec3(m * glm::vec4(centerLocal, 1.0f));
+		glm::mat3 absM = glm::mat3(m);
+		absM[0] = glm::abs(absM[0]);
+		absM[1] = glm::abs(absM[1]);
+		absM[2] = glm::abs(absM[2]);
+		const glm::vec3 halfExtentWorld = absM * halfExtentLocal;
+
+		outMin = centerWorld - halfExtentWorld;
+		outMax = centerWorld + halfExtentWorld;
+	}
 };
 

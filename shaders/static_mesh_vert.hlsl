@@ -30,15 +30,17 @@ struct VSOutput
 
 VSOutput main(VSInput input)
 {
-    float4x4 model = objBuf[pc.objIndex].model;
-    float4 worldPos = mul(model, float4(input.inPos, 1.0));
+    ObjectData obj = objBuf[pc.objIndex];
+    float4 worldPos = mul(obj.model, float4(input.inPos, 1.0));
     
     VSOutput o;
     o.position = mul(cam.proj, mul(cam.view, worldPos));
     o.worldPos = worldPos.xyz;
-    o.normal   = normalize(mul((float3x3)model, input.inNormal));
+    o.normal   = normalize(mul((float3x3)obj.normalMatrix, input.inNormal));
     o.uv       = input.inUV;
     o.matIndex = pc.matIndex;
-    o.tangent  = float4(normalize(mul((float3x3)model, input.inTangent.xyz)), input.inTangent.w);
+    o.tangent  = input.inTangent.w != 0.0f
+        ? float4(normalize(mul((float3x3)obj.model, input.inTangent.xyz)), input.inTangent.w)
+        : (float4) 0.0f;
     return o;
 }

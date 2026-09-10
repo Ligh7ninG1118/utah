@@ -254,13 +254,16 @@ private:
 	void SortTransparentDrawJobs(const glm::mat4& view);
 	void AssignShadowSlots();
 	void BuildLightBVH(const glm::mat4& view, FrameData& frame);
+	void FlagTransparentClusters(const glm::mat4& view, const glm::mat4& proj, FrameData& frame);
 
 	// Window resize callback
 	void RegisterResizeCallback();
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 
 	// Swap Chain Recreation
-	void CleanupSwapChain();
+	void CreateScreenSizedTargets();
+	void DestroyScreenSizedTargets();
+	void WriteScreenSizedDescriptors();
 	void RecreateSwapChain();
 
 	// Descriptor Creation
@@ -277,8 +280,8 @@ private:
 	// Graphics Pipeline
 	uint32_t CreateGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, 
 		vk::PipelineLayout layout, PipelineType type = PipelineType::Default);
-	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
-	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout);
+	uint32_t CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout, const std::string& fragPath = "");
+	uint32_t CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout, const std::string& fragPath = "");
 	uint32_t CreateHDRGraphicsPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateEquirectToCubePipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
 	uint32_t CreateBRDFLUTPipeline(const std::string& vertPath, const std::string& fragPath, vk::PipelineLayout layout);
@@ -302,6 +305,7 @@ private:
 
 	void RecordShadowMapPass(const vk::raii::CommandBuffer& cmd);
 	void RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd);
+	void RecordShadowCasterDraws(const vk::raii::CommandBuffer& cmd, uint32_t lightMatrixIndex, uint32_t opaquePipeline, uint32_t maskedPipeline);
 	void RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd);
 	void RecordForwardTransparentPass(const vk::raii::CommandBuffer& cmd);
 	void RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cmd);
@@ -367,6 +371,8 @@ private:
 	uint32_t _debugWireframePipeline = INVALID_HANDLE;
 	uint32_t _shadowPipelineIndex = INVALID_HANDLE;
 	uint32_t _shadowCubeMapPipelineIndex = INVALID_HANDLE;
+	uint32_t _shadowMaskedPipelineIndex = INVALID_HANDLE;
+	uint32_t _shadowCubeMaskedPipelineIndex = INVALID_HANDLE;
 	uint32_t _hdrOutputPipelineIndex = INVALID_HANDLE;
 	uint32_t _skyboxPipelineIndex = INVALID_HANDLE;
 	uint32_t _equirectToCubePipelineIndex = INVALID_HANDLE;

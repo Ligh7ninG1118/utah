@@ -51,7 +51,8 @@ float main(PSInput input) : SV_TARGET
     float3 normalWS = gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(loadCoord).rgb;
     
     // sky early out
-    if(dot(normalWS, normalWS) <= 1e-6f)
+    float fragRawDepth = depthTarget.Load(loadCoord).r;
+    if (fragRawDepth <= 0.0f) //reverse z
         return 1.0f;
     
     normalWS = normalize(normalWS);
@@ -60,7 +61,6 @@ float main(PSInput input) : SV_TARGET
 	// reverse z 
     float projA = cam.nearPlane / (cam.farPlane - cam.nearPlane);
     float projB = (cam.farPlane * cam.nearPlane) / (cam.farPlane - cam.nearPlane);
-    float fragRawDepth = depthTarget.Load(loadCoord).r;
     float fragLinearDepth = projB / (fragRawDepth + projA);
     float2 ndc = input.uv * 2.0f - 1.0f;
     float3 viewRay = float3(ndc.x / cam.proj[0][0], ndc.y / cam.proj[1][1], -1.0f);
@@ -73,11 +73,15 @@ float main(PSInput input) : SV_TARGET
     depthTarget.GetDimensions(screenDim.x, screenDim.y);
     
     float radiusUV = min(EFFECT_RADIUS * abs(cam.proj[1][1]) * 0.5f / fragLinearDepth, MAX_RADIUS_UV);
+    float2 radiusUV2 = radiusUV * float2(float(screenDim.y) / float(screenDim.x), 1.0f);
     
     float ign = frac(52.9829189f * frac(dot(input.position.xy, float2(0.06711056f, 0.00583715f))));
     float noiseStep = frac(ign * 1.6180339f);
     
     float visibility = 0.0f;
+    
+    float slicePixelRadius = length(radiusUV * float(screenDim.y));
+    float minS = 1.3f / max(slicePixelRadius, 1e-5f);
     
     for (uint slice = 0; slice < SLICE_COUNT; ++slice)
     {
@@ -95,15 +99,12 @@ float main(PSInput input) : SV_TARGET
 
         float cHorizonCos0 = cos(n + HALF_PI);
         float cHorizonCos1 = cos(n - HALF_PI);
-        
-        float slicePixelRadius = length(omega * radiusUV * float2(screenDim));
-        float minS = 1.3f / max(slicePixelRadius, 1e-5f);
 
         for (uint step = 0; step < STEPS_PER_SLICE; ++step)
         {
             float s = (float(step) + noiseStep + 1.0f) / float(STEPS_PER_SLICE + 1);
             s = max(s, minS);
-            float2 offUV = omega * (s * radiusUV);
+            float2 offUV = omega * (s * radiusUV2);
             
             cHorizonCos0 = UpdateHorizon(cHorizonCos0, saturate(input.uv + offUV), fragPosVS, viewVec, screenDim, projA, projB);
             cHorizonCos1 = UpdateHorizon(cHorizonCos1, saturate(input.uv - offUV), fragPosVS, viewVec, screenDim, projA, projB);

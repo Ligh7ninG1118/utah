@@ -56,7 +56,14 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
     return ggx1 * ggx2;
 }
 
-float3 FresnelSchlick(float cosTheta, float3 F0, float roughness)
+// Schlick's approximation, for direct/analytic lights
+float3 FresnelSchlick(float cosTheta, float3 F0)
+{
+    return F0 + ((float3) 1.0f - F0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
+}
+
+// Roughness damped version for the split-sum IBL term only
+float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 {
     return F0 + (max((float3) (1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
@@ -68,7 +75,7 @@ float3 EvaluateBRDF(Surface s, float3 L)
     
     float NDF = DistributionGGX(s.N, H, s.roughness);
     float G = GeometrySmith(s.N, s.V, L, s.roughness);
-    float3 F = FresnelSchlick(max(dot(H, s.V), 0.0f), s.f0, s.roughness);
+    float3 F = FresnelSchlick(max(dot(H, s.V), 0.0f), s.f0);
     
     // kS is corresponded in F
     float3 kS = F;

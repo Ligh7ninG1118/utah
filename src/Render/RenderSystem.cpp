@@ -196,20 +196,10 @@ void RenderSystem::FrustumCulling(std::vector<DrawJob>& drawList, const std::vec
 
 	for (uint32_t i = 0; i < drawList.size(); i++)
 	{
-		glm::vec3 minAABB = drawList[i]._minAABB;
-		glm::vec3 maxAABB = drawList[i]._maxAABB;
-
-		glm::vec3 centerLocal = (minAABB + maxAABB) * 0.5f;
-		glm::vec3 halfExtentLocal = (maxAABB - minAABB) * 0.5f;
-
-		glm::vec3 centerWorld = drawList[i]._model * glm::vec4(centerLocal, 1.0f);
-
-		glm::mat3 absModel = glm::mat3(drawList[i]._model);
-		absModel[0] = glm::abs(absModel[0]);
-		absModel[1] = glm::abs(absModel[1]);
-		absModel[2] = glm::abs(absModel[2]);
-
-		glm::vec3 halfExtentWorld = absModel * halfExtentLocal;
+		glm::vec3 minWorld, maxWorld;
+		DrawJob::TransformAABB(drawList[i]._model, drawList[i]._minAABB, drawList[i]._maxAABB, minWorld, maxWorld);
+		const glm::vec3 centerWorld = (minWorld + maxWorld) * 0.5f;
+		const glm::vec3 halfExtentWorld = (maxWorld - minWorld) * 0.5f;
 
 		bool isWithin = true;
 		for (const auto& plane : frustum)

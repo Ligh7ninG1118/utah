@@ -25,8 +25,7 @@ constexpr int32_t  SHADOW_INDEX_NONE = -1;
 constexpr uint32_t SHADOW_CUBE_MATRIX_BASE = SHADOW_2D_SLOT_COUNT;
 constexpr uint32_t SHADOW_MATRIX_COUNT = SHADOW_2D_SLOT_COUNT + SHADOW_CUBE_SLOT_COUNT * CUBE_FACE_COUNT;
 
-constexpr float DIR_SHADOW_ORTHO_HALF_EXTENT = 20.0f;
-constexpr float DIR_SHADOW_EYE_DISTANCE = 2.0f;
+constexpr float DIR_SHADOW_FIT_PADDING = 0.05f; // added around the fitted ortho box
 constexpr float SPOT_SHADOW_FOV_PAD = 1.1f;
 
 constexpr uint32_t CLUSTER_GRID_X = 16; // independent of resolution

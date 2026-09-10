@@ -1,6 +1,7 @@
 #include "VulkanRenderer.h"
 #include "DrawJob.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -104,10 +105,7 @@ void VulkanRenderer::Initialize()
 	CreatePipelines();
 
 	CreateCommandPool();
-	CreateColorResources();
-	CreateDepthResources();
-	CreateGBufferImages();
-	CreateAOResource();
+	CreateScreenSizedTargets();
 	CreateSSAONoise();
 
 	_textureManager.Initialize(this, &_vkCtx);
@@ -229,6 +227,8 @@ void VulkanRenderer::DrawFrame()
 
 		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
+			// No image, close ImGui frame
+			ImGui::EndFrame();
 			RecreateSwapChain();
 			return;
 		}
@@ -371,6 +371,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	_lastClusterUniqueCount = clusterListMapped->uniqueCount;
 	clusterListMapped->uniqueCount = 0;
 	memset(frame.Mapped(GlobalBinding::ClusterFlagsSSBO), 0, sizeof(uint32_t) * CLUSTER_COUNT);
+	FlagTransparentClusters(camUBO.view, camUBO.proj, frame);
 
 	ImGui::Begin("Telemetry");
 	ImGui::Text("Active Clusters: %u / %u", _lastClusterUniqueCount, CLUSTER_COUNT);
@@ -398,19 +399,25 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	static_cast<ClusterLightListGPU*>(frame.Mapped(GlobalBinding::ClusterLightListSSBO))->count = 0;
 	memset(frame.Mapped(GlobalBinding::ClusterLightGridSSBO), 0, sizeof(uint32_t) * 2 * CLUSTER_COUNT);
 
+	ObjectSSBO* objects = static_cast<ObjectSSBO*>(frame.Mapped(GlobalBinding::ObjectSSBO));
+	auto writeObject = [objects](size_t index, const glm::mat4& model)
+	{
+		objects[index].model = model;
+		objects[index].normalMatrix = glm::transpose(glm::inverse(model));
+	};
+
 	size_t currentOffset = 0;
 
-	ObjectSSBO* objects = static_cast<ObjectSSBO*>(frame.Mapped(GlobalBinding::ObjectSSBO));
 	for (size_t i = 0; i < _drawList.size(); ++i)
 	{
-		objects[i].model = _drawList[i]._model;
+		writeObject(i, _drawList[i]._model);
 	}
 
 	currentOffset += _drawList.size();
 
 	for (size_t i = 0; i < _transparentDrawList.size(); ++i)
 	{
-		objects[i + currentOffset].model = _transparentDrawList[i]._model;
+		writeObject(i + currentOffset, _transparentDrawList[i]._model);
 	}
 
 	currentOffset += _transparentDrawList.size();
@@ -418,31 +425,32 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	// AABB Bounding boxes
 	for (size_t i = 0; i < _debugAABBDrawList.size(); ++i)
 	{
-		objects[i + currentOffset].model = _debugAABBDrawList[i];
+		writeObject(i + currentOffset, _debugAABBDrawList[i]);
 	}
 
 	currentOffset += _debugAABBDrawList.size();
 
+	// Debug light gizmos, +Y rotated to light direction
 	for (size_t i = 0; i < _dirLights.size(); i++)
 	{
 		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
 		glm::vec3 dir = glm::normalize(_dirLights[i].direction);
 
-		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
+		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f), dir));
 
-		objects[i + currentOffset].model = model;
+		writeObject(i + currentOffset, model);
 	}
 
 	currentOffset += _dirLights.size();
 
 	for (size_t i = 0; i < _spotLights.size(); i++)
 	{
-		glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
+		glm::mat4 model = glm::translate(glm::mat4(1.0f), _spotLights[i].position);
 		glm::vec3 dir = glm::normalize(_spotLights[i].direction);
 
-		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, -1.0f, 0.0f), dir));
+		model *= glm::mat4_cast(glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f), dir));
 
-		objects[i + currentOffset].model = model;
+		writeObject(i + currentOffset, model);
 	}
 
 	currentOffset += _spotLights.size();
@@ -451,7 +459,7 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	{
 		glm::mat4 model = glm::mat4(1.0f);
 		model = glm::translate(model, _pointLights[i].position);
-		objects[i + currentOffset].model = model;
+		writeObject(i + currentOffset, model);
 	}
 
 	// Shadow Map
@@ -460,16 +468,46 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	std::array<glm::mat4, SHADOW_MATRIX_COUNT> viewProj;
 	viewProj.fill(glm::mat4(1.0f));
 
-	for (const auto& l : _dirLights) 
+	glm::vec3 sceneMin(std::numeric_limits<float>::max());
+	glm::vec3 sceneMax(std::numeric_limits<float>::lowest());
+	for (const DrawJob& job : _drawList)
 	{
-		if (l.shadowIndex == SHADOW_INDEX_NONE) 
-			continue;
-		glm::mat4 proj = glm::ortho(-DIR_SHADOW_ORTHO_HALF_EXTENT, DIR_SHADOW_ORTHO_HALF_EXTENT,
-			-DIR_SHADOW_ORTHO_HALF_EXTENT, DIR_SHADOW_ORTHO_HALF_EXTENT,
-			_mainCam._farPlane, _mainCam._nearPlane);
-		glm::vec3 eye = -glm::normalize(l.direction) * DIR_SHADOW_EYE_DISTANCE;
+		glm::vec3 jobMin, jobMax;
+		DrawJob::TransformAABB(job._model, job._minAABB, job._maxAABB, jobMin, jobMax);
+		sceneMin = glm::min(sceneMin, jobMin);
+		sceneMax = glm::max(sceneMax, jobMax);
+	}
 
-		viewProj[l.shadowIndex] = proj * glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0, 1, 0));
+	for (const auto& l : _dirLights)
+	{
+		if (l.shadowIndex == SHADOW_INDEX_NONE || _drawList.empty())
+			continue;
+
+		const glm::vec3 dir = glm::normalize(l.direction);
+		const glm::vec3 center = (sceneMin + sceneMax) * 0.5f;
+		const float radius = glm::length(sceneMax - sceneMin) * 0.5f;
+		const glm::vec3 up = (fabs(dir.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+		const glm::mat4 lightView = glm::lookAt(center - dir * radius * 2.0f, center, up);
+
+		// Light-space bounds of the 8 scene-AABB corners
+		glm::vec3 minLS(std::numeric_limits<float>::max());
+		glm::vec3 maxLS(std::numeric_limits<float>::lowest());
+		for (int c = 0; c < 8; c++)
+		{
+			const glm::vec3 corner((c & 1) ? sceneMax.x : sceneMin.x,
+				(c & 2) ? sceneMax.y : sceneMin.y,
+				(c & 4) ? sceneMax.z : sceneMin.z);
+			const glm::vec3 p = glm::vec3(lightView * glm::vec4(corner, 1.0f));
+			minLS = glm::min(minLS, p);
+			maxLS = glm::max(maxLS, p);
+		}
+
+		// Light view looks down -Z: nearest caster is at distance -maxLS.z, farthest at -minLS.z
+		const float pad = radius * DIR_SHADOW_FIT_PADDING;
+		const glm::mat4 proj = glm::ortho(minLS.x - pad, maxLS.x + pad, minLS.y - pad, maxLS.y + pad,
+			-minLS.z + pad, -maxLS.z - pad);
+
+		viewProj[l.shadowIndex] = proj * lightView;
 	}
 	for (const auto& l : _spotLights) 
 	{
@@ -676,6 +714,78 @@ void VulkanRenderer::BuildLightBVH(const glm::mat4& view, FrameData& frame)
 	}
 }
 
+void VulkanRenderer::FlagTransparentClusters(const glm::mat4& view, const glm::mat4& proj, FrameData& frame)
+{
+	if (_transparentDrawList.empty())
+		return;
+
+	auto* flags = static_cast<uint32_t*>(frame.Mapped(GlobalBinding::ClusterFlagsSSBO));
+	const auto extent = _pSwapChainCtx->GetExtent();
+	const glm::vec2 dims(static_cast<float>(extent.width), static_cast<float>(extent.height));
+	const glm::uvec2 tileSize((extent.width + CLUSTER_GRID_X - 1) / CLUSTER_GRID_X,
+		(extent.height + CLUSTER_GRID_Y - 1) / CLUSTER_GRID_Y);
+	const glm::uvec2 maxTile(CLUSTER_GRID_X - 1, CLUSTER_GRID_Y - 1);
+	const float nearP = _mainCam._nearPlane;
+	const float farP = _mainCam._farPlane;
+
+	auto zSlice = [&](float viewDist) -> uint32_t
+	{
+		const float t = std::max(viewDist / nearP, 1.0f);
+		const float slice = std::floor(std::log(t) * (static_cast<float>(CLUSTER_GRID_Z) / std::log(farP / nearP)));
+		return std::min(static_cast<uint32_t>(slice), CLUSTER_GRID_Z - 1);
+	};
+
+	for (const DrawJob& job : _transparentDrawList)
+	{
+		glm::vec3 minWS, maxWS;
+		DrawJob::TransformAABB(job._model, job._minAABB, job._maxAABB, minWS, maxWS);
+
+		float minDist = std::numeric_limits<float>::max();
+		float maxDist = std::numeric_limits<float>::lowest();
+		glm::uvec2 tileMin = maxTile;
+		glm::uvec2 tileMax(0, 0);
+		bool crossesNearPlane = false;
+
+		for (int c = 0; c < 8; c++)
+		{
+			const glm::vec3 corner((c & 1) ? maxWS.x : minWS.x, (c & 2) ? maxWS.y : minWS.y, (c & 4) ? maxWS.z : minWS.z);
+			const glm::vec4 viewPos = view * glm::vec4(corner, 1.0f);
+			const float dist = -viewPos.z; // view space looks down -Z
+			minDist = std::min(minDist, dist);
+			maxDist = std::max(maxDist, dist);
+
+			if (dist <= nearP)
+			{
+				crossesNearPlane = true;
+				continue;
+			}
+
+			const glm::vec4 clip = proj * viewPos;
+			const glm::vec2 ndc = glm::vec2(clip) / clip.w; // proj already carries the Vulkan y-flip
+			const glm::vec2 pixel = glm::clamp((ndc * 0.5f + 0.5f) * dims, glm::vec2(0.0f), dims - 1.0f);
+			const glm::uvec2 tile = glm::uvec2(pixel) / tileSize;
+			tileMin = glm::min(tileMin, tile);
+			tileMax = glm::max(tileMax, tile);
+		}
+
+		if (maxDist <= nearP)
+			continue; // entirely behind the camera
+
+		if (crossesNearPlane)
+		{
+			tileMin = glm::uvec2(0, 0);
+			tileMax = maxTile;
+		}
+
+		const uint32_t sliceMin = zSlice(std::max(minDist, nearP));
+		const uint32_t sliceMax = zSlice(maxDist);
+		for (uint32_t k = sliceMin; k <= sliceMax; k++)
+			for (uint32_t j = tileMin.y; j <= tileMax.y; j++)
+				for (uint32_t i = tileMin.x; i <= tileMax.x; i++)
+					flags[(k * CLUSTER_GRID_Y + j) * CLUSTER_GRID_X + i] = 1u;
+	}
+}
+
 void VulkanRenderer::RegisterResizeCallback()
 {
 	glfwSetFramebufferSizeCallback(_programCtx.GetContextWindow(), FramebufferResizeCallback);
@@ -691,16 +801,64 @@ void VulkanRenderer::FramebufferResizeCallback(GLFWwindow* window, int width, in
 	pAppCtx->NotifyFramebufferResized();
 }
 
-void VulkanRenderer::CleanupSwapChain()
+void VulkanRenderer::CreateScreenSizedTargets()
+{
+	CreateColorResources();
+	CreateDepthResources();
+	CreateGBufferImages();
+	CreateAOResource();
+}
+
+void VulkanRenderer::DestroyScreenSizedTargets()
 {
 	// Image views must be destroyed before the underlying VMA-allocated images.
 	_hdrColorImageView = nullptr;
 	_depthImageView = nullptr;
 	DestroyImage(_hdrColorImage);
 	DestroyImage(_depthImage);
+
+	_gBufferColorTargetImageViews.clear();
+	for (auto& image : _gBufferColorTargetImages)
+		DestroyImage(image);
+	_gBufferColorTargetImages.clear();
+
+	_aoImageViews.clear();
+	for (auto& image : _aoImages)
+		DestroyImage(image);
+	_aoImages.clear();
 }
 
-//TODO: Doesnt work, will cause device lost on resize
+void VulkanRenderer::WriteScreenSizedDescriptors()
+{
+	std::vector<vk::DescriptorImageInfo> gBufferInfos;
+	gBufferInfos.reserve(_gBufferColorTargetImageViews.size());
+	for (const auto& view : _gBufferColorTargetImageViews)
+		gBufferInfos.push_back({ .imageView = view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+
+	std::vector<vk::DescriptorImageInfo> aoInfos;
+	aoInfos.reserve(_aoImageViews.size());
+	for (const auto& view : _aoImageViews)
+		aoInfos.push_back({ .imageView = view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
+
+	const vk::DescriptorImageInfo hdrInfo{ .imageView = _hdrColorImageView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+	const vk::DescriptorImageInfo depthInfo{ .imageView = _depthImageView, .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal };
+
+	for (FrameData& frame : _frames)
+	{
+		const std::array<vk::WriteDescriptorSet, 4> writes = { {
+			{ .dstSet = frame.globalDescriptorSet, .dstBinding = ToIdx(GlobalBinding::HDROutput), .dstArrayElement = 0,
+			  .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &hdrInfo },
+			{ .dstSet = frame.globalDescriptorSet, .dstBinding = ToIdx(GlobalBinding::DepthTarget), .dstArrayElement = 0,
+			  .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &depthInfo },
+			{ .dstSet = frame.globalDescriptorSet, .dstBinding = ToIdx(GlobalBinding::GBufferColorTargets), .dstArrayElement = 0,
+			  .descriptorCount = static_cast<uint32_t>(gBufferInfos.size()), .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = gBufferInfos.data() },
+			{ .dstSet = frame.globalDescriptorSet, .dstBinding = ToIdx(GlobalBinding::AO), .dstArrayElement = 0,
+			  .descriptorCount = static_cast<uint32_t>(aoInfos.size()), .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = aoInfos.data() },
+		} };
+		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
+	}
+}
+
 void VulkanRenderer::RecreateSwapChain()
 {
 	int width = 0, height = 0;
@@ -713,8 +871,9 @@ void VulkanRenderer::RecreateSwapChain()
 
 	_vkCtx.GetDevice().waitIdle();
 
-	CleanupSwapChain();
+	DestroyScreenSizedTargets();
 
+	// The old swapchain has to stay alive while the new one is created from it
 	vk::SwapchainKHR oldHandle = _pSwapChainCtx ? _pSwapChainCtx->GetHandle() : VK_NULL_HANDLE;
 	auto newCtx = std::make_unique<SwapChainContext>(_vkCtx, oldHandle);
 	_pSwapChainCtx = std::move(newCtx);
@@ -725,35 +884,8 @@ void VulkanRenderer::RecreateSwapChain()
 
 	_currentFrame = 0;
 
-	CreateColorResources();
-	CreateDepthResources();
-
-	//TODO: Recreate gbuffer images since they relies on screen resolution
-	//TODO2: and ssao stuff
-
-	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-	{
-		FrameData& frame = _frames[i];
-		std::vector<vk::WriteDescriptorSet> writes;
-		std::vector<vk::DescriptorImageInfo> infos;
-		infos.reserve(16);
-
-		auto pushImage = [&](GlobalBinding b, vk::ImageView view) {
-			infos.push_back({ .imageView = view,
-							  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
-			writes.push_back({ .dstSet = frame.globalDescriptorSet,
-							   .dstBinding = ToIdx(b),
-							   .dstArrayElement = 0,
-							   .descriptorCount = 1,
-							   .descriptorType = vk::DescriptorType::eSampledImage,
-							   .pImageInfo = &infos.back() });
-			};
-
-		pushImage(GlobalBinding::HDROutput, _hdrColorImageView);
-		// shadow maps & shadow cubes: loop pushImage for each into ShadowMaps / ShadowCubeMaps
-
-		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
-	}
+	CreateScreenSizedTargets();
+	WriteScreenSizedDescriptors();
 }
 
 void VulkanRenderer::InitBindingDescs()
@@ -1101,40 +1233,10 @@ void VulkanRenderer::CreateDescriptorSets()
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
 		}
 
-		vk::DescriptorImageInfo hdrImageInfo = vk::DescriptorImageInfo{
-											.imageView = _hdrColorImageView,
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-
 		vk::DescriptorImageInfo skyboxCubemapInfo = vk::DescriptorImageInfo{
 											.imageView = _textureManager.GetTextureImageView(cubemapRTHandle.index),
 											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
-
-		size_t gBufferColorTargetCount = _gBufferColorTargetImageViews.size();
-		std::vector<vk::DescriptorImageInfo> gBufferColorTargetInfos;
-		gBufferColorTargetInfos.reserve(gBufferColorTargetCount);
-		for (size_t i = 0; i < gBufferColorTargetCount; i++)
-		{
-			// skip sampler field, defined in separate image info
-			gBufferColorTargetInfos.push_back(vk::DescriptorImageInfo{
-											.imageView = _gBufferColorTargetImageViews[i],
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
-		}
-
-		vk::DescriptorImageInfo depthTargetInfo = vk::DescriptorImageInfo{
-											.imageView = _depthImageView,
-											.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal };
-
-
-		size_t ssaoCount = _aoImages.size();
-		std::vector<vk::DescriptorImageInfo> ssaoInfos;
-		ssaoInfos.reserve(ssaoCount);
-		for (size_t i = 0; i < ssaoCount; i++)
-		{
-			ssaoInfos.push_back(vk::DescriptorImageInfo{
-											.imageView = _aoImageViews[i],
-											.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
-		}
 
 		vk::DescriptorImageInfo ssaoNoiseInfo = vk::DescriptorImageInfo{
 											.imageView = _ssaoNoiseImageView,
@@ -1182,43 +1284,11 @@ void VulkanRenderer::CreateDescriptorSets()
 			});
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::HDROutput),
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = &hdrImageInfo
-			});
-		writes.push_back(vk::WriteDescriptorSet{
-				.dstSet = frame.globalDescriptorSet,
 				.dstBinding = ToIdx(GlobalBinding::SkyboxCubemap),
 				.dstArrayElement = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eSampledImage,
 				.pImageInfo = &skyboxCubemapInfo
-			});
-		writes.push_back(vk::WriteDescriptorSet{
-				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::GBufferColorTargets),
-				.dstArrayElement = 0,
-				.descriptorCount = static_cast<uint32_t>(gBufferColorTargetCount),
-				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = gBufferColorTargetInfos.data()
-			});
-		writes.push_back(vk::WriteDescriptorSet{
-				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::DepthTarget),
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = &depthTargetInfo
-			});
-		writes.push_back(vk::WriteDescriptorSet{
-				.dstSet = frame.globalDescriptorSet,
-				.dstBinding = ToIdx(GlobalBinding::AO),
-				.dstArrayElement = 0,
-				.descriptorCount = static_cast<uint32_t>(ssaoCount),
-				.descriptorType = vk::DescriptorType::eSampledImage,
-				.pImageInfo = ssaoInfos.data()
 			});
 		writes.push_back(vk::WriteDescriptorSet{
 				.dstSet = frame.globalDescriptorSet,
@@ -1231,6 +1301,8 @@ void VulkanRenderer::CreateDescriptorSets()
 
 		_vkCtx.GetDevice().updateDescriptorSets(writes, {});
 	}
+
+	WriteScreenSizedDescriptors();
 }
 
 void VulkanRenderer::CreatePipelineLayouts()
@@ -1259,6 +1331,8 @@ void VulkanRenderer::CreatePipelines()
 	_debugWireframePipeline = CreateGraphicsPipeline("shaderBin/unlit_vert.spv", "shaderBin/unlit_frag.spv", *_globalPipelineLayout, PipelineType::DebugWireframe);
 	_shadowPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
 	_shadowCubeMapPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_vert.spv", *_globalPipelineLayout);
+	_shadowMaskedPipelineIndex = CreateShadowMapGraphicsPipeline("shaderBin/shadow_masked_vert.spv", *_globalPipelineLayout, "shaderBin/shadow_masked_frag.spv");
+	_shadowCubeMaskedPipelineIndex = CreateShadowCubeMapGraphicsPipeline("shaderBin/shadow_masked_vert.spv", *_globalPipelineLayout, "shaderBin/shadow_masked_frag.spv");
 	//TODO: actually has no use for push constant (at least currently), but reuse same layout just for simlicity
 	_hdrOutputPipelineIndex = CreateHDRGraphicsPipeline("shaderBin/fullscreen_vert.spv", "shaderBin/tonemap_pbr_neutral_frag.spv", *_globalPipelineLayout);
 	_skyboxPipelineIndex = CreateGraphicsPipeline("shaderBin/skybox_vert.spv", "shaderBin/skybox_frag.spv", *_globalPipelineLayout, PipelineType::Debug);
@@ -1393,14 +1467,20 @@ uint32_t VulkanRenderer::CreateGraphicsPipeline(const std::string& vertPath, con
 }
 
 
-//TODO: combine this into the default creation function, if fragPath is null -> no frag module
-uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout)
+uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout, const std::string& fragPath)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = nullptr;
 
-	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
-	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo };
+	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+	shaderStages.push_back(vk::PipelineShaderStageCreateInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" });
+	if (!fragPath.empty())
+	{
+		fragModule = CreateShaderModule(ReadFile(fragPath));
+		shaderStages.push_back(vk::PipelineShaderStageCreateInfo{
+			.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" });
+	}
 
 	auto bindingDescription = Vertex::GetBindingDescription();
 	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
@@ -1448,8 +1528,8 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 	vk::Format depthFormat = FindDepthFormat();
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
-		{.stageCount = 1,
-		 .pStages = shaderStages,
+		{.stageCount = static_cast<uint32_t>(shaderStages.size()),
+		 .pStages = shaderStages.data(),
 		 .pVertexInputState = &vertexInputInfo,
 		 .pInputAssemblyState = &inputAssembly,
 		 .pViewportState = &viewportState,
@@ -1471,13 +1551,20 @@ uint32_t VulkanRenderer::CreateShadowMapGraphicsPipeline(const std::string& vert
 	return _pipelines.size() - 1;
 }
 
-uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout)
+uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& vertPath, vk::PipelineLayout layout, const std::string& fragPath)
 {
 	vk::raii::ShaderModule vertModule = CreateShaderModule(ReadFile(vertPath));
+	vk::raii::ShaderModule fragModule = nullptr;
 
-	vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" };
-	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo };
+	std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+	shaderStages.push_back(vk::PipelineShaderStageCreateInfo{
+		.stage = vk::ShaderStageFlagBits::eVertex, .module = vertModule, .pName = "main" });
+	if (!fragPath.empty())
+	{
+		fragModule = CreateShaderModule(ReadFile(fragPath));
+		shaderStages.push_back(vk::PipelineShaderStageCreateInfo{
+			.stage = vk::ShaderStageFlagBits::eFragment, .module = fragModule, .pName = "main" });
+	}
 
 	auto bindingDescription = Vertex::GetBindingDescription();
 	auto attributeDescriptions = Vertex::GetAttributeDescriptions();
@@ -1525,8 +1612,8 @@ uint32_t VulkanRenderer::CreateShadowCubeMapGraphicsPipeline(const std::string& 
 	vk::Format depthFormat = FindDepthFormat();
 
 	vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = {
-		{.stageCount = 1,
-		 .pStages = shaderStages,
+		{.stageCount = static_cast<uint32_t>(shaderStages.size()),
+		 .pStages = shaderStages.data(),
 		 .pVertexInputState = &vertexInputInfo,
 		 .pInputAssemblyState = &inputAssembly,
 		 .pViewportState = &viewportState,
@@ -2715,6 +2802,52 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 	RecordImGUIPass(cmd, imageIndex);
 }
 
+void VulkanRenderer::RecordShadowCasterDraws(const vk::raii::CommandBuffer& cmd, uint32_t lightMatrixIndex,
+	uint32_t opaquePipeline, uint32_t maskedPipeline)
+{
+	for (int bucket = 0; bucket < 2; bucket++)
+	{
+		const bool masked = (bucket == 1);
+		const PipelineEntry& pso = _pipelines[masked ? maskedPipeline : opaquePipeline];
+		bool pipelineBound = false;
+
+		// Avoid rebind if buffers are the same
+		uint32_t lastVB = INVALID_HANDLE;
+		uint32_t lastIB = INVALID_HANDLE;
+		for (uint32_t i = 0; i < _drawList.size(); i++)
+		{
+			const DrawJob& job = _drawList[i];
+			if ((_materialManager.GetMaterial(job._matIndex).alphaMode == AlphaMode::Mask) != masked)
+				continue;
+
+			if (!pipelineBound)
+			{
+				cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+				pipelineBound = true;
+			}
+			if (job._vbHandle != lastVB)
+			{
+				cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
+				lastVB = job._vbHandle;
+			}
+			if (job._ibHandle != lastIB)
+			{
+				cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
+				lastIB = job._ibHandle;
+			}
+
+			ShadowPC pc{ i, lightMatrixIndex, job._matIndex };
+			cmd.pushConstants<ShadowPC>(
+				pso.layout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+				0,
+				pc);
+
+			cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
+		}
+	}
+}
+
 void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 {
 	size_t active2D = std::min<uint32_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
@@ -2737,8 +2870,6 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 										   .pDepthAttachment = &depthAttachment };
 
 		cmd.beginRendering(renderingInfo);
-		const PipelineEntry& pso = _pipelines[_shadowPipelineIndex];
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
@@ -2749,6 +2880,7 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
 				vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+
 		cmd.setCullMode(vk::CullModeFlagBits::eNone);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 		cmd.setDepthTestEnable(vk::True);
@@ -2757,39 +2889,13 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
+			*_globalPipelineLayout,
 			0,
 			*_frames[_currentFrame].globalDescriptorSet,
 			nullptr);
 
-		// Avoid rebind if buffers are the same
-		uint32_t lastVB = INVALID_HANDLE;
-		uint32_t lastIB = INVALID_HANDLE;
-		for (uint32_t i = 0; i < _drawList.size(); i++)
-		{
-			const DrawJob& job = _drawList[i];
-			if (job._vbHandle != lastVB)
-			{
-				cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
-				lastVB = job._vbHandle;
-			}
-			if (job._ibHandle != lastIB)
-			{
-				cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
-				lastIB = job._ibHandle;
-			}
-
-			// Reuse second slot (uint index) to indicate which view proj matrix to use
-			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(j) };
-			cmd.pushConstants<PerDrawPC>(
-				pso.layout,
-				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-				0,
-				pc
-			);
-
-			cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
-		}
+		// Slot j of ShadowMapUBO holds this light's view-proj
+		RecordShadowCasterDraws(cmd, static_cast<uint32_t>(j), _shadowPipelineIndex, _shadowMaskedPipelineIndex);
 
 		cmd.endRendering();
 	}
@@ -2819,8 +2925,6 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 										   .pDepthAttachment = &depthAttachment };
 
 		cmd.beginRendering(renderingInfo);
-		const PipelineEntry& pso = _pipelines[_shadowCubeMapPipelineIndex];
-		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 		cmd.setViewport(0,
 			vk::Viewport(
 				0.0f, 0.0f,
@@ -2831,6 +2935,7 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 			vk::Rect2D(
 				vk::Offset2D(0, 0),
 				vk::Extent2D(SHADOW_MAP_RESOLUTION, SHADOW_MAP_RESOLUTION)));
+
 		cmd.setCullMode(vk::CullModeFlagBits::eNone);
 		cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
 		cmd.setDepthTestEnable(vk::True);
@@ -2839,37 +2944,13 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 		cmd.setDepthCompareOp(vk::CompareOp::eGreater);
 		cmd.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			pso.layout,
+			*_globalPipelineLayout,
 			0,
 			*_frames[_currentFrame].globalDescriptorSet,
 			nullptr);
 
-		uint32_t lastVB = INVALID_HANDLE;
-		uint32_t lastIB = INVALID_HANDLE;
-		for (uint32_t i = 0; i < _drawList.size(); i++)
-		{
-			const DrawJob& job = _drawList[i];
-			if (job._vbHandle != lastVB)
-			{
-				cmd.bindVertexBuffers(0, vk::Buffer(_meshManager.GetBuffer(job._vbHandle).buffer), { 0 });
-				lastVB = job._vbHandle;
-			}
-			if (job._ibHandle != lastIB)
-			{
-				cmd.bindIndexBuffer(vk::Buffer(_meshManager.GetBuffer(job._ibHandle).buffer), 0, vk::IndexType::eUint32);
-				lastIB = job._ibHandle;
-			}
-
-			PerDrawPC pc{ static_cast<uint32_t>(i), static_cast<uint32_t>(SHADOW_CUBE_MATRIX_BASE + j * CUBE_FACE_COUNT) };
-			cmd.pushConstants<PerDrawPC>(
-				pso.layout,
-				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-				0,
-				pc
-			);
-
-			cmd.drawIndexed(job._indexCount, 1, job._firstIndex, job._vertexOffset, 0);
-		}
+		// Six consecutive ShadowMapUBO slots per cube map; SV_ViewID picks the face
+		RecordShadowCasterDraws(cmd, SHADOW_CUBE_MATRIX_BASE + j * CUBE_FACE_COUNT, _shadowCubeMapPipelineIndex, _shadowCubeMaskedPipelineIndex);
 
 		cmd.endRendering();
 	}
@@ -3042,7 +3123,7 @@ void VulkanRenderer::RecordForwardTransparentPass(const vk::raii::CommandBuffer&
 
 void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cmd)
 {
-	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
+	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
@@ -4140,9 +4221,9 @@ void VulkanRenderer::CaptureScreenshot(uint32_t imageIndex)
 	TransitionImageLayout(srcImage,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::eTransferSrcOptimal,
-		vk::AccessFlagBits2::eMemoryRead,						// srcAccessMask
+		vk::AccessFlagBits2::eColorAttachmentWrite,						// srcAccessMask: tone map + ImGui writes must land before the blit reads
 		vk::AccessFlagBits2::eTransferRead,                     // dstAccessMask
-		vk::PipelineStageFlagBits2::eNone,						// srcStage
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,						// srcStage
 		vk::PipelineStageFlagBits2::eTransfer,                  // dstStage
 		vk::ImageAspectFlagBits::eColor);
 

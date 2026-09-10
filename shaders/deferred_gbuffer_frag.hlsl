@@ -28,8 +28,8 @@ PSOutput main(PSInput input)
     uint albedoIdx = mat.texIndices[0];
     uint albedoSamplerIdx = mat.samplerIndices[0];
     float4 albedo = textures[NonUniformResourceIndex(albedoIdx)].Sample(textureSamplers[albedoSamplerIdx], input.uv);
-    //TODO: this disables early z depth write, separate it into a different shader/pipeline?
-    // discard
+    albedo *= mat.baseColorFactor;
+    
     clip(albedo.a - mat.params.g);
     
     uint rmIdx = mat.texIndices[1];
@@ -51,7 +51,6 @@ PSOutput main(PSInput input)
     float roughness = rm.g * mat.ormFactor.g;
     float metallic = rm.b * mat.ormFactor.b;
    
-    albedo *= float4(mat.baseColorFactor.rgb, 1.0f);
     emissive *= mat.emissiveFactor.rgb;
 
     float3 N = normalize(input.normal);

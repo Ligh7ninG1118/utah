@@ -47,6 +47,7 @@ struct CameraUBO
 struct ObjectData
 {
     float4x4 model;
+    float4x4 normalMatrix;
 };
 
 // Mirrors MaterialManager::MaterialGPU

@@ -16,12 +16,12 @@ float main(PSInput input) : SV_TARGET
     int3 loadCoord = int3(input.position.xy, 0);
 	
     float3 normalWS = gBufferColorTargets[G_BUFFER_COLOR_TARGET_NORMAL].Load(loadCoord).rgb;
-	// sky pixels, early out
-	if (dot(normalWS, normalWS) <= 1e-6f)
+	// sky pixels, early out 
+	float fragRawDepth = depthTarget.Load(loadCoord).r;
+	if (fragRawDepth <= 0.0f) //reverse z
 		return 1.0f;
 	normalWS = normalize(normalWS);
 	
-	float fragRawDepth = depthTarget.Load(loadCoord).r;
     // Reconstruct world space position from depth
 	// reverse z 
 	float projA = cam.nearPlane / (cam.farPlane - cam.nearPlane);
@@ -62,7 +62,7 @@ float main(PSInput input) : SV_TARGET
 		float sampledLinearDepth = projB / (sampledRawDepth + projA);
 
 		// range check to prevent far objects contribute to position's ao		
-		float rangeCheck = smoothstep(0.0f, 1.0f, SAMPLE_RADIUS / abs(-samplePosVS.z - sampledLinearDepth));
+		float rangeCheck = smoothstep(0.0f, 1.0f, SAMPLE_RADIUS / abs(fragLinearDepth - sampledLinearDepth));
 		occlusion += (sampledLinearDepth <= -samplePosVS.z - DEPTH_BIAS ? 1.0f : 0.0f) * rangeCheck;
 	}
 
