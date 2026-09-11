@@ -34,7 +34,7 @@
 ### Shadows
 - Shadow Maps for Directional, Spot, Point Lights
 - Percentage-Closer Filtering, Slop-Scaled Bias
-## Ambient Occlusion
+### Ambient Occlusion
 - SSAO
 - GTAO
 ### Vulkan & Resource
