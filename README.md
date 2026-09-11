@@ -12,6 +12,8 @@
 
 ![render_feature_cluster_heatmap](docs/render_feature_cluster_heatmap.png)
 
+![render_feature_cluster_gif](docs/render_feature_cluster.gif)
+
 | Point Light Numbers               | 512  | 1024 | 2048 | 4096 |
 |-----------------------------------|------|------|------|------|
 | Total Frame Time (ms)             | 1.36 | 1.87 | 2.99 | 6.62 |
