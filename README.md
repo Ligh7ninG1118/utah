@@ -1,5 +1,5 @@
 # utah
-*utah* is a renderer project written in modern C++ and Vulkan 1.3. It implements clustered deferred shading, PBR + IBL, shadow mapping, GTAO, with all shaders authored in HLSL.
+*utah* is a renderer written in modern C++ and Vulkan 1.3. It implements clustered deferred shading, PBR + IBL, shadow mapping, GTAO, with all shaders authored in HLSL.
 
 ## Render Showcase
 ### Physically Based Rendering, with Image Based Lighting
@@ -11,6 +11,13 @@
 ![render_feature_cluster_scene](docs/render_feature_cluster_scene.png)
 
 ![render_feature_cluster_heatmap](docs/render_feature_cluster_heatmap.png)
+
+| Point Light Numbers               | 512  | 1024 | 2048 | 4096 |
+|-----------------------------------|------|------|------|------|
+| Total Frame Time (ms)             | 1.36 | 1.87 | 2.99 | 6.62 |
+| Clustered - Build (ms)            | 0.11 | 0.11 | 0.11 | 0.11 |
+| Clustered - Light Assignment (ms) | 0.05 | 0.09 | 0.28 | 0.63 |
+| Lighting Pass (ms)                | 0.51 | 0.94 | 1.91 | 4.62 |
 
 ### Ambient Occlusion
 ![render_feature_AO](docs/render_feature_AO.png)
