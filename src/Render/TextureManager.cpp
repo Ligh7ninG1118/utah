@@ -258,7 +258,7 @@ TextureHandle TextureManager::CreateDefaultTexture(uint32_t colorValue, TextureC
 	AllocatedImage img = _pRenderer->CreateImage(
 		1, 1, 1, vk::SampleCountFlagBits::e1, format,
 		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc — no mip blits
+		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);   // no TransferSrc ï¿½ no mip blits
 
 	_pRenderer->TransitionImageLayout(img.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1);
 	_pRenderer->CopyBufferToImage(staging.buffer, img.image, 1, 1);
@@ -312,7 +312,7 @@ TextureHandle TextureManager::CreateCubemapRenderTargetWithMips(const std::strin
 		vk::SampleCountFlagBits::e1,
 		format,
 		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
+		vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment,
 		VMA_MEMORY_USAGE_AUTO,
 		VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
 		6);

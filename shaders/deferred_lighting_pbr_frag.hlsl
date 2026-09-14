@@ -46,7 +46,8 @@ float4 main(PSInput input) : SV_TARGET
     // Assume base reflectivity to be at 0.04
     // And for metallic surface, lerp between F0 to albedo color
     s.f0 = lerp((float3) 0.04f, albedo, s.metallic);
-    
+    FinalizeSurface(s);
+
     uint2 dims;
     depthTarget.GetDimensions(dims.x, dims.y);
     uint clusterKey = ClusterKeyFromDepth(depth, uint2(pixel.xy), dims);

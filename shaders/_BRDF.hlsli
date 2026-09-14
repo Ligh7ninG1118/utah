@@ -15,7 +15,13 @@ struct Surface
     float roughness;
     float metallic;
     float ao;
+    float NdotV;
 };
+
+void FinalizeSurface(inout Surface s)
+{
+    s.NdotV = max(dot(s.N, s.V), 0.0f);
+}
 
 float DistributionGGX(float3 N, float3 H, float roughness)
 {
@@ -33,33 +39,19 @@ float DistributionGGX(float3 N, float3 H, float roughness)
     return nom / denom;
 }
 
-float GeometrySchlickGGX(float NdotV, float roughness)
+float SmithGGXVisibility(float NdotV, float NdotL, float alpha)
 {
-    // kDirectLighting
-    float r = (roughness + 1.0f);
-    float k = (r * r) / 8.0f;
-    
-    float nom = NdotV;
-    float denom = NdotV * (1.0f - k) + k;
-    
-    return nom / denom;
-}
-
-float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0f);
-    float NdotL = max(dot(N, L), 0.0f);
-    
-    float ggx1 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx2 = GeometrySchlickGGX(NdotL, roughness);
-    
-    return ggx1 * ggx2;
+    float denom = lerp(2.0f * NdotL * NdotV, NdotL + NdotV, alpha);
+    return 0.5f / max(denom, 1e-4f);
 }
 
 // Schlick's approximation, for direct/analytic lights
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
-    return F0 + ((float3) 1.0f - F0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
+    float x = clamp(1.0f - cosTheta, 0.0f, 1.0f);
+    float x2 = x * x;
+    float x5 = x2 * x2 * x; // strength-reduced pow(x, 5): kills the exp2/log2 pair
+    return F0 + ((float3) 1.0f - F0) * x5;
 }
 
 // Roughness damped version for the split-sum IBL term only
@@ -70,22 +62,21 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 
 float3 EvaluateBRDF(Surface s, float3 L)
 {
-    L = normalize(L);
     float3 H = normalize(s.V + L);
-    
+    float NdotL = max(dot(s.N, L), 0.0f);
+    float alpha = s.roughness * s.roughness; // GGX alpha
+
     float NDF = DistributionGGX(s.N, H, s.roughness);
-    float G = GeometrySmith(s.N, s.V, L, s.roughness);
+    float Vis = SmithGGXVisibility(s.NdotV, NdotL, alpha);
     float3 F = FresnelSchlick(max(dot(H, s.V), 0.0f), s.f0);
-    
+
     // kS is corresponded in F
     float3 kS = F;
     float3 kD = (float3) 1.0f - kS;
     // Metallic = Absorb refractance = No diffuse
     kD *= 1.0f - s.metallic;
     
-    float3 numerator = NDF * G * F;
-    float denominator = 4.0f * max(dot(s.N, s.V), 0.0f) * max(dot(s.N, L), 0.0f) + 0.0001f;
-    float3 specular = numerator / denominator;
+    float3 specular = NDF * Vis * F;
     
     return kD * s.albedo / PI + specular;
 }

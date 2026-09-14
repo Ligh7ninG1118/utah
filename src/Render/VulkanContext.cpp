@@ -299,7 +299,11 @@ void VulkanContext::CreateLogicalDevice()
 
 	std::vector extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-	if (enableValidationLayers)
+	bool wantDebugUtils = enableValidationLayers;
+#if defined(UTAH_USE_GPU_MARKERS) && UTAH_USE_GPU_MARKERS
+	wantDebugUtils = true;
+#endif
+	if (wantDebugUtils)
 	{
 		extensions.push_back(vk::EXTDebugUtilsExtensionName);
 	}

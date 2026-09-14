@@ -69,6 +69,13 @@ private:
 	float _telemetryUpdateTimer = 0.0f;
 	float _telemetryDeltaTime = 0.0f;
 
+	static constexpr int FRAMETIME_HISTORY_COUNT = 120;
+	float _frameTimeHistoryMs[FRAMETIME_HISTORY_COUNT] = {};
+	int   _frameTimeHistoryOffset = 0;
+	float _telemetryAvgMs = 0.0f;
+	float _telemetryMinMs = 0.0f;
+	float _telemetryMaxMs = 0.0f;
+
 	// Using cursor to interact with ImGUI, and block camera input
 	bool _isCursorMode = false;
 

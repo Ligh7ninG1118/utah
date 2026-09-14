@@ -63,6 +63,7 @@ float4 main(PSInput input) : SV_Target
     // Assume base reflectivity to be at 0.04
     // And for metallic surface, lerp between F0 to albedo color
     s.f0 = lerp((float3) 0.04f, albedo, metallic);
-    
+    FinalizeSurface(s);
+
     return float4(EvaluateIBL(s) + IntegrateLightsBrute(s) + s.emissive, 1.0f);
 }

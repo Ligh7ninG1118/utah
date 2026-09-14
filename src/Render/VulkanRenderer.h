@@ -400,7 +400,7 @@ private:
 	AllocatedImage		   _depthImage{};
 	vk::raii::ImageView    _depthImageView = nullptr;
 
-	uint32_t SHADOW_MAP_RESOLUTION = 4096;
+	uint32_t SHADOW_MAP_RESOLUTION = 1024;
 
 	std::vector<AllocatedImage> _shadowMapImages;
 	std::vector<vk::raii::ImageView> _shadowMapImageViews;
@@ -453,7 +453,7 @@ private:
 	TextureHandle prefilterHandle;
 	TextureHandle brdfLUTHandle;
 
-	static constexpr uint32_t PREFILTER_RESOLUTION = 128;
+	static constexpr uint32_t PREFILTER_RESOLUTION = 512;
 	static constexpr uint32_t PREFILTER_MIP_LEVELS = 5;
 	static constexpr uint32_t BRDF_LUT_RESOLUTION = 512;
 
@@ -488,4 +488,6 @@ private:
 	uint32_t _lastClusterUniqueCount = 0;
 	bool _showClusterHeatmap = false;
 	float _heatmapMaxRef = 32.0f;
+
+	bool _enableShadows = false;
 };

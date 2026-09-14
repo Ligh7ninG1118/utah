@@ -69,6 +69,13 @@ if(UTAH_USE_AFTERMATH)
         VERBATIM)
 endif()
 
+# VK_EXT_debug_utils object names + pass labels for Nsight/RenderDoc.
+# Independent of validation layers so RelWithDebInfo captures still get names.
+option(UTAH_USE_GPU_MARKERS "Enable VK_EXT_debug_utils object names & pass labels" ON)
+if(UTAH_USE_GPU_MARKERS)
+    target_compile_definitions(utah PRIVATE UTAH_USE_GPU_MARKERS=1)
+endif()
+
 add_custom_command(TARGET utah POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models      $<TARGET_FILE_DIR:utah>/models

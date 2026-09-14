@@ -9,6 +9,9 @@
 #include <utility>
 #include <iostream>
 #include <random>
+#include <algorithm>
+#include <cfloat>
+#include <unordered_map>
 #include "Render/RenderCommons.h"
 
 
@@ -267,6 +270,7 @@ void UtahCtx::InitDemo2()
 		c._pos.z = 9.0f;
 		c._rot.y = -90.0f;
 		c._rot.z = 0.0f;
+		c._verticalFOV = 60.0f;
 
 		_registry.AddComponent<CameraComponent>(flyCam, std::move(c));
 	}
@@ -290,6 +294,8 @@ void UtahCtx::InitDemo2()
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
+		t._pos.y = 3.0f;
+		t._rot.y = 90.0f;
 
 		RenderComponent r;
 		r._model = helmetModel;
@@ -298,11 +304,11 @@ void UtahCtx::InitDemo2()
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
 	// Marble bust
-	{
+	/*{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.y = -1.0f;
+	    t._pos.y = -0.3f;
 		t._pos.z = 5.0f;
 		t._scale = glm::vec3(3.0f);
 
@@ -311,102 +317,123 @@ void UtahCtx::InitDemo2()
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
-	// Red Glass
-	{
-		Entity e = _registry.CreateEntity();
+	}*/
+	//// Red Glass
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		t._pos.x = -0.25f;
-		t._pos.y = -0.25f;
-		t._pos.z = 3.0f;
-		t._scale = glm::vec3(2.0f);
-		t._rot.x = 90.0f;
+	//	TransformComponent t;
+	//	t._pos.x = -0.25f;
+	//	t._pos.y = -0.25f;
+	//	t._pos.z = 3.0f;
+	//	t._scale = glm::vec3(2.0f);
+	//	t._rot.x = 90.0f;
 
-		RenderComponent r;
-		r._model = planeMesh;
-		r._material = redGlass;
+	//	RenderComponent r;
+	//	r._model = planeMesh;
+	//	r._material = redGlass;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
-	// Blue Glass
-	{
-		Entity e = _registry.CreateEntity();
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
+	//}
+	//// Blue Glass
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		t._pos.x = 0.25f;
-		t._pos.y = 0.25f;
-		t._pos.z = 3.5f;
-		t._scale = glm::vec3(2.0f);
-		t._rot.x = 90.0f;
+	//	TransformComponent t;
+	//	t._pos.x = 0.25f;
+	//	t._pos.y = 0.25f;
+	//	t._pos.z = 3.5f;
+	//	t._scale = glm::vec3(2.0f);
+	//	t._rot.x = 90.0f;
 
-		RenderComponent r;
-		r._model = planeMesh;
-		r._material = blueGlass;
+	//	RenderComponent r;
+	//	r._model = planeMesh;
+	//	r._material = blueGlass;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
+	//}
 	// Sponza
-	/*{
+	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
+		t._scale = glm::vec3(5.0f);
 
 		RenderComponent r;
 		r._model = sponzaMesh;
-
+		
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}*/
+	}
 
-	//// Floor Plane
-	/*{
-		Entity e = _registry.CreateEntity();
+	//// Directional Light 1
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		RenderComponent r;
-		t._pos.y = -0.66f;
-		t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
+	//	TransformComponent t;
+	//	t._pos.y = 3.0f;
 
-		r._model = planeMesh;
-		r._material = whiteMat;
+	//	DirectionalLightCPU p;
+	//	p.pitch = -45.0f;
+	//	p.yaw = 90.0f;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<RenderComponent>(e, std::move(r));
-	}*/
+	//	p.color = glm::vec3(1.0f, 1.0f, 1.0f);
+	//	p.intensity = 1.5f;
 
-	// Point lights
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<DirectionalLightCPU>(e, std::move(p));
+	//}
+
+	////Floor Plane
+	//{
+	//	Entity e = _registry.CreateEntity();
+
+	//	TransformComponent t;
+	//	RenderComponent r;
+	//	t._pos.y = -0.66f;
+	//	t._scale = glm::vec3(50.0f, 1.0f, 50.0f);
+
+	//	r._model = planeMesh;
+	//	r._material = whiteMat;
+
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<RenderComponent>(e, std::move(r));
+	//}
+
+
+	 //Point lights
 	{
 		Entity e = _registry.CreateEntity();
 
 		TransformComponent t;
-		t._pos.y = 2.0f;
-		t._pos.x = -3.0f;
+		t._pos.y = 5.0f;
+		t._pos.x = .0f;
 
 		PointLightCPU p;
-		p.color = glm::vec3(1.0f, 0.0f, 0.0f);
+		p.color = glm::vec3(1.0f, 1.0f, 1.0f);
 		p.intensity = 15.0f;
 
 		_registry.AddComponent<TransformComponent>(e, std::move(t));
 		_registry.AddComponent<PointLightCPU>(e, std::move(p));
 	}
 
-	{
-		Entity e = _registry.CreateEntity();
+	//{
+	//	Entity e = _registry.CreateEntity();
 
-		TransformComponent t;
-		t._pos.y = 2.0f;
-		t._pos.x = 3.0f;
+	//	TransformComponent t;
+	//	t._pos.y = 2.0f;
+	//	t._pos.x = 3.0f;
 
-		PointLightCPU p;
-		p.color = glm::vec3(0.0f, 0.0f, 1.0f);
-		p.intensity = 15.0f;
+	//	PointLightCPU p;
+	//	p.color = glm::vec3(0.0f, 0.0f, 1.0f);
+	//	p.intensity = 15.0f;
 
-		_registry.AddComponent<TransformComponent>(e, std::move(t));
-		_registry.AddComponent<PointLightCPU>(e, std::move(p));
-	}
+	//	_registry.AddComponent<TransformComponent>(e, std::move(t));
+	//	_registry.AddComponent<PointLightCPU>(e, std::move(p));
+	//}
 
 }
 
@@ -440,31 +467,31 @@ void UtahCtx::InitDemoSponza()
 		_registry.AddComponent<RenderComponent>(e, std::move(r));
 	}
 
-	//// light pressure test for clustered
-	//{
-	//	constexpr uint32_t kNumLights = 4096;
-	//	std::mt19937 rng(1337);
-	//	std::uniform_real_distribution<float> dx(-11.0f, 11.0f);
-	//	std::uniform_real_distribution<float> dy(0.5f, 12.0f);
-	//	std::uniform_real_distribution<float> dz(-4.5f, 4.5f);
-	//	std::uniform_real_distribution<float> dc(0.1f, 1.0f);
+	// light pressure test for clustered
+	{
+		constexpr uint32_t kNumLights = 4096;
+		std::mt19937 rng(1337);
+		std::uniform_real_distribution<float> dx(-11.0f, 11.0f);
+		std::uniform_real_distribution<float> dy(0.5f, 12.0f);
+		std::uniform_real_distribution<float> dz(-4.5f, 4.5f);
+		std::uniform_real_distribution<float> dc(0.1f, 1.0f);
 
-	//	for (uint32_t i = 0; i < kNumLights; i++)
-	//	{
-	//		Entity e = _registry.CreateEntity();
+		for (uint32_t i = 0; i < kNumLights; i++)
+		{
+			Entity e = _registry.CreateEntity();
 
-	//		TransformComponent t;
-	//		t._pos = glm::vec3(dx(rng), dy(rng), dz(rng));
+			TransformComponent t;
+			t._pos = glm::vec3(dx(rng), dy(rng), dz(rng));
 
-	//		PointLightCPU p;
-	//		p.color = glm::vec3(dc(rng), dc(rng), dc(rng));
-	//		p.intensity = 5.0f;
-	//		p.range = 3.0f;
+			PointLightCPU p;
+			p.color = glm::vec3(dc(rng), dc(rng), dc(rng));
+			p.intensity = 5.0f;
+			p.range = 3.0f;
 
-	//		_registry.AddComponent<TransformComponent>(e, std::move(t));
-	//		_registry.AddComponent<PointLightCPU>(e, std::move(p));
-	//	}
-	//}
+			_registry.AddComponent<TransformComponent>(e, std::move(t));
+			_registry.AddComponent<PointLightCPU>(e, std::move(p));
+		}
+	}
 }
 
 void UtahCtx::MainLoop()
@@ -477,12 +504,30 @@ void UtahCtx::MainLoop()
 		double deltaTime = currentTimestamp - _lastFrameTimestamp;
 		_lastFrameTimestamp = currentTimestamp;
 
+		const float frameMs = static_cast<float>(deltaTime) * 1000.0f;
+		_frameTimeHistoryMs[_frameTimeHistoryOffset] = frameMs;
+		_frameTimeHistoryOffset = (_frameTimeHistoryOffset + 1) % FRAMETIME_HISTORY_COUNT;
+
 		_telemetryUpdateTimer += deltaTime;
 		// Only update telemetry display every 1s
 		if (_telemetryUpdateTimer >= _telemetryUpdateInterval)
 		{
 			_telemetryUpdateTimer = 0.0f;
 			_telemetryDeltaTime = deltaTime;
+
+			float sum = 0.0f, mn = FLT_MAX, mx = 0.0f;
+			int samples = 0;
+			for (float v : _frameTimeHistoryMs)
+			{
+				if (v <= 0.0f) continue;
+				sum += v;
+				mn = std::min(mn, v);
+				mx = std::max(mx, v);
+				++samples;
+			}
+			_telemetryAvgMs = samples > 0 ? sum / static_cast<float>(samples) : 0.0f;
+			_telemetryMinMs = samples > 0 ? mn : 0.0f;
+			_telemetryMaxMs = mx;
 		}
 
 		CameraComponent& cam = _registry.GetPool<CameraComponent>()->GetPool()[0];
@@ -492,21 +537,51 @@ void UtahCtx::MainLoop()
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImGui::Begin("Telemetry", 0, ImGuiWindowFlags_AlwaysAutoResize);
-		ImGui::Text("FPS: %.1f\t\t\tTotal Frame Time: %.3f ms\n", 1.0f / _telemetryDeltaTime, _telemetryDeltaTime * 1000.0f);
-		ImGui::Text("POS: (%.2f, %.2f, %.2f)\t\tROT: (%.2f, %.2f, %.2f)\n", cam._pos.x, cam._pos.y, cam._pos.z, cam._rot.x, cam._rot.y, cam._rot.z);
+
+		ImGui::SeparatorText("Performance (CPU, wall-clock)");
+		ImGui::Text("FPS: %.1f    Frame: %.3f ms avg / %.3f ms last",
+			_telemetryAvgMs > 0.0f ? 1000.0f / _telemetryAvgMs : 0.0f,
+			_telemetryAvgMs, static_cast<float>(_telemetryDeltaTime) * 1000.0f);
+		ImGui::Text("min %.3f ms    max %.3f ms", _telemetryMinMs, _telemetryMaxMs);
+		{
+			char overlay[32];
+			snprintf(overlay, sizeof(overlay), "%.3f ms", _telemetryAvgMs);
+			// scale_max = FLT_MAX -> auto-scale the plot to the current data range.
+			ImGui::PlotLines("##frametime", _frameTimeHistoryMs, FRAMETIME_HISTORY_COUNT,
+				_frameTimeHistoryOffset, overlay, 0.0f, FLT_MAX, ImVec2(0.0f, 40.0f));
+		}
+
+		ImGui::SeparatorText("Camera");
+		ImGui::Text("POS: (%.2f, %.2f, %.2f)", cam._pos.x, cam._pos.y, cam._pos.z);
+		ImGui::Text("ROT: (%.2f, %.2f, %.2f)", cam._rot.x, cam._rot.y, cam._rot.z);
+
 		ImGui::End();
 #endif
 
-		/*auto& poolOwner = _registry.GetPool<PointLightCPU>()->GetEntities();
-		auto* tfPool = _registry.GetPool<TransformComponent>();
-		for (auto& owner : poolOwner)
 		{
-			static float timeCount = 0.0f;
-			timeCount += deltaTime * 100.0f;
-			auto& tf = tfPool->Get(owner);
-			tf._pos.x = glm::cos(glm::radians(timeCount)) * 2.0f;
-			tf._pos.z = glm::sin(glm::radians(timeCount)) * 2.0f;
-		}*/
+			auto& lightOwners = _registry.GetPool<PointLightCPU>()->GetEntities();
+			auto* tfPool = _registry.GetPool<TransformComponent>();
+
+			static std::unordered_map<Entity, glm::vec3> baseLightPos;
+
+			const float t = static_cast<float>(currentTimestamp);
+			constexpr float kGoldenAngle = 2.39996323f;   // spreads phase across the set
+			constexpr float kOrbitRadius = 1.0f;
+			constexpr float kBobAmplitude = 0.5f;
+
+			for (size_t i = 0; i < lightOwners.size(); i++)
+			{
+				Entity owner = lightOwners[i];
+				auto& tf = tfPool->Get(owner);
+
+				const glm::vec3& base = baseLightPos.try_emplace(owner, tf._pos).first->second;
+
+				const float phase = static_cast<float>(i) * kGoldenAngle;
+				tf._pos.x = base.x + glm::cos(t * 0.8f + phase) * kOrbitRadius;
+				tf._pos.z = base.z + glm::sin(t * 0.8f + phase) * kOrbitRadius;
+				tf._pos.y = base.y + glm::sin(t * 1.3f + phase) * kBobAmplitude;
+			}
+		}
 
 		_pFlyCamera->Update(deltaTime);
 

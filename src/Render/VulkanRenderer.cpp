@@ -20,6 +20,7 @@
 #include "imgui_impl_vulkan.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+#include "DebugUtils.h"
 
 namespace
 {
@@ -111,9 +112,8 @@ void VulkanRenderer::Initialize()
 	_textureManager.Initialize(this, &_vkCtx);
 	TextureHandle vikingRoomTex = _textureManager.ImportTexture("textures/viking_room.png", "viking_room");
 
-	equirectHandle = _textureManager.ImportTexture("textures/cobblestone_parish_road.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
-	//equirectHandle = _textureManager.ImportTexture("textures/dikhololo_night_2k.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
-	cubemapRTHandle = _textureManager.CreateCubemapRenderTarget("cubemap_render_target", 2048);
+	equirectHandle = _textureManager.ImportTexture("textures/kiara_1_dawn_4k.hdr", "equirect", TextureColorSpace::HDR, SamplerType::RepeatUClampV);
+	cubemapRTHandle = _textureManager.CreateCubemapRenderTargetWithMips("cubemap_render_target", 2048, 12); // 12 = floor(log2(2048)) + 1; full mip chain for IBL prefiltering
 	convolutionHandle = _textureManager.CreateCubemapRenderTarget("convolution_render_target", 32);
 	prefilterHandle = _textureManager.CreateCubemapRenderTargetWithMips("prefilter_render_target", PREFILTER_RESOLUTION, PREFILTER_MIP_LEVELS);
 	brdfLUTHandle = _textureManager.Create2DRenderTarget("brdf_lut_render_target", BRDF_LUT_RESOLUTION, BRDF_LUT_RESOLUTION);
@@ -173,6 +173,10 @@ void VulkanRenderer::Initialize()
 	CreateSSAOKernel();
 
 	ConvertEquirectToCubeMap();
+	{
+		const Texture& srcCube = _textureManager.GetTexture(cubemapRTHandle.index);
+		GenerateMipmaps(srcCube.texImage.image, vk::Format::eR16G16B16A16Sfloat, 2048, 2048, 12, 6);
+	}
 	ConvolveIrradianceMap();
 	PrefilterEnvironmentMap();
 	BakeBRDFLUT();
@@ -227,8 +231,10 @@ void VulkanRenderer::DrawFrame()
 
 		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
+#if USE_DEAR_IMGUI_INTERFACE
 			// No image, close ImGui frame
 			ImGui::EndFrame();
+#endif
 			RecreateSwapChain();
 			return;
 		}
@@ -302,6 +308,7 @@ void VulkanRenderer::WaitForIdle()
 
 void VulkanRenderer::InitImGUI()
 {
+#if USE_DEAR_IMGUI_INTERFACE
 	// Separate desc pool for imgui
 	vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler,
 									IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE };
@@ -338,6 +345,7 @@ void VulkanRenderer::InitImGUI()
 	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
 
 	ImGui_ImplVulkan_Init(&initInfo);
+#endif
 }
 
 void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
@@ -373,11 +381,43 @@ void VulkanRenderer::UpdateUniformBuffer(uint32_t currentImage)
 	memset(frame.Mapped(GlobalBinding::ClusterFlagsSSBO), 0, sizeof(uint32_t) * CLUSTER_COUNT);
 	FlagTransparentClusters(camUBO.view, camUBO.proj, frame);
 
+#if USE_DEAR_IMGUI_INTERFACE
 	ImGui::Begin("Telemetry");
+
+	ImGui::SeparatorText("Device");
+	{
+		static const std::string gpuName(_vkCtx.GetPhysicalDevice().getProperties().deviceName.data());
+		ImGui::TextUnformatted(gpuName.c_str());
+	}
+
+	ImGui::SeparatorText("Render");
+	{
+		const char* pathItems[] = { "Forward", "Deferred" };
+		int pathCur = static_cast<int>(_renderPath);
+		if (ImGui::Combo("Render Path", &pathCur, pathItems, IM_ARRAYSIZE(pathItems)))
+			_renderPath = static_cast<RenderPath>(pathCur);
+
+		const char* aoItems[] = { "Off", "SSAO", "GTAO" };
+		int aoCur = static_cast<int>(_aoMethod);
+		if (ImGui::Combo("AO Method", &aoCur, aoItems, IM_ARRAYSIZE(aoItems)))
+			_aoMethod = static_cast<AOMethod>(aoCur);
+
+		ImGui::Checkbox("Enable Shadows", &_enableShadows);
+	}
+
+	ImGui::SeparatorText("Clustered Lighting");
 	ImGui::Text("Active Clusters: %u / %u", _lastClusterUniqueCount, CLUSTER_COUNT);
 	ImGui::Checkbox("Cluster Light Heatmap", &_showClusterHeatmap);
-	ImGui::SliderFloat("Heatmap Max", &_heatmapMaxRef, 1.0f, 128.0f);
+	ImGui::SliderFloat("Heatmap Max", &_heatmapMaxRef, 1.0f, 512.0f);
+
+	ImGui::SeparatorText("Scene");
+	ImGui::Text("Draws:  %u opaque, %u transparent",
+		static_cast<unsigned>(_drawList.size()), static_cast<unsigned>(_transparentDrawList.size()));
+	ImGui::Text("Lights: %u dir, %u point, %u spot",
+		static_cast<unsigned>(_dirLights.size()), static_cast<unsigned>(_pointLights.size()), static_cast<unsigned>(_spotLights.size()));
+
 	ImGui::End();
+#endif
 
 	AssignShadowSlots();
 	LightUBO lightUBO{};
@@ -593,6 +633,14 @@ void VulkanRenderer::SortTransparentDrawJobs(const glm::mat4& view)
 
 void VulkanRenderer::AssignShadowSlots()
 {
+	if (!_enableShadows)
+	{
+		for (auto& l : _dirLights)   l.shadowIndex = SHADOW_INDEX_NONE;
+		for (auto& l : _spotLights)  l.shadowIndex = SHADOW_INDEX_NONE;
+		for (auto& l : _pointLights) l.shadowIndex = SHADOW_INDEX_NONE;
+		return;
+	}
+
 	int next2D = 0; // shared by dir + spot
 	for (auto& l : _dirLights)  
 		l.shadowIndex = (next2D < (int)SHADOW_2D_SLOT_COUNT) ? next2D++ : SHADOW_INDEX_NONE;
@@ -2375,7 +2423,10 @@ void VulkanRenderer::RecordFrame(uint32_t imageIndex)
 
 void VulkanRenderer::RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
-	// shadow mapping pass 
+	ScopedGPULabel _lbl(cmd, "Frame: Forward");
+
+	// shadow mapping pass
+	if (_enableShadows)
 	{
 		// Transit shadow map images to attachment
 		size_t casterCount = std::min<size_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
@@ -2532,12 +2583,17 @@ void VulkanRenderer::RecordForwardFrame(const vk::raii::CommandBuffer& cmd, uint
 			vk::ImageAspectFlagBits::eColor);
 	}
 
+#if USE_DEAR_IMGUI_INTERFACE
 	RecordImGUIPass(cmd, imageIndex);
+#endif
 }
 
 void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
+	ScopedGPULabel _lbl(cmd, "Frame: Deferred");
+
 	// Shadow mapping pass (2d pass for dir/spot, and cube pass for point)
+	if (_enableShadows)
 	{
 		// Transit shadow map images to attachment
 		size_t casterCount = std::min<size_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
@@ -2799,7 +2855,9 @@ void VulkanRenderer::RecordDeferredFrame(const vk::raii::CommandBuffer& cmd, uin
 			vk::ImageAspectFlagBits::eColor);
 	}
 
+#if USE_DEAR_IMGUI_INTERFACE
 	RecordImGUIPass(cmd, imageIndex);
+#endif
 }
 
 void VulkanRenderer::RecordShadowCasterDraws(const vk::raii::CommandBuffer& cmd, uint32_t lightMatrixIndex,
@@ -2850,6 +2908,8 @@ void VulkanRenderer::RecordShadowCasterDraws(const vk::raii::CommandBuffer& cmd,
 
 void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Shadow: 2D");
+
 	size_t active2D = std::min<uint32_t>(_dirLights.size() + _spotLights.size(), SHADOW_2D_SLOT_COUNT);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
@@ -2903,6 +2963,7 @@ void VulkanRenderer::RecordShadowMapPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Shadow: Cube");
 	uint32_t activeCube = std::min<uint32_t>(_pointLights.size(), SHADOW_CUBE_SLOT_COUNT);
 
 	for (uint32_t j = 0; j < activeCube; j++)
@@ -2958,6 +3019,7 @@ void VulkanRenderer::RecordShadowCubeMapPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Forward: Opaque");
 	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
@@ -3047,6 +3109,7 @@ void VulkanRenderer::RecordForwardOpaquePass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordForwardTransparentPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Forward: Transparent");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
@@ -3123,6 +3186,7 @@ void VulkanRenderer::RecordForwardTransparentPass(const vk::raii::CommandBuffer&
 
 void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Deferred: GBuffer");
 	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f);
 	// Reverse Z, cleared 0.0f instead
 	vk::ClearValue clearDepth = vk::ClearDepthStencilValue(0.0f, 0);
@@ -3223,6 +3287,7 @@ void VulkanRenderer::RecordDeferredGBufferPass(const vk::raii::CommandBuffer& cm
 
 void VulkanRenderer::RecordDeferredLightingPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Deferred: Lighting");
 	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
@@ -3276,6 +3341,7 @@ void VulkanRenderer::RecordDeferredLightingPass(const vk::raii::CommandBuffer& c
 
 void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Skybox");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
@@ -3353,6 +3419,7 @@ void VulkanRenderer::RecordSkyboxPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Debug Draw");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
@@ -3494,6 +3561,7 @@ void VulkanRenderer::RecordDebugDrawPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
+	ScopedGPULabel _lbl(cmd, "Tone Mapping");
 	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
@@ -3540,6 +3608,8 @@ void VulkanRenderer::RecordToneMappingPass(const vk::raii::CommandBuffer& cmd, u
 
 void VulkanRenderer::RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_t imageIndex)
 {
+#if USE_DEAR_IMGUI_INTERFACE
+	ScopedGPULabel _lbl(cmd, "ImGui");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _pSwapChainCtx->GetSwapChainImageView(imageIndex),
@@ -3558,10 +3628,12 @@ void VulkanRenderer::RecordImGUIPass(const vk::raii::CommandBuffer& cmd, uint32_
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *cmd);
 
 	cmd.endRendering();
+#endif
 }
 
 void VulkanRenderer::RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Cluster: Build");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	const PipelineEntry& buildPso = _pipelines[_clusterBuildPipelineIndex];
@@ -3590,6 +3662,7 @@ void VulkanRenderer::RecordClusterBuildPass(const vk::raii::CommandBuffer& cmd)
 
 void VulkanRenderer::RecordLightAssignmentPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Cluster: Light Assignment");
 	const PipelineEntry& assignPso = _pipelines[_clusterAssignPipelineIndex];
 	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *assignPso.pipeline);
 	cmd.bindDescriptorSets(
@@ -3610,6 +3683,7 @@ void VulkanRenderer::RecordLightAssignmentPass(const vk::raii::CommandBuffer& cm
 
 void VulkanRenderer::RecordClusterHeatmapPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "Cluster: Heatmap");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _hdrColorImageView,
@@ -3840,8 +3914,8 @@ void VulkanRenderer::GenerateMipmaps(vk::Image image, vk::Format imageFormat, in
 		dstOffsets[1] = vk::Offset3D(mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1);
 		vk::ImageBlit blit = {
 			.srcSubresource = {}, .srcOffsets = offsets, .dstSubresource = {}, .dstOffsets = dstOffsets };
-		blit.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i - 1, 0, 1);
-		blit.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i, 0, 1);
+		blit.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i - 1, 0, layerCount);
+		blit.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i, 0, layerCount);
 
 		commandBuffer->blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image,
 			vk::ImageLayout::eTransferDstOptimal, { blit }, vk::Filter::eLinear);
@@ -3886,6 +3960,9 @@ void VulkanRenderer::CreateDepthResources()
 		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eDepthStencilAttachment);
 
 	_depthImageView = CreateImageView(_depthImage.image, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
+
+	SetDebugName(_vkCtx.GetDevice(), _depthImage, "Depth");
+	SetDebugName(_vkCtx.GetDevice(), _depthImageView, "Depth View");
 }
 
 vk::Format VulkanRenderer::FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling,
@@ -4097,6 +4174,9 @@ void VulkanRenderer::CreateColorResources()
 		vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment);  //Also need transient?
 
 	_hdrColorImageView = CreateImageView(_hdrColorImage.image, hdrFormat, vk::ImageAspectFlagBits::eColor, 1);
+
+	SetDebugName(_vkCtx.GetDevice(), _hdrColorImage, "HDR Color");
+	SetDebugName(_vkCtx.GetDevice(), _hdrColorImageView, "HDR Color View");
 }
 
 void VulkanRenderer::CreateShadowMapResources()
@@ -4109,6 +4189,9 @@ void VulkanRenderer::CreateShadowMapResources()
 			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled));
 
 		_shadowMapImageViews.emplace_back(CreateImageView(_shadowMapImages[i].image, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1));
+
+		SetDebugName(_vkCtx.GetDevice(), _shadowMapImages[i], ("Shadow2D[" + std::to_string(i) + "]").c_str());
+		SetDebugName(_vkCtx.GetDevice(), _shadowMapImageViews[i], ("Shadow2D View[" + std::to_string(i) + "]").c_str());
 	}
 
 	// For viewing the shadow map in imgui window
@@ -4128,6 +4211,9 @@ void VulkanRenderer::CreateShadowMapResources()
 		_shadowCubeMapImageViews.emplace_back(
 			CreateImageView(_shadowCubeMapImages[i].image, vk::Format::eD32Sfloat,
 				vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::eCube, 6));
+
+		SetDebugName(_vkCtx.GetDevice(), _shadowCubeMapImages[i], ("ShadowCube[" + std::to_string(i) + "]").c_str());
+		SetDebugName(_vkCtx.GetDevice(), _shadowCubeMapImageViews[i], ("ShadowCube View[" + std::to_string(i) + "]").c_str());
 	}
 
 	//TODO: Separate this out too? No need to recreate
@@ -4147,6 +4233,7 @@ void VulkanRenderer::CreateShadowMapResources()
 	//TODO: check out border color
 
 	_shadowMapSampler = vk::raii::Sampler(_vkCtx.GetDevice(), samplerInfo);
+	SetDebugName(_vkCtx.GetDevice(), _shadowMapSampler, "Shadow Sampler");
 }
 
 void VulkanRenderer::HotReloadShaders()
@@ -4295,6 +4382,9 @@ void VulkanRenderer::CreateGBufferImages()
 
 		_gBufferColorTargetImageViews.emplace_back(
 			CreateImageView(_gBufferColorTargetImages[i].image, _gBufferColorTargetFormats[i], vk::ImageAspectFlagBits::eColor, 1));
+
+		SetDebugName(_vkCtx.GetDevice(), _gBufferColorTargetImages[i], ("GBuffer[" + std::to_string(i) + "]").c_str());
+		SetDebugName(_vkCtx.GetDevice(), _gBufferColorTargetImageViews[i], ("GBuffer View[" + std::to_string(i) + "]").c_str());
 	}
 }
 
@@ -4354,21 +4444,31 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 
 	cmd.begin(beginInfo);
 
-	// Transition the skybox image to write and color attachment optimal
-	TransitionImageLayout(cubemapTex.texImage.image,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		{},
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		{},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::ImageAspectFlagBits::eColor);
+	vk::ImageViewCreateInfo mip0ViewInfo{
+		.image = cubemapTex.texImage.image,
+		.viewType = vk::ImageViewType::eCube,
+		.format = vk::Format::eR16G16B16A16Sfloat,
+		.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 } };
+	vk::raii::ImageView mip0View(_vkCtx.GetDevice(), mip0ViewInfo);
+
+	vk::ImageMemoryBarrier2 toColor{
+		.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+		.srcAccessMask = {},
+		.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+		.oldLayout = vk::ImageLayout::eUndefined,
+		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.image = cubemapTex.texImage.image,
+		.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 } };
+	cmd.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &toColor });
 
 
 	vk::ClearValue clearColor = vk::ClearColorValue(0.015f, 0.015f, 0.015f, 1.0f);
 
 
-	vk::RenderingAttachmentInfo colorAttachment = { .imageView = cubemapTex.texImageView,
+	vk::RenderingAttachmentInfo colorAttachment = { .imageView = mip0View,
 												   .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 												   .resolveMode = vk::ResolveModeFlagBits::eNone,
 												   .loadOp = vk::AttachmentLoadOp::eClear,
@@ -4438,14 +4538,35 @@ void VulkanRenderer::ConvertEquirectToCubeMap()
 
 	cmd.endRendering();
 
-	TransitionImageLayout(cubemapTex.texImage.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eColor);
+	{
+		vk::ImageMemoryBarrier2 toTransfer[2];
+		// mip 0: ColorAttachment -> TransferDst, contents preserved (blit source)
+		toTransfer[0] = vk::ImageMemoryBarrier2{
+			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eAllTransfer,
+			.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.newLayout = vk::ImageLayout::eTransferDstOptimal,
+			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.image = cubemapTex.texImage.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 } };
+		// mips 1..N-1: Undefined -> TransferDst, contents discarded (filled by the blit chain)
+		toTransfer[1] = vk::ImageMemoryBarrier2{
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = vk::PipelineStageFlagBits2::eAllTransfer,
+			.dstAccessMask = vk::AccessFlagBits2::eTransferWrite,
+			.oldLayout = vk::ImageLayout::eUndefined,
+			.newLayout = vk::ImageLayout::eTransferDstOptimal,
+			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+			.image = cubemapTex.texImage.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 1, 11, 0, 6 } };
+		cmd.pipelineBarrier2(vk::DependencyInfo{
+			.imageMemoryBarrierCount = 2, .pImageMemoryBarriers = toTransfer });
+	}
 
 	cmd.end();
 
@@ -4818,7 +4939,14 @@ void VulkanRenderer::BakeBRDFLUT()
 
 void VulkanRenderer::RecordAOPass(const vk::raii::CommandBuffer& cmd)
 {
-	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	ScopedGPULabel _lbl(cmd, "AO");
+
+	// AO off: clear the RAW target to 1.0 (= no occlusion) and skip the AO shader.
+	// The blur pass then propagates 1.0 into BLURRED, and deferred lighting's
+	// min(materialAO, blurredAO) leaves only the material's own occlusion.
+	const bool aoOff = (_aoMethod == AOMethod::Off);
+	const float clearVal = aoOff ? 1.0f : 0.0f;
+	vk::ClearValue clearColor = vk::ClearColorValue(clearVal, clearVal, clearVal, 1.0f);
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _aoImageViews[static_cast<uint8_t>(AOTargetType::RAW)],
@@ -4833,40 +4961,43 @@ void VulkanRenderer::RecordAOPass(const vk::raii::CommandBuffer& cmd)
 									   .pColorAttachments = &colorAttachment };
 	cmd.beginRendering(renderingInfo);
 
+	// When AO is off the loadOp clear above already wrote 1.0; no shader work needed.
+	if (!aoOff)
+	{
+		uint32_t pipelineIndex = _aoMethod == AOMethod::GTAO ? _gtaoPipelineIndex : _ssaoPipelineIndex;
 
-	uint32_t pipelineIndex = _aoMethod == AOMethod::GTAO ? _gtaoPipelineIndex : _ssaoPipelineIndex;
-	//TODO: skip pass if ao is off
+		const PipelineEntry& pso = _pipelines[pipelineIndex];
 
-	const PipelineEntry& pso = _pipelines[pipelineIndex];
+		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
 
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pso.pipeline);
+		cmd.setViewport(0,
+			vk::Viewport(
+				0.0f, 0.0f,
+				static_cast<float>(swapChainExtent.width),
+				static_cast<float>(swapChainExtent.height),
+				0.0f, 1.0f));
 
-	cmd.setViewport(0,
-		vk::Viewport(
-			0.0f, 0.0f,
-			static_cast<float>(swapChainExtent.width),
-			static_cast<float>(swapChainExtent.height),
-			0.0f, 1.0f));
+		cmd.setScissor(0,
+			vk::Rect2D(
+				vk::Offset2D(0, 0),
+				swapChainExtent));
 
-	cmd.setScissor(0,
-		vk::Rect2D(
-			vk::Offset2D(0, 0),
-			swapChainExtent));
+		cmd.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pso.layout,
+			0,
+			*_frames[_currentFrame].globalDescriptorSet,
+			nullptr);
 
-	cmd.bindDescriptorSets(
-		vk::PipelineBindPoint::eGraphics,
-		pso.layout,
-		0,
-		*_frames[_currentFrame].globalDescriptorSet,
-		nullptr);
-
-	cmd.draw(3, 1, 0, 0);
+		cmd.draw(3, 1, 0, 0);
+	}
 
 	cmd.endRendering();
 }
 
 void VulkanRenderer::RecordAOBlurPass(const vk::raii::CommandBuffer& cmd)
 {
+	ScopedGPULabel _lbl(cmd, "AO: Blur");
 	const auto swapChainExtent = _pSwapChainCtx->GetExtent();
 
 	vk::RenderingAttachmentInfo colorAttachment = { .imageView = _aoImageViews[static_cast<uint8_t>(AOTargetType::BLURRED)],

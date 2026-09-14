@@ -45,7 +45,12 @@ LightSample SamplePointLight(PointLight l, Surface s)
     float distance = length(L);
     L = normalize(L);
     
-    float attenuation = pow(saturate(1.0f - pow((distance / l.range), 4)), 2) / (distance * distance + 0.00001f);
+    // UE4 windowed inverse-square, pow-free
+    float dr = distance / l.range;
+    float dr2 = dr * dr;
+    float dr4 = dr2 * dr2;
+    float win = saturate(1.0f - dr4);
+    float attenuation = (win * win) / (distance * distance + 0.00001f);
     
     LightSample ls;
     ls.L = L;
@@ -111,7 +116,7 @@ float3 IntegrateLightsClustered(Surface s, uint clusterKey)
 
 float3 EvaluateIBL(Surface s)
 {
-    float3 kS = FresnelSchlickRoughness(max(dot(s.N, s.V), 0.0f), s.f0, s.roughness);
+    float3 kS = FresnelSchlickRoughness(s.NdotV, s.f0, s.roughness);
     float3 kD = 1.0f - kS;
     kD *= 1.0f - s.metallic;
     
@@ -120,7 +125,7 @@ float3 EvaluateIBL(Surface s)
     
     float3 R = reflect(-s.V, s.N);
     float3 prefilteredColor = textureCubes[sceneIBL.prefilteredIndex].SampleLevel(textureSamplers[SAMPLER_CLAMP_EDGE], R, s.roughness * sceneIBL.prefilteredMaxMip).rgb;
-    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], float2(max(dot(s.N, s.V), 0.0f), s.roughness)).rg;
+    float2 brdf = textures[sceneIBL.brdfLUTIndex].Sample(textureSamplers[SAMPLER_CLAMP_EDGE], float2(s.NdotV, s.roughness)).rg;
     float3 specularIBL = prefilteredColor * (kS * brdf.r + brdf.g);
     
     return (kD * diffuse + specularIBL) * s.ao * sceneIBL.intensity + sceneIBL.ambientColor * s.albedo * s.ao;
